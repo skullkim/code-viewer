@@ -15,7 +15,9 @@ struct DesignTokenTests {
         // defect (3.81:1 on the toolbar) is worth defending in turn.
         #expect(DesignTokens.textTokens.count >= 8)
         #expect(DesignTokens.textBearingSurfaces.count >= 6)
-        #expect(DesignTokens.allColorTokens.count >= 19)
+        #expect(DesignTokens.allColorTokens.count >= 20)
+        #expect(DesignTokens.badgeTokens.count == 4)
+        #expect(DesignTokens.badgeBearingSurfaces.count >= 4)
         #expect(AppearanceScheme.allCases.count == 2)
     }
 
@@ -76,6 +78,30 @@ struct DesignTokenTests {
             )
             #expect(lightLuminance > darkLuminance, "\(token.name)의 라이트가 다크보다 어둡다")
         }
+    }
+
+    @Test("심볼 종류 배지 색이 놓이는 모든 표면에서 3:1 이상이다", arguments: AppearanceScheme.allCases)
+    func badgeColoursClearTheirFloor(scheme: AppearanceScheme) {
+        // §4.5 sets 3:1 for badges rather than 4.5:1, because a badge carries one letter
+        // and is never the only signal — the kind is also spelled out in the row. The
+        // floor still has to hold on every surface a badge appears on.
+        for token in DesignTokens.badgeTokens {
+            for surface in DesignTokens.badgeBearingSurfaces {
+                let ratio = ColorContrast.ratio(token.value(for: scheme), surface.value(for: scheme))
+                #expect(
+                    ratio >= DesignTokens.minimumBadgeContrastRatio,
+                    "배지 \(token.name) on \(surface.name) (\(scheme)): \(String(format: "%.3f", ratio)):1"
+                )
+            }
+        }
+    }
+
+    @Test("teal은 프로토타입의 --syn-type 값과 같다")
+    func tealMatchesThePrototype() {
+        // The prototype styles the I and T badges with --syn-type; keeping the same hex
+        // means the visual reference stays usable for the fidelity comparison.
+        #expect(DesignTokens.teal.light == RGBColor(hex: "#0F7A6E"))
+        #expect(DesignTokens.teal.dark == RGBColor(hex: "#57C7B8"))
     }
 
     @Test("간격 스케일이 §4.3의 4/8/12/16/24/32다")

@@ -126,7 +126,7 @@ func shutDown() async
 - **프론트엔드는 Neovim redraw 프로토콜을 몰라도 된다.** 증분 갱신·스크롤 리전·하이라이트 테이블은
   엔진이 처리하고, 뷰는 완성된 `EditorGridSnapshot`만 그린다.
 - 정의 이동은 `openFile(…, recordJump: true)` 한 번이면 된다 — 점프 목록 기록까지 엔진이 한다.
-- `savedFilePaths`는 엔진이 재인덱싱에 쓰는 스트림이다. 프론트엔드가 구독할 필요는 없다.
+- `savedFiles()`는 엔진이 재인덱싱에 쓰는 스트림이다. 프론트엔드가 구독할 필요는 없다.
 
 ### 3.4 경계면 규칙
 1. 계약 변경은 **백엔드 시니어만** 반영한다. 프론트엔드는 SendMessage로 제안한다.

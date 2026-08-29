@@ -23,30 +23,56 @@ public final class AppModel {
     public private(set) var inputMode: InputMode
     public private(set) var statusMessage: StatusMessage?
 
+    /// Several definitions share the name and the user has to choose (REQ-005 AC-2).
+    public private(set) var definitionCandidates: [SymbolDefinition]?
+
+    public private(set) var isOpeningProject = false
+    /// The failure from the last open attempt, kept as the error so the presenting view
+    /// decides the wording. REQ-001 AC-3: the previous project is still open.
+    public private(set) var projectOpenError: (any Error)?
+
     /// The open project's root, used to show paths relative to it.
     public var projectRootPath: String?
 
     public let recentProjects: RecentProjectStore
 
+    /// The file tree, which asks the engine on the user's rhythm rather than the engine's.
+    public let fileTree: FileTreeModel
+
+    /// Distinguishes one shown message from the next, so a timer started for an earlier
+    /// message cannot wipe a later one off the bar.
+    private(set) var statusMessageToken = 0
+
     // MARK: Collaborators
 
     private let projectSession: ProjectSession
     private let editorSession: EditorSession
+    private let workspace: ProjectWorkspace
     private let storage: KeyValueStore
     private var streamTasks: [Task<Void, Never>] = []
+    private var statusMessageExpiryTask: Task<Void, Never>?
 
     static let inputModeStorageKey = "inputMode"
+
+    /// The grid size a project is opened with, before the editor view has been laid out and
+    /// can report the real one. Neovim refuses a zero-sized UI, so it needs a number now;
+    /// the first `resizeGrid` from the view corrects it.
+    static let initialGridColumns = 80
+    static let initialGridRows = 24
 
     public init(
         projectSession: ProjectSession,
         editorSession: EditorSession,
+        workspace: ProjectWorkspace,
         storage: KeyValueStore,
         now: @escaping @Sendable () -> Date
     ) {
         self.projectSession = projectSession
         self.editorSession = editorSession
+        self.workspace = workspace
         self.storage = storage
         self.recentProjects = RecentProjectStore(storage: storage, now: now)
+        self.fileTree = FileTreeModel(projectSession: projectSession, editorSession: editorSession)
         // REQ-010 AC-6: the chosen mode comes back after a restart. Vim is the default,
         // and unreadable stored data falls back to it rather than refusing to launch.
         self.inputMode = Self.storedInputMode(in: storage) ?? .vim
@@ -105,6 +131,9 @@ public final class AppModel {
 
     public func handle(editorStatus status: EditorStatus) {
         editorStatus = status
+        // The tree marks the file being edited (REQ-003 AC-3); it learns which one only
+        // from here, because the editor is the side that knows.
+        fileTree.updateCurrentFile(absolutePath: status.filePath, isDirty: status.isDirty)
     }
 
     public func handle(snapshot: EditorGridSnapshot) {
@@ -120,7 +149,31 @@ public final class AppModel {
     public func handle(savedFile file: SavedFile) {
         let name = PathDisplay.fileName(file.path)
         let size = ByteSizeText.string(fromByteCount: file.byteSize)
-        statusMessage = StatusMessage(kind: .success, text: "✓ 저장됨 · \(name) (\(file.lineCount)줄, \(size))")
+        show(StatusMessage(kind: .success, text: "✓ 저장됨 · \(name) (\(file.lineCount)줄, \(size))"))
+    }
+
+    // MARK: Status messages
+
+    /// Shows a message and schedules its own removal (design §3 W-7: 2s for a success,
+    /// 3s for an error).
+    public func show(_ message: StatusMessage) {
+        statusMessageToken += 1
+        let token = statusMessageToken
+        statusMessage = message
+
+        statusMessageExpiryTask?.cancel()
+        statusMessageExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(StatusMessageDuration.seconds(for: message.kind)))
+            self?.clearStatusMessage(ifToken: token)
+        }
+    }
+
+    /// Removes the message only if it is still the one that was shown.
+    func clearStatusMessage(ifToken token: Int) {
+        guard token == statusMessageToken else {
+            return
+        }
+        statusMessage = nil
     }
 
     public func clearStatusMessage() {
@@ -149,6 +202,116 @@ public final class AppModel {
 
     public func refreshIndexStatistics() async {
         indexStatistics = await projectSession.indexStatistics()
+    }
+
+    // MARK: Editor input (REQ-004 AC-2, REQ-010 AC-1)
+
+    /// Whether keys aimed at the editor are dropped rather than delivered.
+    ///
+    /// The rule lives here rather than in the view because it is the same rule the overlay
+    /// is drawn from, and two copies of it would eventually disagree. Dropping is chosen
+    /// over queueing so nothing is replayed into a session that may never arrive.
+    public var isEditorInputBlocked: Bool {
+        editSessionOverlay?.blocksKeyInput ?? false
+    }
+
+    public func sendKeys(_ notation: String) async {
+        guard !isEditorInputBlocked else {
+            return
+        }
+        try? await editorSession.sendKeys(notation)
+    }
+
+    public func sendMouse(_ event: EditorMouseEvent) async {
+        guard !isEditorInputBlocked else {
+            return
+        }
+        try? await editorSession.sendMouse(event)
+    }
+
+    /// Tells the editor how many cells it now has.
+    ///
+    /// Not gated on the input rule: a resize is not something the user typed, and a
+    /// session that reconnects into a stale grid size draws into the wrong shape.
+    public func resizeGrid(columns: Int, rows: Int) async {
+        try? await editorSession.resizeGrid(columns: columns, rows: rows)
+    }
+
+    // MARK: Go to definition (REQ-005)
+
+    public func goToDefinition() async {
+        let word = (try? await editorSession.wordUnderCursor()) ?? nil
+        let name = (word ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // A blank query is not a question worth asking the index; the routing rule already
+        // knows what to say about it.
+        let definitions = name.isEmpty ? [] : await projectSession.definitions(named: name)
+
+        switch DefinitionRouting.route(symbolName: name, definitions: definitions) {
+        case .navigate(let path, let line):
+            await open(path: path, line: line)
+
+        case .presentCandidates(let candidates):
+            definitionCandidates = candidates
+
+        case .reportNotFound(let message), .reportNoSymbolUnderCursor(let message):
+            show(StatusMessage(kind: .error, text: message))
+        }
+    }
+
+    public func openDefinition(_ definition: SymbolDefinition) async {
+        definitionCandidates = nil
+        await open(path: definition.path, line: definition.line)
+    }
+
+    public func dismissDefinitionCandidates() {
+        definitionCandidates = nil
+    }
+
+    private func open(path: String, line: Int?) async {
+        // The jump is recorded so ⌃O leads back to where it started (REQ-005 AC-4).
+        try? await editorSession.openFile(atRelativePath: path, line: line, recordJump: true)
+    }
+
+    // MARK: Opening a project (REQ-001)
+
+    public func openProject(at projectRoot: URL) async {
+        isOpeningProject = true
+        projectOpenError = nil
+        defer { isOpeningProject = false }
+
+        do {
+            try await workspace.openWorkspace(
+                at: projectRoot,
+                columns: Self.initialGridColumns,
+                rows: Self.initialGridRows
+            )
+        } catch {
+            // REQ-001 AC-3: nothing about the open project changes. The tree, the root and
+            // the edit session are all left exactly as they were.
+            projectOpenError = error
+            forgetRecentProjectIfGone(error: error, path: projectRoot.path)
+            return
+        }
+
+        projectRootPath = projectRoot.path
+        recentProjects.recordOpened(rootPath: projectRoot.path)
+        await fileTree.loadProject(name: projectRoot.lastPathComponent, rootPath: projectRoot.path)
+    }
+
+    public func dismissProjectOpenError() {
+        projectOpenError = nil
+    }
+
+    /// Drops a recent entry whose folder is gone (design §3 W-2).
+    ///
+    /// Only for a path that no longer exists. A folder that is merely unreadable is still
+    /// the project the user meant, and removing it would make a permissions problem look
+    /// like a lost project.
+    private func forgetRecentProjectIfGone(error: any Error, path: String) {
+        guard case NavigatorError.projectNotFound = error else {
+            return
+        }
+        recentProjects.remove(rootPath: path)
     }
 
     // MARK: Derived presentation

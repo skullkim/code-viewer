@@ -67,6 +67,15 @@ public enum DesignTokens {
     public static let success = token("success", "#1B7A4B", "#4CC38A")
     public static let purple = token("purple", "#7A34B8", "#C792EA")
 
+    /// Interfaces and type aliases in the symbol-kind badges (design §4.1).
+    ///
+    /// §4.1 lists this colour only under syntax highlighting, which it marks as "Neovim's
+    /// to own". The badges are different: the application draws them, in the search modal
+    /// and the definition picker, so the colour has to be a real token rather than a
+    /// borrowed sample. The values are the ones the prototype already uses for `--syn-type`,
+    /// so the visual reference stays accurate.
+    public static let teal = token("teal", "#0F7A6E", "#57C7B8")
+
     /// Every token that carries text and therefore has to clear the contrast floor.
     public static let textTokens: [ColorToken] = [
         textPrimary, textSecondary, textTertiary, accentText, danger, warning, success, purple,
@@ -86,11 +95,26 @@ public enum DesignTokens {
         backgroundWindow, backgroundSidebar, backgroundContent, backgroundPanel, backgroundStatus,
         backgroundElevated, backgroundHover, border, borderStrong,
         textPrimary, textSecondary, textTertiary, accent, accentText,
-        danger, warning, warningSolid, success, purple,
+        danger, warning, warningSolid, success, purple, teal,
     ]
 
     /// The floor design §4.5 sets for text.
     public static let minimumTextContrastRatio = 4.5
+
+    /// The lower floor §4.5 sets for badges and status chips, which carry a single letter
+    /// or a dot rather than prose, and never stand alone as the only signal.
+    public static let minimumBadgeContrastRatio = 3.0
+
+    /// The four colours the symbol-kind badges use (design §4.1).
+    ///
+    /// C·O = accent, I·T = teal, E·F = purple, P = warning.
+    public static let badgeTokens: [ColorToken] = [accentText, teal, purple, warning]
+
+    /// The surfaces a badge is drawn on: the search modal, the definition popover and the
+    /// reference panel.
+    public static let badgeBearingSurfaces: [ColorToken] = [
+        backgroundContent, backgroundPanel, backgroundElevated, backgroundSidebar,
+    ]
 
     // MARK: Spacing and shape (§4.3)
 
