@@ -439,3 +439,195 @@ R1 §2.3에서 **"16/16 구현됨"**이라고 썼으나 **당시 계약은 15개
 → 발주 전제를 **`gate.sh` 그린 + `.app` 조립 완료** 둘 다로 하자고 제안했다.
 
 **현 판정: blocker 1(게이트 빨간불, 실패 3건) · major 0 · minor 4**(관찰 #6·#8·#9·#10 — #10은 백엔드 자체 배정 완료).
+
+---
+
+# 부록 G — 단독 QA 인계 후 실측 (22:56)
+
+리더가 22:5x에 단독 QA로 지정. 인계받은 항목을 독립 실측했다.
+
+## G.1 게이트 — PASS 확인 ✅
+`bash _workspace/gate.sh` → **GATE: PASS**, 실행 테스트 **630건**(인계 문서의 542보다 증가).
+- 마우스 실패 2건·`skippedCount` 1건 해소 확인.
+- **`swift test --no-parallel` 고정은 옳다** — 다섯 스위트가 각자 실제 Neovim을 띄우므로 병렬 실행은 자원 충돌이다(병렬 5회 중 3회 실패 → 직렬 3회 전부 통과). flaky가 아니라 격리 결함이었다. 7초→20초는 싼 값.
+
+## G.2 화면 잠금 — **여전히 잠김** (독립 실측)
+```
+ioreg -n Root -d1 -a | grep -A1 CGSSessionScreenIsLocked
+  <key>CGSSessionScreenIsLocked</key>  <true/>
+```
+리더의 앞선 오판(빈 `ioreg` 결과 오독 + 스크린샷 **파일 크기만** 보고 내용 미확인 → 배경화면이었음)을 공유받아, **크기가 아니라 키 값을 직접 읽는** 방식으로 확인했다. 라이브 E2E·디자인 충실도 계속 차단.
+
+## G.3 🔴 렌더링 사각지대 — REQ 단위로 특정 (major)
+게이트 630건 그린 + `.app` 조립 성공 + `verify-bundle.sh` 통과인데, **화면에 대해서는 아무것도 증명되지 않는다.**
+
+### 뷰 4종이 어디에서도 인스턴스화되지 않는다
+`grep -rn "<ViewName>(" Sources/ Tests/`에서 자기 정의 파일 제외한 참조 수:
+
+| 미연결 뷰 | 참조 | 막힌 요구사항 |
+|---|---|---|
+| `FileTreeView` | **0** | REQ-003 (파일 트리 전부) |
+| `ProjectOpenView` | **0** | REQ-001 (프로젝트 열기) |
+| `DefinitionCandidatesView` | **0** | REQ-005 AC-2 (동명 정의 후보) |
+| `EditSessionOverlayView` | **0** | REQ-004 AC-5 (세션 끊김 안내) |
+
+연결된 것: `StatusBarView`(1) · `SymbolKindBadgeView`(1) · `MotionSafeSpinner`(2).
+
+### 세 겹의 방어선이 모두 비어 있다
+1. `Tests/CodeNavigatorAppKitTests/`에 **뷰 테스트 0건**(뷰 소스 9개). 순수 로직은 215건+로 잘 덮였는데 뷰만 통째로 공백.
+2. `MainWindowView.swift:31-46` — 세 영역 전부 **`PlaceholderPane`**. 실물은 `StatusBarView` 하나.
+3. `CodeNavigatorMain.swift:12-16` — `--self-check`가 **line 14에서 return**, `run()`은 line 16. `verify-bundle.sh`는 **바이너리 기동 + 번들 식별자 읽기까지만** 증명하고 창·뷰 생성은 실행하지 않는다.
+
+**직전 빌드의 "라우트가 TODO인데 전체 그린"과 같은 형태다.** 다만 이번엔 뷰가 컴파일되고 테스트도 통과하면서 **사용자에게 도달만 못 한다**는 점에서 더 조용하다.
+
+### 조립 테스트 설계 제안 (프론트·리더에 전달)
+리더가 지시한 양방향 실측("플레이스홀더로 되돌리면 빨간불")이 성립하려면 **단언 대상이 "뷰가 만들어졌다"가 아니라 "플레이스홀더가 아니다"여야 한다.**
+현재 상태가 정확히 **"인스턴스화는 되는데 플레이스홀더"**이므로, `MainWindowView()`를 만들어 nil 아님만 보는 테스트는 **지금 이 상태에서도 통과한다** — 방어선이 되지 못한다.
+
+## G.4 최종 라운드 전제 — 4번째 조건 제안
+리더 확정 3종: **게이트 그린 + `.app` 조립 + 화면 잠금 해제**. 현재 1·2 충족, **3 미충족**.
+여기에 실질적 4번째: **위 뷰 4종의 실제 연결.** 연결되지 않으면 라이브 E2E에서 SC-1·SC-2·SC-7과 REQ-001·003을 **검증할 대상이 화면에 없다**(플레이스홀더는 클릭할 수 없다).
+
+## G.5 인계 접수 — 재검증하지 않는 것
+| 항목 | 처리 |
+|---|---|
+| 관찰 #6 (대비 검사 빈 목록) | **해소 접수** — qa-2가 APFS 클론에서 양방향 변이 실측(`textTokens=[]`→Red, 옛 미달값→18건 Red, 원복 후 바이트 동일). 공유 트리 미접촉 방식도 옳다. 재검증 안 함 |
+| 관찰 #9 (`03:129` 산문) | 리더 커밋. 다음 계약 대조 시 함께 확인 |
+| 관찰 #8 (`lastUpdatedAt`) | W-10 팝오버 렌더 시 판정 — 동의 |
+| 마우스 3건 | 리더 해결(전부 테스트 측 결함, 제품 코드 정상). 내 배제 진단(상태 전달 배선 정상)이 맞았음을 확인 |
+
+---
+
+# 부록 H — 부록 G 자기 정정 (23:00)
+
+`05_qa_report_round2.md`(qa-2)를 읽고 내 부록 G의 두 항목을 실측으로 재확인한 결과 **두 곳이 틀렸다.** 지우지 않고 정정해 남긴다.
+
+## H.1 ❌ "뷰 테스트 0건" — 부정확했다
+부록 G.3에서 `Tests/CodeNavigatorAppKitTests/`에 **뷰 테스트 0건**이라고 썼다. 실제로는 **`GridRenderingTests.swift`가 존재한다**(mtime 22:56).
+
+직접 확인한 내용:
+```
+:7   /// Draws real frames into an offscreen bitmap and inspects the pixels.
+:60  CGColorSpace(name: CGColorSpace.sRGB)
+:64  CGContext(... bitmapInfo: premultipliedFirst)
+:78  GridRenderer().draw(frame, in: context, viewSize: size, metrics: metrics)
+:47  private func inkedCells(_ frame: GridFrame, columns: Int) -> [Bool]
+```
+**순수 함수 테스트가 아니라 실제 래스터화 테스트다** — 오프스크린 비트맵에 그리고 **픽셀을 직접 샘플링**해 컬럼별 잉크 유무를 판정한다. CoreText가 실제로 그린 결과를 본다. 게다가 오프스크린이라 **화면 잠금과 무관하게 동작한다.**
+
+qa-2가 이 테스트에 변이 실측을 돌려(`GridFrameBuilder.swift:65`의 `column += DisplayWidth.cells(of:)` → `column += 1`) **3건 빨간불 + 원복 후 바이트 동일**을 확인했다. 즉 **R1 blocker였던 더블폭/`startColumn` 문제가 이제 픽셀 수준 방어선을 갖는다.** 재검증하지 않는다.
+
+### 왜 틀렸나 — 방법의 결함
+`ls Tests/CodeNavigatorAppKitTests/ | grep -i view` 로 **파일명**을 훑었다. `GridRenderingTests`에는 "view"가 없어서 빠졌다. **파일명이 아니라 내용을 grep했어야 한다**(`CGContext`·`NSHostingView`·`draw(`). 내가 남들에게 요구해 온 "존재 확인이 아니라 연결 확인"을 파일 목록 수준에서 어긴 셈이다.
+
+## H.2 ❌ 미연결 뷰가 4종이 아니라 **5종**이다
+부록 G.3 표에서 **`EditorGridView`를 빠뜨렸다.** 실측: 참조 **0건**.
+
+| 미연결 뷰 | 참조 | 막힌 요구사항 |
+|---|---|---|
+| `FileTreeView` | 0 | REQ-003 |
+| `ProjectOpenView` | 0 | REQ-001 |
+| `DefinitionCandidatesView` | 0 | REQ-005 AC-2 |
+| `EditSessionOverlayView` | 0 | REQ-004 AC-5 |
+| **`EditorGridView`** | **0** | **REQ-004 AC-2 (에디터 화면 그 자체)** |
+
+`EditorGridView` 누락은 특히 나쁜 실수다 — **앱의 중심 화면**이고, 부록 G에서 내가 "REQ-004 AC-2"를 막힌 요구사항 목록에 넣지 않아 우선순위 판단 근거가 불완전했다.
+
+## H.3 정정 후에도 유지되는 결론
+- 조립 지점(composition root)을 검증하는 테스트는 **여전히 0건**이다(`NSHostingView`·`MainWindowView(` 참조 전무 — 재확인).
+- `--self-check`가 `run()` 이전 return하는 것도 그대로다.
+- `MainWindowView`가 `PlaceholderPane` 3장을 쓰는 것도 그대로(23:00 재확인).
+- 따라서 **"게이트 그린이 화면을 증명하지 않는다"는 결론 자체는 유지된다.** 다만 "렌더링을 재는 계기가 하나도 없다"는 **틀렸다** — 그리드 렌더링에는 픽셀 수준 계기가 있다. 없는 것은 **합성 층**(어떤 뷰가 실제로 창에 꽂히는가)의 계기다.
+
+## H.4 귀속 정정 — 관찰 #11은 내 것이 아니다
+리더가 매트릭스 스키마 문제를 "네 관찰 #11의 처방"이라고 했으나, **관찰 #11은 qa-2의 것이다**(`05_qa_report_round2.md §5`). 내 관찰 번호는 #10에서 멈춰 있다. 기록상 바로잡는다.
+
+---
+
+# 부록 I — 조립 방어선 실측 + 완전성 주장 테스트 훑기 (23:28)
+
+조립 완료(뷰 21종 마운트, 플레이스홀더 0) 후 리더 요청 2건을 수행했다.
+**공유 트리 미접촉** — 변이는 전부 `/tmp/qa_mounts` 격리 복사본에서만 했고 원복·재확인했다.
+
+## I.1 `scripts/check-view-mounts.sh` — 7개 변이 양방향 실측
+
+### 제대로 잡는 것 ✅
+| 변이 | 결과 |
+|---|---|
+| **발견 0건**(`Sources` 비움) | `FAIL: 뷰를 하나도 찾지 못했다` **exit 1** — 리더가 특히 요청한 분기, 실재 확인 |
+| 평범한 미마운트 뷰 | `FAIL: QaOrphanView …` exit 1 |
+| 고아 클러스터(A→B, 둘 다 미마운트) | 부모가 FAIL로 잡힘 |
+| 원복 | 21종 exit 0 복귀 |
+
+### 🔴 사각지대 4건 — 전부 "조용히 통과"(exit 0)
+| # | 변이 | 원인 |
+|---|---|---|
+| T3 | 이름에 **숫자**(`QaPane2View`) | 발견 정규식 `struct [A-Za-z]+` — 숫자·`_` 불포함 |
+| T4 | **`private`/`internal`/`fileprivate`** 선언 | `^(public )?struct` — 다른 접근 수식어 불가 |
+| T5 | **중첩/들여쓰기** 선언 | `^` 앵커가 컬럼 0만 본다 |
+| T6 | 자기 파일 **`#Preview`에서만** 참조 | `mount_count`가 같은 파일 참조를 마운트로 셈 → **22종으로 늘면서** 통과 |
+
+**T6이 실무상 가장 위험하다.** `#Preview`는 SwiftUI 관용구다 — 미마운트 뷰에 프리뷰를 붙이는 순간 검사기가 놓친다. T6 + 고아 부모 조합이면 클러스터가 통째로 샌다.
+
+**스크립트 주석이 스스로 경고한 실패가 다른 문으로 재입장했다**: *"the checker's default was silence."* 손목록 → 발견 기반 전환은 옳았으나 **발견 범위가 좁아** 침묵이 남았다.
+
+처방(프론트 전달): 발견 정규식에 접근 수식어·숫자·`_`·들여쓰기·다중 프로토콜 허용, `mount_count`에서 **선언 파일 자신의 참조 제외**, 그리고 **T3~T6을 검사기 self-test로 고정**(`verify-bundle --self-test`가 이미 그 형태). **검사기가 도는 것과 검사기가 잡는 것은 다르다 — 이번엔 그 차이가 4건이었다.**
+
+## I.2 "이름이 완전성을 주장하는 테스트" — `ShellSplitter`는 단발이 아니라 계열
+공통 원인: **연관값을 가진 enum은 `CaseIterable`이 안 되므로 손으로 목록을 적는다.**
+
+| 위치 | 이름의 주장 | 실제 열거 |
+|---|---|---|
+| `IndexDetailsPresentationTests:161` | "최신이 아닌 **모든** 상태에 낡음 고지" | `[IndexState]` 손목록 4개 |
+| `IndexChipIndicatorTests:50` | 인덱스 상태 전수 | `[IndexState]` 손목록 5개 |
+| `StatusBarPresentationTests:185` | 인덱스 상태 전수 | `[(IndexState, …)]` 손목록 |
+| `StatusBarPresentationTests:211` | 세션 상태 전수 | `[(EditorSessionState, …)]` 손목록 |
+
+`IndexState`에 새 상태를 추가하면 **넷 다 초록인 채로** 새 상태만 낡음 고지도 칩 표시도 없이 지나간다. `ShellSplitter`와 같은 구조다.
+처방: 프로덕션 타입 옆에 `allKnownCases`를 두고 테스트가 순회, 또는 최소 `count` 핀.
+
+## I.3 반대 사례 — 주장이 성립하는 곳 (어디가 진짜 방어선인가)
+`MenuAvailabilityTests:112` "모든 명령이 규칙에 걸린다"는 **성립한다.** 단 근거는 테스트가 아니다:
+`MenuAvailability.isEnabled`의 switch에 **`default:`가 없어** `MenuCommand`에 케이스를 추가하면 **컴파일이 깨진다.** 컴파일러가 규칙을 강제하고 `count == 24` 핀이 이중 확인이다.
+루프 자체(`_ = menu.isEnabled(command)`)는 결과를 버려 단독으로는 아무것도 단언하지 않는다 — **결함은 아니고, 방어선의 실제 위치 기록이다.**
+
+---
+
+# 부록 J — 검사기 수정 재검증 (23:42)
+
+## J.1 사각지대 4건 — **전부 해소** ✅ (격리 복사본 실측)
+| 변이 | 이전(23:28) | 지금 |
+|---|---|---|
+| T3 이름에 숫자 | LEAKED | **CAUGHT** |
+| T4 `private` 선언 | LEAKED | **CAUGHT** |
+| T5a 중첩(여러 줄 들여쓰기) | LEAKED | **CAUGHT** |
+| T5b 중첩(**같은 줄**) | — | **CAUGHT** |
+| T6 `#Preview`에서만 참조 | LEAKED | **CAUGHT** |
+| 다중 프로토콜 | — | **CAUGHT** |
+| 평범한 미마운트 | CAUGHT | **CAUGHT** |
+| 발견 0건 | FAIL exit 1 | **FAIL exit 1** |
+| 원복 | 21종 | **22종 exit 0** |
+
+**오탐 없음** — 별도 3종 확인: `struct QaThingViewModel: Equatable`(이름에 View 포함) · 주석에 "View"가 있는 비-View 구조체 · `protocol QaViewLike`. 셋 다 미발견. `[^{]*`로 조건부를 제한한 것이 유효하다.
+
+`^` 앵커를 아예 제거한 프론트의 판단이 **내 제안보다 낫다** — 내 `^[[:space:]]*` 안은 같은 줄 중첩(T5b)을 못 잡았을 것이다. 또한 self-test가 프론트의 1차 수정 불완전을 그 자리에서 잡았다(중첩 케이스 `FAIL: 심었는데 검출 못함`).
+
+## J.2 🔴 새 발견 — self-test가 **실제 `Sources/`를 변경한다** (major, → frontend-senior)
+```bash
+local fixture="$SOURCES/CodeNavigatorAppKit/View/_SelfTestProbe.swift"   # scripts/check-view-mounts.sh:83
+# SOURCES="$REPO_ROOT/Sources"
+```
+그리고 **`trap`이 없다**(`grep -n trap` → 0건).
+
+**가설이 아니라 실제로 발생했다**: 23:41에 재검증용 `cp -R Sources` 중 self-test가 동시 실행돼 **`QaPane2View`가 복사본에 딸려 들어왔고 내 baseline이 거짓 FAIL**로 떴다. 레포 자체는 깨끗했다(22종 exit 0) — **순간 상태를 뜬 것**이었다.
+
+**위험 2가지**
+1. **중단 시 프로덕션 소스에 잔존** — Ctrl-C·kill·중간 `exit` 시 `_SelfTestProbe.swift`가 남고 **다음 빌드에 컴파일돼 들어간다.** 게다가 미마운트 뷰이므로 이후 모든 마운트 검사가 실패한다(원인 추적이 어려운 형태).
+2. **동시 실행 충돌** — 게이트가 self-test를 스텝으로 돌리는데, 그때 누가 `swift build`/`swift test`를 돌리면 **오염된 순간 상태**를 본다. 빌드 락 충돌과 같은 계열이나 **소스를 바꾸므로 더 나쁘다.**
+
+**처방**: 검사기가 소스 경로를 받게 하고(`VIEW_SOURCES_DIR`) self-test는 `mktemp -d` 복사본에서 실행 → 공유 트리 변경 0. 최소한 `trap 'rm -f "$fixture"' EXIT INT TERM`.
+
+> QA가 처음부터 `/tmp` 격리 복사본에서만 변이해 온 이유가 이것이다. 방어선을 재는 행위 자체가 트리를 오염시키면, 그 실측은 다른 사람의 실측을 망가뜨린다.
+
+## J.3 완전성 주장 테스트 — 처리 확인
+`ShellCompositionTests`가 **"모든 ShellPane이 어떤 상태에선가 꽂힌다"**로 이름을 실제 열거 범위(`ShellPane.allCases`)에 맞춰 좁혔다. 뷰 전체 완전성은 `check-view-mounts.sh`가 본다는 역할 분리도 옳다. `IndexState`·`EditorSessionState` 손목록 4건은 `allKnownCases` 도입으로 백엔드·주니어에 분담됐다.

@@ -2,7 +2,8 @@
 
 상세 스펙·완료 기준은 `03_frontend_architecture.md §4`. 아래는 상태 추적용.
 
-> **현황 (2026-08-29 17:52 실측)**: 22개 스위트 **254 테스트 전부 통과 — 레포에서 실행됨**.
+> **현황 (2026-08-29 23:21 실측)**: 게이트 **PASS** · 전체 709 tests / 82 suites · 프론트 412 tests / 41 suites.
+> **조립 완료** — 발견한 뷰 21종 전부 마운트, 플레이스홀더 0.
 > 타깃 분리가 반영돼 스테이징 미러는 제거됐고, 모든 코드가 `Sources/CodeNavigatorAppKit/`·
 > `Tests/CodeNavigatorAppKitTests/`에 있다. `.app` 조립·실행 검증도 통과하며 `gate.sh`에
 > 프론트 블록 3스텝을 추가했다(조립 · 실행 확인 · **검사기 자체 검사**).
@@ -17,10 +18,10 @@
 | F-01 | 디자인 토큰 | REQ-011 AC-4 | **로직 완료** | `DesignTokenTests`(6) · `ColorContrastTests`(5) |
 | F-02 | ShellLayout 치수 계산 | REQ-011 AC-3 | **로직 완료** | `ShellLayoutTests`(13) |
 | F-03 | KeyNotation + 단축키 판별 | REQ-010·011 | **로직 완료** | `KeyNotationTests`(12) |
-| F-04 | 그리드 렌더러 | REQ-004 | **로직 완료** (계약 #1 반영됨) | `GridGeometryTests`(9) · `GlyphBatcherTests`(9) · `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
-| F-05 | EditorGridView + 키 배선 | REQ-004·010 | 대기(타깃) — 로직은 전부 준비됨 | — |
+| F-04 | 그리드 렌더러 | REQ-004 | **완료 — 픽셀 검증까지** | `GridGeometryTests`(9) · `GlyphBatcherTests`(9) · `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) · **`GridRenderingTests`(9, 실제 픽셀)** |
+| F-05 | EditorGridView + 키 배선 | REQ-004·010 | **완료 — 창에 마운트됨** | `CompositionRootTests`(8) |
 | F-06 | AppModel + 스트림 소비 | REQ-004·009·010 | **로직 완료** — 계약 가짜 구현으로 스트림 배선 검증 | `AppModelTests`(15) |
-| F-07 | 메인 창 셸 | REQ-011 | 대기(타깃) | — |
+| F-07 | 메인 창 셸 | REQ-011 | **완료** — 툴바+3영역+상태바, 플레이스홀더 0 | `ShellCompositionTests`(5) · `CompositionRootTests`(8) |
 | F-08 | 상태바 W-7 | REQ-004·009·010·011 | **로직 완료**, 뷰 대기 | `StatusBarPresentationTests`(15) |
 | F-09 | 메뉴 막대 W-9 | REQ-010·011 | **로직 완료**, 뷰 대기 | `MenuAvailabilityTests`(12) |
 | F-10 | 입력 모드 토글 | REQ-010 | **로직 완료** — 전환·영속·복원(AC-6)·무저장(AC-4) | `AppModelTests` 모드 4건 |
@@ -39,7 +40,7 @@
 | `SymbolSearchPresentation` | W-3 | `SymbolSearchPresentationTests`(15) |
 | `ReferencePresentation` | W-5 | `ReferencePresentationTests`(9) |
 | `TextSearchPresentation` | W-6 | `TextSearchPresentationTests`(12) |
-| `GridFrameBuilder` · `DisplayWidth` | 에디터 그리드 | `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
+| `GridFrameBuilder` · `DisplayWidth` | 에디터 그리드 | `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) · **`GridRenderingTests`(9, 실제 픽셀)** |
 | `EditSessionOverlay` | W-8 카드 3종 | `EditSessionOverlayTests`(11) |
 | `AppModel` · `ByteSizeText` | 전 화면의 상태 원천 | `AppModelTests`(15) |
 

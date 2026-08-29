@@ -81,10 +81,6 @@ public actor SymbolIndex {
         definitionsByFilePath.values.flatMap { $0 }
     }
 
-    public func indexedFilePaths() -> Set<String> {
-        Set(definitionsByFilePath.keys)
-    }
-
     public func symbolCount() -> Int {
         definitionsByFilePath.values.reduce(0) { $0 + $1.count }
     }

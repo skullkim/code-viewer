@@ -91,7 +91,8 @@ public actor ProjectEngine: ProjectSession {
 
     /// Waits for pending debounced work, so tests and the leader's verification can observe a
     /// settled index instead of guessing at a sleep duration.
-    public func waitUntilIndexIsIdle() async {
+    /// 테스트가 인덱싱 완료를 기다리기 위한 것. 계약 표면이 아니므로 internal 로 둔다.
+    func waitUntilIndexIsIdle() async {
         await indexer.waitUntilIdle()
     }
 

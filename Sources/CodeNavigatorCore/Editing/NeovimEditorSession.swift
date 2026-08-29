@@ -557,6 +557,12 @@ public actor NeovimEditorSession: EditorSession {
         return reply.mapValue?.first { $0.key.stringValue == "mode" }?.value.stringValue
     }
 
+    /// Internal mode bookkeeping, so a test can see where mode propagation stopped rather than
+    /// inferring it from the published status. Not part of the contract.
+    func modeBookkeepingForTesting() async -> (lastKnown: EditorMode, published: EditorMode?) {
+        (lastKnownMode, lastPublishedStatus?.mode)
+    }
+
     /// The embedded process id, so a test can simulate a crash. Not part of the contract.
     func processIdentifierForTesting() async -> Int32? {
         guard let channel else { return nil }

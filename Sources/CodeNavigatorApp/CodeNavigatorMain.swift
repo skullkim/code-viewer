@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import CodeNavigatorAppKit
 
 /// The application entry point.
@@ -10,18 +9,9 @@ import CodeNavigatorAppKit
 struct CodeNavigatorMain {
     static func main() {
         if CommandLine.arguments.contains("--self-check") {
-            reportBundleIdentity()
+            CodeNavigatorApplication.reportSelfCheck()
             return
         }
         CodeNavigatorApplication.run()
-    }
-
-    /// Reports bundle identity and exits, so `scripts/verify-bundle.sh` can check that the
-    /// assembled bundle actually runs without needing a window server session. A `.app`
-    /// directory existing is not evidence that anything works.
-    private static func reportBundleIdentity() {
-        let identifier = Bundle.main.bundleIdentifier ?? "(none)"
-        let executable = Bundle.main.executableURL?.lastPathComponent ?? "(none)"
-        print("bundleIdentifier=\(identifier) executable=\(executable)")
     }
 }

@@ -107,6 +107,7 @@ EditorGridSnapshot ──▶ GridRenderer(순수: 스냅샷 → 드로잉 명령
 - [ADR-0103 상태 관리](../docs/adr/0103-state-management.md) — `@Observable` + 판단을 순수 함수로 분리
 - [ADR-0104 창 레이아웃](../docs/adr/0104-shell-layout.md) — 고정 크롬 먼저 배치, 가변 영역이 잔여를 갖는다(PD 실측 결함 재발 방지)
 - [ADR-0105 `.app` 번들·타깃 분리](../docs/adr/0105-app-bundle-and-target-split.md) — 맨 실행 파일은 key window가 안 된다(실측)
+- [ADR-0106 프로젝트 전환 묶기](../docs/adr/0106-project-workspace.md) — 계약이 말하지 않는 "인덱스와 편집기는 함께 움직인다"를 타입이 말하게
 
 ---
 

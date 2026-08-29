@@ -83,4 +83,27 @@ if ! printf '%s' "$OUTPUT" | grep -q "bundleIdentifier=$EXPECTED_IDENTIFIER"; th
     exit 1
 fi
 
+# 번들이 뜨는 것만으로는 창이 성립한다는 증거가 안 된다. --self-check 는 실제 객체 그래프로
+# 루트 뷰를 만들고 레이아웃을 한 번 돌린 뒤 결과를 보고한다.
+if ! printf '%s' "$OUTPUT" | grep -q "rootView=laidOut"; then
+    echo "FAIL: 루트 뷰가 레이아웃되지 않았다 — 바이너리는 떴지만 창이 성립하지 않는다" >&2
+    printf '%s\n' "$OUTPUT" >&2
+    exit 1
+fi
+
+# 메뉴 막대가 ⌘ 조합을 claim 하는 주체다(ADR-0102). 없이 출하되면 ⌘O·⌘P 가 Neovim 으로
+# 새어 나가는데, 그건 실행해 보기 전에는 드러나지 않는다.
+MENU_COUNT="$(printf '%s' "$OUTPUT" | sed -n 's/.*menus=\([0-9][0-9]*\).*/\1/p')"
+if [ -z "$MENU_COUNT" ] || [ "$MENU_COUNT" -lt 6 ]; then
+    echo "FAIL: 메뉴 막대가 설치되지 않았다 (menus=$MENU_COUNT) — ⌘ 조합이 Neovim 으로 샌다" >&2
+    printf '%s\n' "$OUTPUT" >&2
+    exit 1
+fi
+
+SUBVIEW_COUNT="$(printf '%s' "$OUTPUT" | sed -n 's/.*subviews=\([0-9][0-9]*\).*/\1/p')"
+if [ -z "$SUBVIEW_COUNT" ] || [ "$SUBVIEW_COUNT" -lt 1 ]; then
+    echo "FAIL: 루트 뷰가 아무것도 그리지 않았다 (subviews=$SUBVIEW_COUNT)" >&2
+    exit 1
+fi
+
 printf 'ok: %s\n' "$OUTPUT"

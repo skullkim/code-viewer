@@ -38,6 +38,49 @@ pass() {
 # 그때는 왜 줄었는지 저널에 남긴다.
 MINIMUM_TEST_COUNT=240
 
+# ---------------------------------------------------------------------------
+# 고아 Neovim 프로세스 — 중단된 실행이 남긴 것
+# ---------------------------------------------------------------------------
+# 실측(2026-08-29): 부모가 죽은 `nvim --embed` 가 PPID 1 로 재부모화되어 최대 6시간 살아 있었고
+# 5개가 75MB 를 잡고 있었다. **SIGTERM 을 무시한다** — SIGKILL 로만 정리된다.
+# 정상 종료 경로(shutDown)는 잘 동작하므로, 남아 있다는 것은 실행이 중단됐다는 신호다.
+#
+# 실패로 만들지는 않는다. 머신 상태이지 이 변경의 결함이 아니고, 무관한 빨간불은 해롭다.
+count_orphaned_editors() {
+    local pid parent count=0
+    for pid in $(pgrep -f 'nvim --embed' 2>/dev/null); do
+        parent="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+        [ "$parent" = "1" ] && count=$((count + 1))
+    done
+    printf '%s' "$count"
+}
+
+# ---------------------------------------------------------------------------
+# SC-8 유휴 메모리 — 격리 실행으로만 판정한다
+# ---------------------------------------------------------------------------
+# 같은 프로세스에서 다른 테스트가 먼저 돌면 할당자가 페이지를 재사용해 증가분이 0 에 가깝게
+# 나온다(실측: 단독 20.1MB, 전체 0.1MB). 그래서 이 항목만 따로 돌려 출력 숫자로 판정한다.
+IDLE_MEMORY_BUDGET_MB=150
+
+idle_memory_from() {
+    printf '%s\n' "$1" | sed -nE 's/.*유휴 메모리 ([0-9]+)\.[0-9]+MB.*/\1/p' | tail -1
+}
+
+check_idle_memory() {
+    local megabytes
+    megabytes="$(idle_memory_from "$1")"
+
+    if [ -z "$megabytes" ]; then
+        fail "유휴 메모리 측정값을 읽지 못했다 — 테스트가 돌지 않았거나 출력 형식이 바뀌었다"
+        return
+    fi
+    if [ "$megabytes" -gt "$IDLE_MEMORY_BUDGET_MB" ]; then
+        fail "유휴 메모리 ${megabytes}MB > 예산 ${IDLE_MEMORY_BUDGET_MB}MB (SC-8)"
+        return
+    fi
+    pass "유휴 메모리 ${megabytes}MB (예산 ${IDLE_MEMORY_BUDGET_MB}MB, 격리 측정)"
+}
+
 test_count_from() {
     printf '%s\n' "$1" | sed -nE 's/.*Test run with ([0-9]+) tests?.*/\1/p' | tail -1
 }
@@ -163,6 +206,48 @@ self_test() {
         status=1
     fi
 
+    # 4) SC-8 메모리 판정기도 양방향으로. 파싱이 죽으면 예산 초과가 조용히 통과한다.
+    FAILURES=0
+    check_idle_memory "[성능] 유휴 메모리 999.9MB (인덱싱 전 8.2MB, 인덱스 비용 900.0MB) · 심볼 25000" >/dev/null 2>&1
+    if [ "$FAILURES" -gt 0 ]; then
+        printf '  ok: 메모리 판정기가 예산 초과를 잡는다\n'
+    else
+        printf '  FAIL: 999MB 를 통과시켰다\n'
+        status=1
+    fi
+
+    FAILURES=0
+    check_idle_memory "테스트가 돌지 않아 측정 줄이 없다" >/dev/null 2>&1
+    if [ "$FAILURES" -gt 0 ]; then
+        printf '  ok: 측정 줄이 없으면 잡는다\n'
+    else
+        printf '  FAIL: 측정값 없이 통과시켰다\n'
+        status=1
+    fi
+
+    FAILURES=0
+    check_idle_memory "[성능] 유휴 메모리 28.3MB (인덱싱 전 8.2MB, 인덱스 비용 20.1MB) · 심볼 25000" >/dev/null 2>&1
+    if [ "$FAILURES" -eq 0 ]; then
+        printf '  ok: 예산 안쪽 측정은 통과시킨다 (오탐 없음)\n'
+    else
+        printf '  FAIL: 정상 측정을 실패로 잡는다\n'
+        status=1
+    fi
+
+    # 5) 고아 탐지기 — 빈 결과를 "없다"로 읽기 전에, 살아 있는 대상 하나로 패턴이 실제로
+    #    매칭되는지 확인한다. (argv[0] 을 바꿔 nvim 처럼 보이는 프로세스를 만든다.)
+    bash -c 'exec -a "nvim --embed --self-test-probe" sleep 5' &
+    local probe_pid=$!
+    sleep 1
+    if pgrep -f 'nvim --embed' >/dev/null 2>&1; then
+        printf '  ok: 고아 탐지 패턴이 살아 있는 대상을 잡는다\n'
+    else
+        printf '  FAIL: 패턴이 살아 있는 대상을 못 잡는다 — 0 이라는 결과를 믿을 수 없다\n'
+        status=1
+    fi
+    kill "$probe_pid" >/dev/null 2>&1
+    wait "$probe_pid" 2>/dev/null
+
     rm -f "$fixture"
     return $status
 }
@@ -191,10 +276,17 @@ section "백엔드: swift test"
 # 전부 통과). 무거운 공유 런타임은 단일 러너로 돌린다는 규율의 적용이다. 비용은 7초 -> 20초.
 TEST_OUTPUT="$(swift test --no-parallel 2>&1)"
 TEST_STATUS=$?
-printf '%s\n' "$TEST_OUTPUT" | tail -5
 if [ "$TEST_STATUS" -eq 0 ]; then
+    printf '%s\n' "$TEST_OUTPUT" | tail -5
     pass "swift test"
 else
+    # 실패했을 때만 실패한 것들을 전부 남긴다. 진단 정보는 실패했을 때 필요하지 통과했을 때
+    # 필요한 게 아니다. tail 로 자르면 실패한 테스트 이름이 잘려나가, 원인을 보려고 게이트
+    # 밖에서 swift test 를 한 번 더 돌리게 된다 — 오늘 그 비용을 두 번 냈다.
+    printf '  --- 실패한 테스트 ---\n'
+    printf '%s\n' "$TEST_OUTPUT" | grep -E '^✘ Test|recorded an issue' | sed 's/^/    /'
+    printf '  --- 마지막 요약 ---\n'
+    printf '%s\n' "$TEST_OUTPUT" | tail -3 | sed 's/^/    /'
     fail "swift test"
 fi
 
@@ -207,6 +299,27 @@ check_test_count "$TEST_OUTPUT"
 # swift build / swift test 는 위 백엔드 블록이 패키지 전체를 대상으로 이미 돌린다.
 # 여기서는 중복하지 않고, 백엔드가 검증하지 않는 것만 본다: .app 으로 조립되는지,
 # 그리고 조립된 것이 실제로 실행되는지. 디렉토리가 생겼다는 것은 동작의 증거가 아니다.
+
+section "프론트엔드: 화면 뷰 마운트"
+# 뷰가 컴파일되고 자기 테스트를 통과해도, 아무도 인스턴스화하지 않으면 사용자에게 도달하지
+# 못한다. 실제로 완성된 뷰 다섯이 전부 미연결인 채 스위트가 초록이었다. 컴파일과 단위
+# 테스트가 못 보는 층이라 게이트가 마운트를 센다.
+if MOUNT_OUTPUT="$("$REPO_ROOT/scripts/check-view-mounts.sh" 2>&1)"; then
+    pass "화면 뷰 마운트 — ${MOUNT_OUTPUT#*ok: }"
+else
+    fail "화면 뷰 마운트"
+    printf '%s\n' "$MOUNT_OUTPUT" | sed 's/^/    /'
+fi
+
+section "프론트엔드: 마운트 검사기 자체 검사"
+# 검사기가 도는 것과 검사기가 잡는 것은 다르다. 이 스크립트는 두 번 조용히 실패했다 —
+# 손목록이라 새 뷰를 빠뜨렸고, 발견 정규식이 좁아 네 가지 선언 형태를 빠뜨렸다(QA 실측).
+if MOUNT_SELFTEST="$("$REPO_ROOT/scripts/check-view-mounts.sh" --self-test 2>&1)"; then
+    pass "check-view-mounts --self-test (선언 형태 5종·#Preview 전용 참조를 실제로 잡는다)"
+else
+    fail "check-view-mounts --self-test — 검사기가 잡아야 할 것을 못 잡는다"
+    printf '%s\n' "$MOUNT_SELFTEST" | sed 's/^/    /'
+fi
 
 section "프론트엔드: .app 조립"
 if "$REPO_ROOT/scripts/bundle.sh" >/dev/null 2>&1; then
@@ -228,6 +341,20 @@ if "$REPO_ROOT/scripts/verify-bundle.sh" --self-test >/dev/null 2>&1; then
     pass "verify-bundle --self-test (틀린 식별자·실행 파일 부재를 실제로 잡는다)"
 else
     fail "verify-bundle --self-test — 검사기가 잡아야 할 것을 못 잡는다"
+fi
+
+section "백엔드: SC-8 유휴 메모리 (격리 측정)"
+MEMORY_OUTPUT="$(swift test --filter 'SearchPerformanceTests/idleMemoryAfterIndexingWithinBudget' 2>&1)"
+printf '%s\n' "$MEMORY_OUTPUT" | grep -F '[성능]' || true
+check_idle_memory "$MEMORY_OUTPUT"
+
+section "환경: 고아 Neovim 프로세스"
+ORPHAN_COUNT="$(count_orphaned_editors)"
+if [ "$ORPHAN_COUNT" -eq 0 ]; then
+    pass "고아 nvim 없음"
+else
+    printf '  WARNING: 고아 nvim %s개 — 중단된 실행의 잔재다. SIGTERM 을 무시하니 아래로 정리하라:\n' "$ORPHAN_COUNT"
+    printf '    kill -9 $(pgrep -f "nvim --embed")\n'
 fi
 
 section "공통: 민감정보 스캔"

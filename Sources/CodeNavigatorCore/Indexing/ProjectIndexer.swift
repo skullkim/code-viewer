@@ -292,7 +292,8 @@ public actor ProjectIndexer {
 
     /// Waits for any in-flight debounce to settle, including one started while waiting.
     /// Tests use this instead of sleeping for a guessed duration.
-    public func waitUntilIdle() async {
+    /// 테스트 전용 대기 지점. 제품 코드는 상태 스트림을 구독한다.
+    func waitUntilIdle() async {
         while let task = debounceTask {
             debounceTask = nil
             _ = await task.value
