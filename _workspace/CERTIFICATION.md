@@ -121,11 +121,18 @@ FAIL · 고아 클러스터 → 부모가 FAIL · 원복 → exit 0.
 `menus=` 보고처럼 "실제로 설치·동작했는가"를 앱이 스스로 보고하게 한 것**을 함께 본다.
 현재 게이트: `rootView=laidOut subviews=7 menus=7` (`verify-bundle.sh` 가 메뉴 6개 이상을 요구).
 
-### 이 지표의 맹점 (쓰기 전에 알아야 한다)
-`Type(` 형태의 **생성자 호출만** 잡는다. 정적 멤버로만 쓰이는 타입은 실제로 쓰이는데도 0 으로
-나온다 — 실측: `PanelTint`(`PanelTint.warning.dynamicColor` 로 2곳에서 사용) ·
-`CodeNavigatorApplication`(`CodeNavigatorApplication.run()`). **0 을 미사용으로 읽기 전에
-정적 멤버 사용을 확인한다.**
+### 지표는 둘이다 — 섞어 쓰면 안 된다
+| 대상 | 세는 법 | 이유 |
+|---|---|---|
+| **뷰** | `\bName[({]` | 뷰는 `Name(...)` 로 생성된다(제네릭 뷰는 후행 클로저라 `{` 도) |
+| **로직 모듈·정적 타입** | **맨이름** `\bName\b` (선언 파일 제외) | 이 코드베이스는 순수 로직을 `enum` 네임스페이스로 두는 관례라 **언제나 `Name.method(...)` 로만 불린다** |
+
+**`Name(` 을 로직 모듈에 쓰면 가끔 틀리는 게 아니라 100% 틀린다.** 실측: 프론트 로직 모듈
+10종 중 아홉이 `Name(` = 0 인데 **전부 실제로 소비 중**이다(`ShellSplitDrag`·`ShellVisibilityLayout`·
+`WindowFrameFit`·`SpinnerDelay`·`IndexChipIndicator`·`IndexDetailsPresentation`·`RelativeTimeText`·
+`PopoverPlacement`·`FileTreePresentation`). `PanelTint`·`CodeNavigatorApplication` 도 같은 이유다.
+
+→ **같은 명령에 예외를 다는 것보다 검사를 둘로 나눈다.** 다음 사람이 헷갈리지 않는다.
 
 그리고 반대 방향의 맹점이 더 위험하다: **검사 목록이 손으로 관리되면 새 뷰는 기본적으로
 검사에서 빠진다.** 실제로 `IndexStatusChipView` · `SymbolSearchModalView` · `ShellSplitter`
@@ -303,6 +310,10 @@ _workspace/measure-app-runtime.sh --idle-only  # 이것이 SC-8 판정값이다
 - **연쇄 실패를 원인 여럿으로 읽는 것** — 빌드나 테스트 컴파일이 깨지면 뒤따르는 스텝이 전부
   빨간불이 된다(테스트 수 판독 실패 · 유휴 메모리 판독 실패 · `.app` 조립 실패 …).
   **출력만 보면 원인이 여럿 같지만 뿌리는 하나다.**
+- **낡은 실측을 현재 상태로 반복하는 것** — "아직 안 꽂혔다"는 **상태 주장이지 사실이 아니다.**
+  시간이 지나면 저절로 틀려진다. 실측: 23:33 의 "미배선 0건"이 정확했는데(배선은 23:36 에
+  들어왔다) 그 값이 00:08 보고까지 **35분 동안 재측정 없이 현재형으로 반복**됐다.
+  → **상태 주장을 반복하기 전에 다시 잰다.** 통지에 검증 시각을 병기하는 이유가 이것이다.
 - **빈 명령 출력** — 그 명령이 잡을 수 있는지부터 확인한다. 리더가 `ioreg` 빈 결과를 "잠금 해제"로 오독했고,
   스크린샷 파일 크기를 "찍힘"의 증거로 삼았다(내용은 배경화면이었다). 미마운트를 세는 임시
   스크립트가 셸 문법 오류로 매 루프 실패하면서 "22종 전부 미마운트"라는 그럴듯한 경보를 내기도
