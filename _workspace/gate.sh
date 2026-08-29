@@ -184,7 +184,12 @@ fi
 
 section "백엔드: swift test"
 # 출력을 잡아 두고 통과 여부와 실행 건수 양쪽에 쓴다 — 테스트를 두 번 돌리지 않는다.
-TEST_OUTPUT="$(swift test 2>&1)"
+#
+# --no-parallel 인 이유: 다섯 스위트가 각자 실제 Neovim 프로세스를 띄운다. 병렬로 돌리면
+# 동시에 뜬 nvim 들이 서로를 밀어내 마우스 입력이 받아들여지기까지의 시간이 들쭉날쭉해지고,
+# 같은 코드가 부하에 따라 통과하기도 실패하기도 한다(실측: 병렬 5회 중 3회 실패, 직렬 3회
+# 전부 통과). 무거운 공유 런타임은 단일 러너로 돌린다는 규율의 적용이다. 비용은 7초 -> 20초.
+TEST_OUTPUT="$(swift test --no-parallel 2>&1)"
 TEST_STATUS=$?
 printf '%s\n' "$TEST_OUTPUT" | tail -5
 if [ "$TEST_STATUS" -eq 0 ]; then
@@ -197,8 +202,33 @@ section "백엔드: 실행 테스트 수"
 check_test_count "$TEST_OUTPUT"
 
 # ---------------------------------------------------------------------------
-# 프론트엔드 블록은 frontend-senior 가 이 아래에 추가한다.
+# 프론트엔드 (앱 셸)
 # ---------------------------------------------------------------------------
+# swift build / swift test 는 위 백엔드 블록이 패키지 전체를 대상으로 이미 돌린다.
+# 여기서는 중복하지 않고, 백엔드가 검증하지 않는 것만 본다: .app 으로 조립되는지,
+# 그리고 조립된 것이 실제로 실행되는지. 디렉토리가 생겼다는 것은 동작의 증거가 아니다.
+
+section "프론트엔드: .app 조립"
+if "$REPO_ROOT/scripts/bundle.sh" >/dev/null 2>&1; then
+    pass "scripts/bundle.sh"
+else
+    fail "scripts/bundle.sh — .app 조립 실패"
+fi
+
+section "프론트엔드: 번들 실행 검증"
+if BUNDLE_OUTPUT="$("$REPO_ROOT/scripts/verify-bundle.sh" 2>&1)"; then
+    pass "scripts/verify-bundle.sh — $BUNDLE_OUTPUT"
+else
+    fail "scripts/verify-bundle.sh — 조립된 앱이 실행되지 않는다"
+    printf '%s\n' "$BUNDLE_OUTPUT" | sed 's/^/    /'
+fi
+
+section "프론트엔드: 번들 검사기 자체 검사"
+if "$REPO_ROOT/scripts/verify-bundle.sh" --self-test >/dev/null 2>&1; then
+    pass "verify-bundle --self-test (틀린 식별자·실행 파일 부재를 실제로 잡는다)"
+else
+    fail "verify-bundle --self-test — 검사기가 잡아야 할 것을 못 잡는다"
+fi
 
 section "공통: 민감정보 스캔"
 secret_scan

@@ -366,3 +366,76 @@ $ swift test          # 17:44:51
 | `_workspace/frontend-staging/` 잔존 | 정리 대상(minor housekeeping) — 이관 완료됐으므로 두 벌이 남으면 다음 사람이 어느 쪽이 진짜인지 헷갈린다 |
 
 **현 판정: blocker 0 · major 0 · minor 2(관찰 #6, #8).**
+
+---
+
+# 부록 E — 17:48 게이트 파손 + R1 정정
+
+## E.1 🔴 공유 테스트 타깃 컴파일 불가 (blocker, 작업 순서 문제)
+17:44 484/54 그린 → **17:48 실행이 컴파일 실패**. `swift test`가 팀 전원에게 실패한다.
+- 원인: `Tests/CodeNavigatorAppKitTests/FileTreePresentationTests.swift`(mtime 17:48)가 `FileTreePresentation`·`FileTreeRow`를 참조하나 `Sources/`에 부재(grep 0건). F-12 TDD Red로 보인다.
+- **이미 문서화된 함정의 재발**(`06_journal.md:7`): Swift는 `--filter`를 줘도 타깃 전체를 컴파일하므로 **컴파일 에러 Red는 팀 전원을 막는다**. 백엔드가 배운 규율이 새로 스폰된 frontend-junior에게 전달되지 않았다.
+- 수정: 스텁 타입을 먼저 넣어 **"단언 실패 Red"**로 바꾼다 → F-12만 빨간불, 나머지 483건은 초록 유지.
+- **구조적 위험**: F-13~16·F-18이 같은 방식으로 5건 더 온다. 주니어 스폰 브리핑에 이 규율을 넣지 않으면 다섯 번 더 멈춘다(저널에만 있으면 새 에이전트는 읽지 않는다).
+
+## E.2 신규 계약 표면 3종 — 전수 재대조 (17:44)
+backend-senior가 통지에 **곁들여 언급**한 것들이라 다시 훑었다. 통지의 주제가 아닌 변경일수록 검증에서 새기 쉽다.
+
+| 변경 | 확인 |
+|---|---|
+| `savedFilePaths() -> AsyncStream<String>` → **`savedFiles() -> AsyncStream<SavedFile>`** | 파괴적 변경. `CodeNavigatorEngine:78-81`까지 일관 반영 ✅ |
+| **`sendMouse(_: EditorMouseEvent)` 신규** | 계약·구현 존재 ✅ (`EditorSession` 15개 → **16개**) |
+| `ProjectSession.indexStatistics()` 신규 | 9개 → **10개** ✅ |
+| 신규 타입 `EditorMouseEvent`·`SavedFile`·`IndexStatistics` | 3개 모두 실재 ✅ |
+| `03 §3.3` 코드 블록 갱신 | ✅ |
+
+### 관찰 #9 — 계약 문서 반쪽 수정 (minor)
+`03_backend_architecture.md:129` 산문이 여전히 **`savedFilePaths`**라고 쓴다 — 코드 블록(:117)은 `savedFiles`로 고쳐졌는데 그 아래 설명 줄만 낡았다. 계약 시맨틱 단일 소스의 반쪽 수정이다.
+
+### 관찰 #10 — `SavedFile.lineCount`·`byteSize`가 `> 0`만 단언 (minor, 백엔드가 자체 발견·배정 완료)
+`NeovimEditorSessionTests.swift:171-172`가 `> 0`만 본다 — **nvim이 엉뚱한 값을 줘도 통과한다.** 내가 R1에서 지적한 "무언가 일어났다" 패턴과 같은 종류다. backend-senior가 스스로 발견해 BE-31·32로 디스크 등호 대조를 배정했다(자체 발견이므로 반려하지 않는다).
+
+## E.3 ⚠️ R1 리포트 오류 정정 — `EditorSession` 메서드 수
+R1 §2.3에서 **"16/16 구현됨"**이라고 썼으나 **당시 계약은 15개였다**(`git show HEAD~3:...EditorSession.swift` → `func` 15건). 메서드 이름을 15개 나열해놓고 합계를 16으로 적은 **산술 실수**다.
+- **검증 자체는 유효하다** — 나열한 15개 전부 실재했고 TODO·빈 구현도 없었다. 결론은 바뀌지 않는다.
+- 다만 계약 표면의 **수**를 인증 근거로 제시한 이상, 그 수가 틀렸으면 정정해야 한다. 현재는 `sendMouse` 추가로 실제 16개 — 우연히 일치하게 됐을 뿐이다.
+- 재발 방지: 이후 계약 대조는 `grep -cE "^\s+func "`로 **세어서** 적는다(눈으로 세지 않는다).
+
+---
+
+# 부록 F — 17:53 게이트 실패 3건 (컴파일 복구 후)
+
+## F.1 상태 변화
+- 17:48 컴파일 파손 → **복구 확인** ✅ (`FileTreePresentation`·`FileTreeRow`가 `Sources/CodeNavigatorAppKit/Logic/`에 랜딩)
+- `_workspace/frontend-staging/` **삭제 확인** ✅
+- 그러나 **실제 단언 실패 3건**: `523 tests in 59 suites failed with 3 issues`
+
+**결정적 실패다(flaky 아님)** — `--filter NeovimMouseInputTests` 2회 재실행에 같은 2건 재현. 필터 실행 건수 **5 tests in 1 suite** 확인(0건 매칭 초록불 함정 배제).
+
+## F.2 실패 목록
+| # | 위치 | 증상 | 담당 |
+|---|---|---|---|
+| 1 | `ProjectEngineStatisticsTests.swift:28` | `(skippedCount → 0) == 1` — 기대 1, 실제 0 | backend-senior |
+| 2 | `NeovimMouseInputTests.swift:65` | 드래그가 비주얼 모드로 진입 못 함 (REQ-010 AC-2) | backend-senior |
+| 3 | `NeovimMouseInputTests.swift:109` | ⇧클릭이 선택을 넓히지 못함 (REQ-010 AC-2) | backend-senior |
+
+같은 스위트의 **나머지 3건은 통과** — `"좌표는 버퍼 라인이 아니라 그리드 셀이다"`(스크롤 상태)와 `"기동 전 마우스 입력은 조용히 무시된다"`가 통과하므로 **좌표 변환·기동 가드는 정상**이고 **선택(비주얼 진입) 경로만** 깨졌다.
+
+## F.3 경계면 양쪽 읽기 — 상태 전달 배선은 **정상(배제)**
+처음엔 "`reportStatus()` 루아가 `mode`를 안 보낸다"가 원인인 줄 알았으나, **설계상 mode는 redraw 스트림에서 온다**:
+- `NeovimEditorSession:441-444` — `snapshot.mode != lastKnownMode`면 갱신 후 `publishStatusWithCurrentMode()`.
+- 그 주석이 이미 이 경우를 대비한다: *"A mode change with no accompanying buffer event would otherwise never reach the interface, which is how a visual selection can leave the indicator saying normal."*
+- `ModeChanged` autocmd도 등록됨(`:363`).
+
+→ **`snapshot.mode`가 `.visual`이 된 적이 없다.** 원인은 상태 보고가 아니라 마우스 입력이 Neovim에서 선택을 만들지 못하는 쪽. 중복 조사를 막으려 이 배제 결과를 backend-senior에게 함께 보냈다.
+
+## F.4 환경 실측
+- 이 머신 `mouse` 옵션 = **`nvi`**(`--clean`·사용자 설정 양쪽) — 마우스 활성. 옵션 미설정은 원인 아님.
+- 독립 재현: `nvim --clean --headless`에 `nvim_input_mouse` press+drag 직접 주입 → 모드가 **`n`에 머묾**.
+  ⚠ **UI 미부착 상태라 결정적 근거는 아니다** — 저널의 "`nvim_input`은 attach 전 조용히 무시된다"가 마우스에도 적용될 수 있다. 참고 자료로만 기록한다.
+
+## F.5 최종 라운드 발주 조건 — 조정 제안 (리더에게 전달함)
+실패가 남은 상태로 라이브 E2E에 들어가면 **앱의 이상 동작이 내가 찾는 통합 결함인지 이미 알려진 단위 실패의 발현인지 구분되지 않는다.** 특히 실패 2건이 **REQ-010 AC-2**인데 리더가 최종 라운드에서 닫으라고 지정한 항목이 바로 REQ-010이다 — 같은 기능이 단위에서 빨간불인 채 라이브 검증에 들어가면 이중으로 헛돈다.
+→ 발주 전제를 **`gate.sh` 그린 + `.app` 조립 완료** 둘 다로 하자고 제안했다.
+
+**현 판정: blocker 1(게이트 빨간불, 실패 3건) · major 0 · minor 4**(관찰 #6·#8·#9·#10 — #10은 백엔드 자체 배정 완료).

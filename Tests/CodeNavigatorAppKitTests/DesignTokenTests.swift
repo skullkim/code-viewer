@@ -7,6 +7,18 @@ import Testing
 @Suite("DesignTokens — 토큰 값과 접근성 (REQ-011 AC-4, 02 §4)")
 struct DesignTokenTests {
 
+    @Test("검사 대상 컬렉션이 비어 있지 않다 — 방어선이 조용히 사라지지 않게")
+    func theCollectionsUnderTestAreNotEmpty() {
+        // Every contrast check below is a `for` loop over a production collection. Empty
+        // one and the loops run zero times, the suite goes green, and the accessibility
+        // floor disappears without a word. A defence line that has already caught a real
+        // defect (3.81:1 on the toolbar) is worth defending in turn.
+        #expect(DesignTokens.textTokens.count >= 8)
+        #expect(DesignTokens.textBearingSurfaces.count >= 6)
+        #expect(DesignTokens.allColorTokens.count >= 19)
+        #expect(AppearanceScheme.allCases.count == 2)
+    }
+
     @Test("모든 텍스트 토큰이 실제로 놓이는 모든 배경에서 4.5:1 이상이다", arguments: AppearanceScheme.allCases)
     func everyTextTokenClearsTheContrastFloorOnEverySurface(scheme: AppearanceScheme) {
         // Checking only against the content background is how the published text-3 came to

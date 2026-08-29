@@ -52,29 +52,31 @@
 | REQ-006 AC-1 · AC-2 · AC-4 | backend | `ReferenceSearcherTests` (11) — 단어 경계(부분 단어 불일치)·정의 플래그·정렬·상한 1000 경계 | backend-junior | PASS |
 | REQ-008 AC-1~AC-4 | backend | `TextSearcherTests` (15) — 리터럴/정규식·잘못된 정규식 에러·제외 미노출·이진 파일 스킵·상한 500 경계 | backend-junior | PASS |
 
-| REQ-011 AC-3 (창 크기 적응) | frontend | `ShellLayoutTests` (13) — 02 §4.4 창 폭 표 전수 · **좁은 창에서 상태바 26pt 생존**(PD 프로토타입 결함 재발 방지) · 에디터 최소 420 우선 | frontend-senior | PASS* |
-| REQ-011 AC-4 (다크/라이트) | frontend | `DesignTokenTests` (6) — 19토큰 2테마 · **텍스트 8토큰 × 실제 사용 배경 6종 대비 4.5:1 검사** · `ColorContrastTests` (5) WCAG 공식 | frontend-senior | PASS* |
-| REQ-011 AC-2 (단축키 비충돌) | frontend | `KeyNotationTests` (12) — ⌘ 조합만 앱이 claim · ⌃O·⌃R·⌃V·⌃W·`:`·Esc·화살표 전부 Neovim 도달. spike가 `.app`에서 실제 이벤트 디스패치로 실증 | frontend-senior | PASS* |
-| REQ-010 AC-3 (모드 상시 표시) | frontend | `StatusBarPresentationTests` (15) — Vim 4모드 칩·표준 칩·끊김 시 편집 불가 · **모든 창 폭에서 모드 세그먼트·인덱스 칩 생존** | frontend-senior | PASS* |
-| REQ-010 AC-5 (모드별 편집 메뉴) | frontend | `MenuAvailabilityTests` (12) — Vim에서 ⌘Z·⌘C·⌘V·⌘A 비활성, ⌘S만 공통 활성 · 세션 끊겨도 검색은 동작 · 24명령 전수 | frontend-senior | PASS* |
-| REQ-009 (인덱스 상태 UI) | frontend | `StatusBarPresentationTests` — 인덱스 5상태 칩 §6과 1:1 · 비-최신 상태 툴팁("직전 인덱스로 응답 중") | frontend-senior | PASS* |
-| REQ-004 AC-2 (그리드 렌더) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 · `GridFrameBuilderTests` (18) **startColumn 기반 배치·더블폭 2셀 전진·반전 표시·커서 폭** · `DisplayWidthTests` (8) 한글/한자/전각/이모지 2셀·결합문자 0셀 | frontend-senior | PASS* |
-| REQ-004 AC-5 · AC-1 · REQ-NF-005 | frontend | `EditSessionOverlayTests` (11) — 연결 중·**기동 실패(미설치 vs 버전 미달 문구 분리)**·끊김 3카드 · 재기동 시 디스크 재로드 고지 · 에디터만 흐림 · `StatusBarPresentationTests` 세션 5상태 칩 | frontend-senior | PASS* |
-| REQ-010 AC-4 · AC-6 (모드 보존·복원) | frontend | `AppModelTests` (15) — 전환이 `:w`를 보내지 않고 저장 피드백도 없음(AC-4) · 재시작 후 모드 복원(AC-6) | frontend-senior | PASS* |
-| REQ-004 AC-4 (저장 피드백) | frontend | `AppModelTests` 저장 이벤트 → `✓ 저장됨 · {파일명} ({줄 수}, {크기})` · `ByteSizeText` 바이트/KB 분기 | frontend-senior | PASS* |
-| REQ-005 (정의 이동 분기) | frontend | `DefinitionRoutingTests` (5) — 1건 즉시 이동 / N건 후보 / **0건 상태바 에러(무반응 금지, AC-3)** / 커서에 심볼 없음 | frontend-senior | PASS* |
-| REQ-006 AC-3 · AC-4 (참조 패널) | frontend | `ReferencePresentationTests` (9) — **근사 안내 배너 전 상태 상시**(0건 포함) · 정의 배지 · 파일별 그룹 · 인덱싱 중 고지 | frontend-senior | PASS* |
-| REQ-007 AC-3 · AC-4 (심볼 모달) | frontend | `SymbolSearchPresentationTests` (15) — ↑↓ 순환·**결과 축소 시 선택 클램프**·상위 50·0건 문구·인덱싱 중 부분 결과 고지 | frontend-senior | PASS* |
-| REQ-008 AC-2 · AC-4 · SC-6 | frontend | `TextSearchPresentationTests` (12) — **정규식 에러 시 이전 결과를 흐림으로 유지**(빈 결과 위장 금지) · 상한 경고 · 메타 문구 | frontend-senior | PASS* |
-| REQ-007·008 (강조 구간) | frontend | `MatchHighlighterTests` (13) — **UTF-16 오프셋**을 한글·이모지·서로게이트 쌍에서 정확히 분할 · 범위 밖·역전 구간 방어 | frontend-senior | PASS* |
-| REQ-003 AC-3 (현재 파일 강조) | frontend | `PathDisplayTests` (12) — 절대↔프로젝트 상대 정합 · **`/private` 접두사 차이 흡수**(조용한 매칭 실패 방지) · 앞쪽 축약 | frontend-senior | PASS* |
-| REQ-001 AC-2 · REQ-011 AC-3 (최근 프로젝트) | frontend | `RecentProjectStoreTests` (9) — 최신순·중복 없음·최대 5·경로 정규화·재시작 복원·**손상 데이터 생존** | frontend-senior | PASS* |
-| REQ-006 · 008 (파일별 그룹) | frontend | `FileGroupingTests` (4) — 첫 등장 순서 보존(엔진 정렬과 불일치 방지) | frontend-senior | PASS* |
+| REQ-011 AC-3 (창 크기 적응) | frontend | `ShellLayoutTests` (13) — 02 §4.4 창 폭 표 전수 · **좁은 창에서 상태바 26pt 생존**(PD 프로토타입 결함 재발 방지) · 에디터 최소 420 우선 | frontend-senior | PASS |
+| REQ-011 AC-4 (다크/라이트) | frontend | `DesignTokenTests` (6) — 19토큰 2테마 · **텍스트 8토큰 × 실제 사용 배경 6종 대비 4.5:1 검사** · `ColorContrastTests` (5) WCAG 공식 | frontend-senior | PASS |
+| REQ-011 AC-2 (단축키 비충돌) | frontend | `KeyNotationTests` (12) — ⌘ 조합만 앱이 claim · ⌃O·⌃R·⌃V·⌃W·`:`·Esc·화살표 전부 Neovim 도달. spike가 `.app`에서 실제 이벤트 디스패치로 실증 | frontend-senior | PASS |
+| REQ-010 AC-3 (모드 상시 표시) | frontend | `StatusBarPresentationTests` (15) — Vim 4모드 칩·표준 칩·끊김 시 편집 불가 · **모든 창 폭에서 모드 세그먼트·인덱스 칩 생존** | frontend-senior | PASS |
+| REQ-010 AC-5 (모드별 편집 메뉴) | frontend | `MenuAvailabilityTests` (12) — Vim에서 ⌘Z·⌘C·⌘V·⌘A 비활성, ⌘S만 공통 활성 · 세션 끊겨도 검색은 동작 · 24명령 전수 | frontend-senior | PASS |
+| REQ-009 (인덱스 상태 UI) | frontend | `StatusBarPresentationTests` — 인덱스 5상태 칩 §6과 1:1 · 비-최신 상태 툴팁("직전 인덱스로 응답 중") | frontend-senior | PASS |
+| REQ-004 AC-2 (그리드 렌더) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 · `GridFrameBuilderTests` (18) **startColumn 기반 배치·더블폭 2셀 전진·반전 표시·커서 폭** · `DisplayWidthTests` (8) 한글/한자/전각/이모지 2셀·결합문자 0셀 | frontend-senior | PASS |
+| REQ-004 AC-5 · AC-1 · REQ-NF-005 | frontend | `EditSessionOverlayTests` (11) — 연결 중·**기동 실패(미설치 vs 버전 미달 문구 분리)**·끊김 3카드 · 재기동 시 디스크 재로드 고지 · 에디터만 흐림 · `StatusBarPresentationTests` 세션 5상태 칩 | frontend-senior | PASS |
+| REQ-010 AC-4 · AC-6 (모드 보존·복원) | frontend | `AppModelTests` (15) — 전환이 `:w`를 보내지 않고 저장 피드백도 없음(AC-4) · 재시작 후 모드 복원(AC-6) | frontend-senior | PASS |
+| REQ-004 AC-4 (저장 피드백) | frontend | `AppModelTests` 저장 이벤트 → `✓ 저장됨 · {파일명} ({줄 수}, {크기})` · `ByteSizeText` 바이트/KB 분기 | frontend-senior | PASS |
+| REQ-005 (정의 이동 분기) | frontend | `DefinitionRoutingTests` (5) — 1건 즉시 이동 / N건 후보 / **0건 상태바 에러(무반응 금지, AC-3)** / 커서에 심볼 없음 | frontend-senior | PASS |
+| REQ-006 AC-3 · AC-4 (참조 패널) | frontend | `ReferencePresentationTests` (9) — **근사 안내 배너 전 상태 상시**(0건 포함) · 정의 배지 · 파일별 그룹 · 인덱싱 중 고지 | frontend-senior | PASS |
+| REQ-007 AC-3 · AC-4 (심볼 모달) | frontend | `SymbolSearchPresentationTests` (15) — ↑↓ 순환·**결과 축소 시 선택 클램프**·상위 50·0건 문구·인덱싱 중 부분 결과 고지 | frontend-senior | PASS |
+| REQ-008 AC-2 · AC-4 · SC-6 | frontend | `TextSearchPresentationTests` (12) — **정규식 에러 시 이전 결과를 흐림으로 유지**(빈 결과 위장 금지) · 상한 경고 · 메타 문구 | frontend-senior | PASS |
+| REQ-007·008 (강조 구간) | frontend | `MatchHighlighterTests` (13) — **UTF-16 오프셋**을 한글·이모지·서로게이트 쌍에서 정확히 분할 · 범위 밖·역전 구간 방어 | frontend-senior | PASS |
+| REQ-003 AC-3 (현재 파일 강조) | frontend | `PathDisplayTests` (12) — 절대↔프로젝트 상대 정합 · **`/private` 접두사 차이 흡수**(조용한 매칭 실패 방지) · 앞쪽 축약 | frontend-senior | PASS |
+| REQ-001 AC-2 · REQ-011 AC-3 (최근 프로젝트) | frontend | `RecentProjectStoreTests` (9) — 최신순·중복 없음·최대 5·경로 정규화·재시작 복원·**손상 데이터 생존** | frontend-senior | PASS |
+| REQ-006 · 008 (파일별 그룹) | frontend | `FileGroupingTests` (4) — 첫 등장 순서 보존(엔진 정렬과 불일치 방지) | frontend-senior | PASS |
+| REQ-003 AC-1 · AC-3 (파일 트리) | frontend | `FileTreePresentationTests` (26) — 지연 로드·스켈레톤·펼침/접힘·↑↓←→/Enter 전수 · 현재 파일 강조(**/private 접두 흡수**) · 더티 표시 | frontend-junior (시니어 리뷰 완료) | PASS |
+| REQ-011 AC-1 (`.app` 실행) | frontend | `scripts/bundle.sh` + `scripts/verify-bundle.sh` — 조립 후 **실제 실행**해 번들 식별자 확인. `--self-test`로 검사기 자체를 양방향 실측. gate.sh 프론트 블록 3스텝 | frontend-senior | PASS |
 
-> **\* 프론트 행의 PASS는 아직 레포의 `swift test` 결과가 아니다.** `Package.swift` 프론트 타깃 분리
-> 미반영으로 `_workspace/frontend-staging/`의 미러 패키지에서 실행한 결과다(계약은 실제 소스를
-> 심볼릭 링크로 사용). **타깃 반영 후 레포에서 재실행하기 전까지 리더 인증 대상이 아니다.**
-> 실측 시각 2026-08-29 17:39 — 20개 스위트 **215 테스트** 전부 통과.
+> **프론트 행은 이제 레포에서 실행된 결과다.** `Package.swift` 프론트 타깃 분리가 반영돼
+> `swift test --filter CodeNavigatorAppKitTests`로 **22개 스위트 254 테스트 전부 통과**를 확인했다
+> (실측 2026-08-29 17:52). 스테이징 미러는 제거됐다.
+> 필터가 매칭 0건이면 초록불이 뜨는 함정을 알고 있으므로 **실행된 테스트 수를 함께 확인**했다.
 >
 > 프론트 각 규칙은 **일부러 깨뜨려 Red를 확인**했다(방어선 실측): REQ-010 AC-5 편집 명령 활성화 ·
 > §2 F-9 세션 끊김 시 검색 비활성화 · §3 W-7 끊김 안내가 메시지에 밀림 · §4.3 상태바 높이 0 ·

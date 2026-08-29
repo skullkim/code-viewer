@@ -32,11 +32,13 @@ extension TextSearchPresentation {
     static let emptyMessage = "결과 없음"
     static let staleNotice = "이전 결과 유지 (새 검색 미실행)"
 
+    /// `filesSearched` is not a parameter: the count belongs to the result, because only
+    /// the search knows where it stopped. Passing it alongside would let a caller state a
+    /// number the search never reported.
     public static func make(
         phase: TextSearchPhase,
         previousResult: TextSearchResult?,
-        elapsedSeconds: Double?,
-        filesSearched: Int?
+        elapsedSeconds: Double?
     ) -> TextSearchPresentation {
         switch phase {
         case .idle:
@@ -50,7 +52,7 @@ extension TextSearchPresentation {
         case .results(let result):
             return presentation(
                 items: result.items,
-                metaText: meta(count: result.items.count, items: result.items, elapsedSeconds: elapsedSeconds, filesSearched: filesSearched),
+                metaText: meta(result: result, elapsedSeconds: elapsedSeconds),
                 emptyText: result.items.isEmpty ? emptyMessage : nil,
                 limitWarningText: result.truncated ? limitWarning(limit: result.limit) : nil
             )
@@ -108,20 +110,9 @@ extension TextSearchPresentation {
         "상위 \(limit)건만 표시합니다 — 검색어를 더 구체적으로 좁혀 주세요"
     }
 
-    private static func meta(
-        count: Int,
-        items: [TextSearchItem],
-        elapsedSeconds: Double?,
-        filesSearched: Int?
-    ) -> String {
+    private static func meta(result: TextSearchResult, elapsedSeconds: Double?) -> String {
         let duration = String(format: "%.2f초", elapsedSeconds ?? 0)
-        guard let filesSearched else {
-            // The engine does not report how many files it looked at, so the panel reports
-            // what it can actually see rather than inventing a number.
-            let matchedFiles = Set(items.map(\.path)).count
-            return "\(count)건 표시 · \(matchedFiles)개 파일에서 일치 · \(duration)"
-        }
-        return "\(count)건 표시 · \(grouped(filesSearched)) 파일 검색 · \(duration)"
+        return "\(result.items.count)건 표시 · \(grouped(result.filesSearched)) 파일 검색 · \(duration)"
     }
 
     private static func grouped(_ value: Int) -> String {

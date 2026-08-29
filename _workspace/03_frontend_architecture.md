@@ -144,12 +144,16 @@ HTTP가 없다. 계약은 **Swift 프로토콜 + 값 타입**이고, 어긋나�
 ### 3.2 계약 제안 현황 (backend-senior 판단 대기 — 단일 소스는 백엔드 문서)
 | # | 제안 | 근거 | 상태 |
 |---|------|------|------|
-| 1 | `EditorTextRun`에 `startColumn`·`cellWidth` | nvim `grid_line` 실측 — `인덱스 abc`는 문자 7·**셀 10** | **블로커** |
-| 2 | `EditorSessionState`에 기동 실패를 끊김과 분리(+ 탐색 경로·필요 버전 0.9.0) | W-8 카드 3종 / REQ-NF-005 | 대기 |
-| 3 | 인덱스 통계 조회(`fileCount`·`symbolCount`·`skippedCount`·`lastUpdatedAt`) | **스킵 건수는 REQ-002 AC-4의 유일한 UI 표면** | 대기 |
-| 4 | 저장 이벤트에 `lineCount`·`byteSize` | 02 F-7 상태바 문구 | 대기(없으면 문구 축약) |
-| 5 | 마우스 입력 경로 | REQ-010 AC-2 "클릭으로 커서 이동" | 대기 |
-| 6 | 정규식 에러 `position` | 02 §6. 엔진이 못 뽑으면 **UI에서 제거** 제안 | 대기 |
+| 1 | `EditorTextRun`에 `startColumn`·`cellWidth` | nvim `grid_line` 실측 — `인덱스 abc`는 문자 7·**셀 10** | **반영됨 17:30** |
+| 2 | `EditorSessionState`에 기동 실패를 끊김과 분리(+ 탐색 경로·필요 버전 0.9.0) | W-8 카드 3종 / REQ-NF-005 | **반영됨 17:35** (`EditorStartupFailure`) |
+| 3 | 인덱스 통계 조회 | **스킵 건수는 REQ-002 AC-4의 유일한 UI 표면** | **반영됨 17:35** (`IndexStatistics`) |
+| 4 | 저장 이벤트에 `lineCount`·`byteSize` | 02 F-7 상태바 문구 | **반영됨 17:35** (`SavedFile`) |
+| 5 | 마우스 입력 경로 | REQ-010 AC-2 "클릭으로 커서 이동" | **반영됨 17:35** (`EditorMouseEvent`) |
+| 6 | 정규식 에러 `position` | 02 §6. 엔진이 못 뽑는 값 | **철회** — UI 문구에서 위치를 뺐다 |
+| 7 | 전문 검색 `filesSearched` | 02 §3 W-6 메타 문구 | **철회** — 일치한 파일 수로 표시(숫자를 지어내지 않는다) |
+
+**계약 제안 7건 중 5건 반영, 2건은 내가 철회했다.** 엔진이 만들 수 없는 값을 UI가 요구하면
+그 값은 결국 지어낸 숫자가 된다 — 문구를 바꾸는 쪽이 정직하다.
 | 7 | 전문 검색 결과에 `filesSearched` | 02 §3 W-6 메타 문구가 "N건 표시 · **M 파일 검색** · T초"인데 계약에 검색한 파일 수가 없다. 없으면 **일치한 파일 수**로 문구를 바꿔 표시한다(숫자를 지어내지 않는다) | 대기 |
 
 ---

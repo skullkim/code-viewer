@@ -29,6 +29,12 @@ public actor NeovimEditorSession: EditorSession {
     /// dropping them would silently lose the user's first keystrokes.
     private var queuedKeys: [String] = []
 
+    /// The last status published, so a mode change can be re-published without another round trip
+    /// to Neovim. Mode arrives on the redraw stream while the rest of the status arrives from
+    /// autocommands; without this the two never meet and the mode indicator lags or sticks.
+    private var lastPublishedStatus: EditorStatus?
+    private var lastKnownMode: EditorMode = .normal
+
     private var stateBroadcaster = EventBroadcaster<EditorSessionState>(initialValue: .notStarted)
     private var gridBroadcaster = EventBroadcaster<EditorGridSnapshot>()
     private var statusBroadcaster = EventBroadcaster<EditorStatus>()
@@ -131,6 +137,8 @@ public actor NeovimEditorSession: EditorSession {
         channel = nil
         isUserInterfaceAttached = false
         gridState = NeovimGridState()
+        lastPublishedStatus = nil
+        lastKnownMode = .normal
         updateState(.notStarted)
     }
 
@@ -398,7 +406,9 @@ public actor NeovimEditorSession: EditorSession {
             }
         case Self.statusNotification:
             if let fields = notification.parameters.first?.mapValue {
-                statusBroadcaster.send(makeStatus(fromFields: fields))
+                let status = makeStatus(fromFields: fields)
+                lastPublishedStatus = status
+                statusBroadcaster.send(status)
             }
         default:
             break
@@ -422,8 +432,33 @@ public actor NeovimEditorSession: EditorSession {
             }
         }
         if didFlush {
-            gridBroadcaster.send(gridState.makeSnapshot())
+            let snapshot = gridState.makeSnapshot()
+            gridBroadcaster.send(snapshot)
+
+            // Mode lives on the redraw stream, everything else on the autocommand stream. A mode
+            // change with no accompanying buffer event would otherwise never reach the interface,
+            // which is how a visual selection can leave the indicator saying "normal".
+            if snapshot.mode != lastKnownMode {
+                lastKnownMode = snapshot.mode
+                publishStatusWithCurrentMode()
+            }
         }
+    }
+
+    /// Re-publishes the last status with the current mode, for mode changes that carry no other
+    /// state. Cheap on purpose: mode changes on every keystroke in insert mode.
+    private func publishStatusWithCurrentMode() {
+        guard let previous = lastPublishedStatus else { return }
+        let updated = EditorStatus(
+            filePath: previous.filePath,
+            isDirty: previous.isDirty,
+            cursorLine: previous.cursorLine,
+            cursorColumn: previous.cursorColumn,
+            mode: lastKnownMode,
+            inputMode: currentInputMode
+        )
+        lastPublishedStatus = updated
+        statusBroadcaster.send(updated)
     }
 
     /// Reads the save notification, whose payload Neovim fills in at write time.
@@ -472,7 +507,7 @@ public actor NeovimEditorSession: EditorSession {
             isDirty: isDirty,
             cursorLine: line,
             cursorColumn: column,
-            mode: gridBroadcaster.latest?.mode ?? .normal,
+            mode: lastKnownMode,
             inputMode: currentInputMode
         )
     }
@@ -496,7 +531,9 @@ public actor NeovimEditorSession: EditorSession {
         else {
             return
         }
-        statusBroadcaster.send(makeStatus(fromFields: fields))
+        let status = makeStatus(fromFields: fields)
+        lastPublishedStatus = status
+        statusBroadcaster.send(status)
     }
 
     private func handleProcessExit(status: Int32) {
@@ -509,6 +546,15 @@ public actor NeovimEditorSession: EditorSession {
     func currentLineForTesting() async throws -> String? {
         guard let channel else { return nil }
         return try await channel.request("nvim_get_current_line", []).stringValue
+    }
+
+    /// Neovim's own view of the current mode, read without touching the buffer. A test that needs
+    /// the mode must not reach it by running a command, because that changes the very state it is
+    /// asking about. Not part of the contract.
+    func currentModeNameForTesting() async throws -> String? {
+        guard let channel else { return nil }
+        let reply = try await channel.request("nvim_get_mode", [])
+        return reply.mapValue?.first { $0.key.stringValue == "mode" }?.value.stringValue
     }
 
     /// The embedded process id, so a test can simulate a crash. Not part of the contract.
