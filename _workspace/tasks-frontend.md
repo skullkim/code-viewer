@@ -2,7 +2,7 @@
 
 상세 스펙·완료 기준은 `03_frontend_architecture.md §4`. 아래는 상태 추적용.
 
-> **현황 (2026-08-29 17:33 실측)**: 순수 로직 18개 스위트 **187 테스트 전부 통과**.
+> **현황 (2026-08-29 17:39 실측)**: 20개 스위트 **215 테스트 전부 통과**.
 > **단, 이 테스트는 아직 레포의 `swift test`로 돌지 않는다.** `Package.swift`의 프론트 타깃 분리가
 > 미반영이라(16:33 이후 미변경) 코드가 `_workspace/frontend-staging/`의 미러 패키지에서 돈다.
 > 계약은 실제 소스를 심볼릭 링크로 물려 쓴다(복사본 드리프트 방지). SPM이 `_workspace/`를 보지
@@ -18,12 +18,12 @@
 | F-03 | KeyNotation + 단축키 판별 | REQ-010·011 | **로직 완료** | `KeyNotationTests`(12) |
 | F-04 | 그리드 렌더러 | REQ-004 | **로직 완료** (계약 #1 반영됨) | `GridGeometryTests`(9) · `GlyphBatcherTests`(9) · `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
 | F-05 | EditorGridView + 키 배선 | REQ-004·010 | 대기(타깃) — 로직은 전부 준비됨 | — |
-| F-06 | AppModel + 스트림 소비 | REQ-004·009·010 | 대기(타깃) | — |
+| F-06 | AppModel + 스트림 소비 | REQ-004·009·010 | **로직 완료** — 계약 가짜 구현으로 스트림 배선 검증 | `AppModelTests`(15) |
 | F-07 | 메인 창 셸 | REQ-011 | 대기(타깃) | — |
 | F-08 | 상태바 W-7 | REQ-004·009·010·011 | **로직 완료**, 뷰 대기 | `StatusBarPresentationTests`(15) |
 | F-09 | 메뉴 막대 W-9 | REQ-010·011 | **로직 완료**, 뷰 대기 | `MenuAvailabilityTests`(12) |
-| F-10 | 입력 모드 토글 | REQ-010 | 로직은 F-03·F-09에 포함, 뷰·복원 대기 | — |
-| F-11 | 편집 세션 오버레이 W-8 | REQ-004 | 대기(계약 #2 — 기동 실패/끊김 구분) | — |
+| F-10 | 입력 모드 토글 | REQ-010 | **로직 완료** — 전환·영속·복원(AC-6)·무저장(AC-4) | `AppModelTests` 모드 4건 |
+| F-11 | 편집 세션 오버레이 W-8 | REQ-004 | **로직 완료** (계약 #3 반영됨) | `EditSessionOverlayTests`(11) |
 | F-17 | 정의 후보 팝오버 W-4 | REQ-005 | **로직 완료**, 뷰 대기 | `DefinitionRoutingTests`(5) |
 | F-19 | .app 조립 + 실행 검증 | REQ-011 AC-1 | **스크립트 완료·검증됨** (`scripts/bundle.sh` · `scripts/verify-bundle.sh` + `--self-test`). 대상 앱 생기면 이름만 기본값으로 동작 | spike 번들로 4방향 실측 |
 
@@ -39,6 +39,8 @@
 | `ReferencePresentation` | W-5 | `ReferencePresentationTests`(9) |
 | `TextSearchPresentation` | W-6 | `TextSearchPresentationTests`(12) |
 | `GridFrameBuilder` · `DisplayWidth` | 에디터 그리드 | `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
+| `EditSessionOverlay` | W-8 카드 3종 | `EditSessionOverlayTests`(11) |
+| `AppModel` · `ByteSizeText` | 전 화면의 상태 원천 | `AppModelTests`(15) |
 
 ## 주니어 위임 후보
 

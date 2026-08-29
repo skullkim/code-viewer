@@ -21,7 +21,7 @@
 | BE-14 | `NeovimProcess` + RPC 클라이언트 | 004 AC-1·AC-5 | senior | 완료 | `Editing/NeovimProcess.swift` 외 | 기동·요청·알림·사망 감지 |
 | BE-15 | `NeovimGridState` (redraw→스냅샷) | 004 AC-2 | senior | 완료 | `Editing/NeovimGridState.swift` | grid_line·scroll·hl 반영 |
 | BE-16 | `NeovimEditorSession` (조립) | 004·005·010 | senior | 완료 | `Editing/NeovimEditorSession.swift` | 계약 §3.3 전 메서드 |
-| BE-17 | `StandardInputTranslator` (맥 키→Vim 키) | 010 AC-2·AC-5 | **junior** | 삭제 예정(설계 변경 — 주니어 배정) | `Editing/StandardInputTranslator.swift` | 화살표·⌘조합·선택·복사 매핑 |
+| BE-17 | `StandardInputTranslator` — 설계 변경으로 삭제, 근거는 `NeovimStandardMode` 주석으로 이관 | 010 AC-2·AC-5 | **junior** | 완료(삭제·이관, 리뷰 승인) | `Editing/StandardInputTranslator.swift` | 화살표·⌘조합·선택·복사 매핑 |
 | BE-18 | `CodeNavigatorEngine` (ProjectSession 조립) | 전체 | senior | 완료 | `CodeNavigatorEngine.swift` | 계약 §3.2 전 메서드 |
 | BE-19 | `gate.sh` (빌드·테스트·민감정보) | — | senior | 완료 | `_workspace/gate.sh` | 리크 픽스처 양방향 실측 |
 
@@ -133,7 +133,7 @@ REQ-010 AC-2의 표준 모드. 맥 키 입력을 **Neovim 키 표기 문자열**
 ## 주니어 진행 중
 | ID | 작업 | 소유자 | 상태 |
 |---|---|---|---|
-| BE-20 | `loadGitignore` 중복 제거 | junior | 배정 |
-| BE-21 | 게이트 "0매치 초록불" 방어 | junior | 배정 |
-| BE-22 | REQ-002 AC-3 테스트 갭 | junior | 배정 |
-| BE-17 | `StandardInputTranslator` 삭제 + 근거 이관 | junior | 배정 |
+| BE-20 | `loadGitignore` 중복 제거 | junior | 완료(리뷰 승인) |
+| BE-21 | 게이트 "0매치 초록불" 방어 | junior | 완료(양방향 실측, 리뷰 승인) |
+| BE-22 | REQ-002 AC-3 테스트 갭 (엔진 수준으로 상향) | junior | 완료(변이 실측, 리뷰 승인) |
+| BE-30 | `filesSearched` (전문 검색 범위 보고) | senior | 완료 |

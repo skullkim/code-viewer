@@ -34,15 +34,25 @@ let package = Package(
 
         // SwiftUI application shell. Owned by frontend; depends on the contract,
         // and on Core only at the composition root.
+        // App logic lives in a library target so it can carry tests; the executable
+        // is only an entry point.
+        .target(
+            name: "CodeNavigatorAppKit",
+            dependencies: ["CodeNavigatorContract", "CodeNavigatorCore"]
+        ),
         .executableTarget(
             name: "CodeNavigatorApp",
-            dependencies: ["CodeNavigatorContract", "CodeNavigatorCore"]
+            dependencies: ["CodeNavigatorAppKit"]
         ),
 
         .testTarget(
             name: "CodeNavigatorCoreTests",
             dependencies: ["CodeNavigatorCore", "CodeNavigatorContract"],
             resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "CodeNavigatorAppKitTests",
+            dependencies: ["CodeNavigatorAppKit", "CodeNavigatorContract"]
         ),
     ]
 )

@@ -25,7 +25,9 @@ struct TextSearcher {
         rootPath: URL
     ) throws -> TextSearchResult {
         guard !query.isEmpty else {
-            return TextSearchResult(items: [], total: 0, truncated: false, limit: Self.resultLimit)
+            return TextSearchResult(
+                items: [], total: 0, truncated: false, limit: Self.resultLimit, filesSearched: 0
+            )
         }
 
         let strategy = try makeStrategy(query: query, mode: mode)
@@ -33,8 +35,10 @@ struct TextSearcher {
         var items: [TextSearchItem] = []
         var observedCount = 0
         var truncated = false
+        var filesSearched = 0
 
         for filePath in filePaths {
+            filesSearched += 1
             FileLineScanner.scanLines(ofFileAt: rootPath.appendingPathComponent(filePath)) { lineNumber, line in
                 guard let preview = makePreview(ofLine: line, using: strategy) else {
                     return .continueScanning
@@ -69,7 +73,8 @@ struct TextSearcher {
             items: items.sorted(by: byPathThenLine),
             total: observedCount,
             truncated: truncated,
-            limit: Self.resultLimit
+            limit: Self.resultLimit,
+            filesSearched: filesSearched
         )
     }
 
