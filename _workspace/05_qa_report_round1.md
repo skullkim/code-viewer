@@ -328,3 +328,41 @@ $ swift test          # 17:40:42
 | 관찰 #6 (대비 검사 빈 목록 무방비) | **미해소** — `DesignTokenTests`에 비어있지 않음 단언 아직 없음 |
 
 **현 시점 판정: blocker 0 · major 1(버그 #2, 이관 대기) · minor 1(관찰 #6).** 백엔드 코어는 지적 전건 해소.
+
+---
+
+# 부록 D — 프론트 이관 후 재검증 (17:44)
+
+## D.1 실측 — **484 tests / 54 suites 전부 통과**
+```
+$ swift test          # 17:44:51
+✔ Test run with 484 tests in 54 suites passed after 4.232 seconds.
+```
+⚠ 실행 시점에 **동시 릴리스 빌드가 돌고 있었다**(pid 42480, `swift-build -c release --product CodeNavigator`). 확인했고 테스트는 정상 통과했으므로 결과는 유효하다 — 다만 이후 누군가 여기서 실패를 보면 빌드 락 충돌부터 의심할 것.
+
+## D.2 버그 #2 (major) — **해소** ✅
+`Package.swift`에 `CodeNavigatorAppKit` 타깃 + `CodeNavigatorAppKitTests` 테스트 타깃이 모두 들어왔다. 프론트 테스트 21파일 / **215 `@Test`**(내가 스테이징에서 검증한 161에서 증가). `Sources/CodeNavigatorAppKit/`에 `Design·Grid·Logic·Model·View` 구성.
+토큰 정합 확인: `textTertiary` = `#6A6A73`/`#9898A1` — **리더가 갱신한 02와 일치**. 이관 과정의 토큰 드리프트 없음.
+
+## D.3 신규 계약 표면 `IndexStatistics` — 검증 완료, 드리프트 없음 ✅
+| 항목 | 결과 |
+|---|---|
+| 타입 존재 | `Sources/CodeNavigatorContract/IndexStatistics.swift` (`fileCount`·`symbolCount`·`skippedCount`·`lastUpdatedAt`) |
+| `ProjectSession` 메서드 | `indexStatistics()` 추가 — **9개 → 10개** |
+| 구현 배선 | `ProjectEngine.indexStatistics()` → `indexer.statistics()` ✅ |
+| **계약 문서 §3.2 갱신** | ✅ **갱신돼 있다** — 문서 드리프트 없음(백엔드가 계약 문서를 같이 유지했다) |
+| 테스트 | `skippedCount` 0건·2건·**복구(2→0)** 케이스까지 단언 — REQ-002 AC-4의 "조용한 스킵"을 가시화하는 목적에 부합 |
+
+### 관찰 #8 — `lastUpdatedAt`은 소비자 없는 계약 표면 + 시계 주입 없음 (minor)
+- **아무도 읽지 않는다**: `Sources/CodeNavigatorAppKit/` 전체에 `lastUpdatedAt` 참조 0건. 현재는 스펙 초과 표면이다.
+- **테스트는 `!= nil` 하나뿐**(`ProjectIndexerTests:220`).
+- `ProjectIndexer`가 `Date()`를 **4곳에서 직접 호출**한다(`:151·172·229·235`) — 시계 주입이 없다. 지금은 무해하지만, UI가 "마지막 갱신 N초 전"을 표시하게 되면 **그 표시는 결정적으로 테스트할 수 없다**(우리 지식 베이스의 Clock 주입 패턴이 정확히 이 경우다).
+- 조치 제안: 지금 당장은 불필요. **UI가 이 값을 쓰기로 결정되는 시점에** 시계를 주입 가능하게 바꿔라. 쓰지 않을 거면 필드를 빼는 것도 방법이다.
+
+## D.4 남은 항목
+| 항목 | 상태 |
+|---|---|
+| **관찰 #6** (대비 검사 빈 목록 무방비) | **미해소** — 이관된 `Tests/CodeNavigatorAppKitTests/DesignTokenTests.swift`에 여전히 비어있지 않음 단언 없음 |
+| `_workspace/frontend-staging/` 잔존 | 정리 대상(minor housekeeping) — 이관 완료됐으므로 두 벌이 남으면 다음 사람이 어느 쪽이 진짜인지 헷갈린다 |
+
+**현 판정: blocker 0 · major 0 · minor 2(관찰 #6, #8).**
