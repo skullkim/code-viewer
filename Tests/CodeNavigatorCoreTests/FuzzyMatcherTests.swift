@@ -68,6 +68,14 @@ struct FuzzyMatcherTests {
         #expect(prefix.score > scattered.score)
     }
 
+    @Test("문서에 적힌 예시 점수가 실제 점수와 일치한다")
+    func documentedExampleScoresAreExact() throws {
+        // FuzzyMatcher 주석의 예시 표가 구현과 어긋나지 않게 고정한다.
+        #expect(try #require(FuzzyMatcher.match(query: "sym", candidate: "sym")).score == 20)
+        #expect(try #require(FuzzyMatcher.match(query: "sym", candidate: "SymbolIndex")).score == 10)
+        #expect(try #require(FuzzyMatcher.match(query: "sym", candidate: "SystemMemory")).score == 5)
+    }
+
     @Test("구분자 뒤 매치가 구분자 없는 같은 길이 이름보다 높은 점수를 받는다")
     func matchAfterSeparatorScoresHigherThanPlainMatch() throws {
         let afterSeparator = try #require(FuzzyMatcher.match(query: "ab", candidate: "xa_bc"))

@@ -1,37 +1,25 @@
-# 작업 목록 — code-navigator-mac
+# 작업 목록 인덱스 — code-navigator-mac
 
-> TaskCreate 도구가 없는 빌드이므로 이 파일이 작업 목록이다.
-> **소유권 규칙**: owner 아닌 사람은 그 파일을 편집하지 않는다. 흡수가 필요하면 리더가 소유권을 재배정한 뒤 진행한다.
+> **⚠ 이 파일은 인덱스다. 작업 표를 여기 쓰지 마라.**
+> 2026-08-29 17:4x, 이 파일 하나에 두 시니어가 각자 표를 쓰다가 **백엔드 표 24건이 덮어쓰기로 소실**됐다(git에서 복구). 같은 사고를 구조적으로 막기 위해 소유자별로 파일을 분리한다.
 
-## 프론트엔드 (owner: frontend-senior)
+| 파일 | 소유자 | 내용 |
+|------|--------|------|
+| `tasks-backend.md` | backend-senior | BE-01~19 (코어 엔진·Neovim 세션·검색) |
+| `tasks-frontend.md` | frontend-senior | F-01~19 (앱 셸·에디터 뷰·패널) |
 
-상세 스펙·완료 기준은 `03_frontend_architecture.md §4`. 아래는 상태 추적용.
+**규칙**
+- 자기 파일만 편집한다. 상대 파일은 읽기만.
+- 주니어 배치는 소유 시니어가 자기 파일에 기록하고, 리더가 소유권을 브로커링한다.
+- 상태(진행/완료/대기)를 실제와 맞춰라 — 상태 문서와 실제가 어긋나면 다음 이어받기가 헤맨다(직전 빌드 교훈: "존재≠완료").
 
-| # | 작업 | REQ | 담당 | 상태 |
-|---|------|-----|------|------|
-| F-01 | 디자인 토큰 | REQ-011 AC-4 | frontend-senior | 진행 |
-| F-02 | ShellLayout 치수 계산 | REQ-011 AC-3 | frontend-senior | 진행 |
-| F-03 | KeyNotation + 단축키 판별 | REQ-010·011 | frontend-senior | 진행 |
-| F-04 | 그리드 렌더러 | REQ-004 | frontend-senior | 대기(계약 #1) |
-| F-05 | EditorGridView + 키 배선 | REQ-004·010 | frontend-senior | 대기(계약 #1) |
-| F-06 | AppModel + 스트림 소비 | REQ-004·009·010 | frontend-senior | 대기(타깃 분리) |
-| F-07 | 메인 창 셸 | REQ-011 | frontend-senior | 대기 |
-| F-08 | 상태바 W-7 | REQ-004·009·010·011 | frontend-senior | 대기 |
-| F-09 | 메뉴 막대 W-9 | REQ-010·011 | frontend-senior | 대기 |
-| F-10 | 입력 모드 토글 | REQ-010 | frontend-senior | 대기 |
-| F-11 | 편집 세션 오버레이 W-8 | REQ-004 | frontend-senior | 대기(계약 #2) |
-| F-17 | 정의 후보 팝오버 W-4 | REQ-005 | frontend-senior | 대기 |
-| F-19 | .app 조립 + 실행 검증 | REQ-011 AC-1 | frontend-senior | 대기 |
 
-### 주니어 위임 후보 (선행 조건: F-01·F-02·F-06 완료)
-기반이 서기 전에 넘기면 주니어가 기반을 추측하게 되고 그게 재작업이 된다.
-스폰은 리더가 판단한다 — 나는 스폰·생존을 가정하지 않는다.
-
-| # | 작업 | REQ | 담당 | 상태 |
-|---|------|-----|------|------|
-| F-12 | 파일 트리 W-1 좌측 | REQ-003 | frontend-junior | 미착수 |
-| F-13 | 프로젝트 열기 W-2 | REQ-001 | frontend-junior | 미착수 |
-| F-14 | 심볼 퍼지 검색 모달 W-3 | REQ-007 | frontend-junior | 미착수 |
-| F-15 | 참조 패널 W-5 | REQ-006 | frontend-junior | 미착수 |
-| F-16 | 전문 검색 패널 W-6 | REQ-008 | frontend-junior | 미착수 |
-| F-18 | 인덱스 상태 칩·팝오버 W-10 | REQ-009·002 AC-4 | frontend-junior | 미착수 |
+## 완료 후 메모
+- **BE-17 `StandardInputTranslator`는 최종 설계에서 쓰이지 않는다.** 표준 입력 모드를 앱 측 번역표가
+  아니라 Neovim 옵션·매핑(`NeovimStandardMode`)으로 구현하기로 했기 때문이다(REQ-010 AC-5를 앱이
+  흉내내려면 에디터 모드를 추적해야 하고, 그것이 REQ-010이 금지한 상태 분기다). 번역표 자체는
+  `NeovimStandardMode.commandShortcuts`의 근거로 살아 있다. 타입 정리 여부는 리더 판단에 맡긴다.
+- **방어선 실측 결과**: 핵심 규칙 25종을 일부러 깨뜨려 red 확인. 그 과정에서 내 테스트 2건이
+  가짜 초록임을 발견해 보강했다(부착 전 키 큐잉, 심볼 검색 관련도 정렬).
+- **동등 변이 1건**: `reindexSavedFile`의 프로젝트 밖 경로 가드는 제거해도 관측 동작이 같다
+  (잘린 경로가 존재하지 않아 무해한 no-op이 된다). 방어 목적의 명시성으로 유지한다.

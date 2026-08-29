@@ -67,7 +67,7 @@ final class SymbolExtractor {
                     kind: classification.kind,
                     path: path,
                     line: zeroBasedRow + 1,
-                    signature: SignatureBuilder.signature(forLine: signatureLine)
+                    signature: PreviewTextBuilder.makeSignature(line: String(signatureLine))
                 )
             )
         }

@@ -21,6 +21,15 @@ public enum PreviewTextBuilder {
         line: String,
         utf8MatchRanges: [Range<Int>]
     ) -> (previewText: String, matchRanges: [MatchRange]) {
+        makePreview(line: line, utf16MatchRanges: utf16Ranges(inLine: line, forUtf8Ranges: utf8MatchRanges))
+    }
+
+    /// The same preview, for callers whose offsets are already UTF-16 — `NSRegularExpression`
+    /// reports its matches that way, so converting them to bytes and back would only lose time.
+    public static func makePreview(
+        line: String,
+        utf16MatchRanges: [Range<Int>]
+    ) -> (previewText: String, matchRanges: [MatchRange]) {
         let previewText = truncated(trimmed(line), toUtf16Length: previewMaximumUtf16Length)
         let previewLength = previewText.utf16.count
 
@@ -28,15 +37,15 @@ public enum PreviewTextBuilder {
         let leadingWhitespaceLength = utf16LengthOfLeadingWhitespace(in: line)
 
         var matchRanges: [MatchRange] = []
-        matchRanges.reserveCapacity(utf8MatchRanges.count)
+        matchRanges.reserveCapacity(utf16MatchRanges.count)
 
-        for utf8Range in utf8MatchRanges {
+        for range in utf16MatchRanges {
             let start = clamped(
-                utf16Offset(in: line, forUtf8Offset: utf8Range.lowerBound) - leadingWhitespaceLength,
+                range.lowerBound - leadingWhitespaceLength,
                 toPreviewLength: previewLength
             )
             let end = clamped(
-                utf16Offset(in: line, forUtf8Offset: utf8Range.upperBound) - leadingWhitespaceLength,
+                range.upperBound - leadingWhitespaceLength,
                 toPreviewLength: previewLength
             )
 
@@ -96,20 +105,53 @@ public enum PreviewTextBuilder {
         return length
     }
 
-    /// Walks the line once, accumulating both encodings' lengths, and stops at the first scalar
-    /// that already starts at or past the requested byte offset.
-    private static func utf16Offset(in line: String, forUtf8Offset utf8Offset: Int) -> Int {
+    /// Converts every byte offset in **one** pass over the line.
+    ///
+    /// Converting each range separately walks the line again per range, which is O(line × ranges)
+    /// — fine for source lines, but a minified file is one line of hundreds of thousands of
+    /// characters, and a query matching it dozens of times would then dominate a whole search
+    /// (REQ-NF-001). Collecting the offsets first makes it O(line + ranges).
+    private static func utf16Ranges(
+        inLine line: String,
+        forUtf8Ranges utf8Ranges: [Range<Int>]
+    ) -> [Range<Int>] {
+        guard !utf8Ranges.isEmpty else {
+            return []
+        }
+
+        let wantedOffsets = Set(utf8Ranges.flatMap { [$0.lowerBound, $0.upperBound] }).sorted()
+        var utf16ByUtf8Offset: [Int: Int] = [:]
+        utf16ByUtf8Offset.reserveCapacity(wantedOffsets.count)
+
+        var nextWanted = 0
         var bytesSeen = 0
-        var offset = 0
+        var utf16Offset = 0
 
         for scalar in line.unicodeScalars {
-            if bytesSeen >= utf8Offset {
+            // Record every offset this scalar has already reached before consuming it.
+            while nextWanted < wantedOffsets.count, bytesSeen >= wantedOffsets[nextWanted] {
+                utf16ByUtf8Offset[wantedOffsets[nextWanted]] = utf16Offset
+                nextWanted += 1
+            }
+            guard nextWanted < wantedOffsets.count else {
                 break
             }
+
             bytesSeen += utf8Length(of: scalar)
-            offset += UTF16.width(scalar)
+            utf16Offset += UTF16.width(scalar)
         }
-        return offset
+
+        // Offsets past the end of the line settle on the line's full length.
+        while nextWanted < wantedOffsets.count {
+            utf16ByUtf8Offset[wantedOffsets[nextWanted]] = utf16Offset
+            nextWanted += 1
+        }
+
+        return utf8Ranges.map { range in
+            let start = utf16ByUtf8Offset[range.lowerBound] ?? 0
+            let end = utf16ByUtf8Offset[range.upperBound] ?? start
+            return start..<max(start, end)
+        }
     }
 
     /// UTF-8 byte length of one scalar, by code point range. Spelled out rather than measured
