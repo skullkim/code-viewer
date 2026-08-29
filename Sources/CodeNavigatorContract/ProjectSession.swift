@@ -14,6 +14,13 @@ public protocol ProjectSession: Sendable {
     /// leaving any previously opened project untouched (REQ-001 AC-3).
     func openProject(at rootPath: URL) async throws
 
+    /// The project the engine is actually working on.
+    ///
+    /// Kept even though the application supplies the path itself, because after a failed open the
+    /// two can disagree: `openProject` leaves the previous project indexed and searchable
+    /// (REQ-001 AC-3), so an application that tracked the requested path would name one project
+    /// while every query answered from another. This is the authoritative answer, and the right
+    /// source for anything that displays which project is open.
     func currentProject() async -> ProjectDescriptor?
 
     func indexState() async -> IndexState
