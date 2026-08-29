@@ -319,18 +319,24 @@ public actor NeovimEditorSession: EditorSession {
         try await runModeIndependently("stopinsert | normal! ggVG")
     }
 
-    /// Applies a clipboard operator to the current selection.
+    /// Applies a clipboard operator to the selection the user is holding right now.
     ///
-    /// Whether the selection has to be restored first depends on where the editor is: from normal
-    /// mode `gv` brings back the last selection, but running `gv` while a selection is *already*
-    /// active swaps to the previous one instead — the opposite of what is wanted. The engine
-    /// checks; the caller does not have to know any of this, which is the point of these methods.
+    /// Does nothing when nothing is selected. An earlier version restored the previous selection
+    /// with `gv` in that case, which is worse than useless: after the user released a selection
+    /// and moved elsewhere, a cut would resurrect the old range and delete it — text disappearing
+    /// somewhere the cursor is not. Copy and cut act on what is selected, and when that is
+    /// nothing they do nothing.
     private func runOnSelection(operator operatorKey: String) async throws {
-        let isSelecting = try await currentModeNameForTesting().map { mode in
-            mode.hasPrefix("v") || mode.hasPrefix("V") || mode.hasPrefix("s") || mode.hasPrefix("S")
-        } ?? false
-        let keys = isSelecting ? "\"+\(operatorKey)" : "gv\"+\(operatorKey)"
-        try await runModeIndependently("normal! \(keys)")
+        guard try await isSelectionActive() else { return }
+        try await runModeIndependently("normal! \"+\(operatorKey)")
+    }
+
+    /// True while the editor is in a visual or select mode, which is the only time a selection
+    /// the user can see actually exists.
+    private func isSelectionActive() async throws -> Bool {
+        guard let mode = try await currentModeNameForTesting() else { return false }
+        return mode.hasPrefix("v") || mode.hasPrefix("V") || mode.hasPrefix("\u{16}")
+            || mode.hasPrefix("s") || mode.hasPrefix("S")
     }
 
     /// Runs an ex command and refreshes the status, surfacing Neovim's own error message.
