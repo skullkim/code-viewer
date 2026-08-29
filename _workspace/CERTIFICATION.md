@@ -187,6 +187,11 @@ _workspace/measure-app-runtime.sh --idle-only  # 이것이 SC-8 판정값이다
 - **매트릭스의 `테스트 상태` PASS** — "나열된 테스트가 통과한다"는 뜻이지 화면 성립이 아니다.
 - **`--self-check` 통과** — `CodeNavigatorMain.swift` 에서 `run()` **이전에 return** 한다. 창·뷰 생성을 실행하지 않는다.
 - **팀의 자가 라이브 E2E·디자인 충실도 PASS** — 이 둘은 리더 인증 단계다. 팀이 돌렸으면 "팀 자가검증(리더 인증 대기)"로만 표기한다.
+- **생산 쪽 참조만 세는 것** — 값을 *쓰는* 호출부가 있으면 grep 은 "쓰이고 있음"으로 읽는다.
+  실측: `MenuCommandRouter` 가 `setTreeVisible`/`setPanelVisible` 을 부르고 `ShellPreferences` 가
+  저장·복원까지 하는데 **그 값을 읽는 쪽이 없어** 메뉴는 반응하고 화면은 안 바뀌었다.
+  미구현보다 이 상태가 덜 보인다 — 호출부가 있으니 연결된 것처럼 읽힌다.
+  **소비처까지 세어야 연결 확인이다.**
 - **이름이 완전성을 주장하는 테스트** — `ShellCompositionTests` 의 "만들어 놓고 안 쓰는 것이 없다"가
   통과하는 동안 `ShellSplitter` 는 참조 0이었다. 그 테스트는 `ShellPane.allCases` 만 훑는데,
   스플리터는 "영역"이 아니라 목록에 없었다. **이름이 완전성을 주장하면 다음 사람은 그 뒤를 안 본다.**
