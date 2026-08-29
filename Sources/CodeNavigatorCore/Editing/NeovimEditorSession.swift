@@ -89,6 +89,19 @@ public actor NeovimEditorSession: EditorSession {
         await refreshStatus()
     }
 
+    /// Points the editor at a different project (REQ-001 AC-2).
+    ///
+    /// Open buffers are deliberately left alone. Discarding them would throw away unsaved edits,
+    /// and Neovim owns that decision, not us (INV-3). What changes is where the editor resolves
+    /// paths from and what its working directory is, so newly opened files come from the new
+    /// project and any Vim command that uses the working directory follows.
+    func changeProjectRoot(to newRoot: URL) async throws {
+        let channel = try requireChannel()
+        projectRoot = newRoot
+        try await channel.request("nvim_set_current_dir", [.string(newRoot.path)])
+        await refreshStatus()
+    }
+
     public func restart() async throws {
         guard let projectRoot else {
             throw NavigatorError.noProjectOpen

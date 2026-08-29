@@ -52,6 +52,22 @@ public final class CodeNavigatorEngine: Sendable {
         await beginObservingSaves()
     }
 
+    /// Switches to another project, moving the index, the tree, the search scope **and the
+    /// editor** together (REQ-001 AC-2).
+    ///
+    /// Call this rather than `project.openProject(at:)` directly: opening a project only on the
+    /// project side would leave the editor resolving paths against the previous root, which shows
+    /// up much later as a file that mysteriously fails to open.
+    ///
+    /// A failure to scan the new project leaves everything as it was (REQ-001 AC-3): the index is
+    /// only replaced after the scan succeeds, and the editor is only redirected after that.
+    public func openProject(at projectRoot: URL) async throws {
+        try await project.openProject(at: projectRoot)
+        if case .connected = await editor.state() {
+            try await editor.changeProjectRoot(to: projectRoot)
+        }
+    }
+
     public func shutDown() async {
         await saveObservationTask.cancel()
         await editor.shutDown()

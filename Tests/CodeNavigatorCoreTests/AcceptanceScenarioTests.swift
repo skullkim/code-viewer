@@ -223,3 +223,67 @@ struct AcceptanceScenarioTests {
         }
     }
 }
+
+@Suite("REQ-001 AC-2 — 프로젝트 전환", .serialized)
+struct ProjectSwitchingTests {
+
+    private func makeProject(name: String, symbol: String) -> TemporaryProjectFixture {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/\(name).kt", contents: "package \(name)\n\nclass \(symbol)\n")
+        return fixture
+    }
+
+    @Test("전환하면 인덱스·검색·트리가 새 프로젝트로 바뀐다")
+    func switchingReplacesIndexAndTree() async throws {
+        let first = makeProject(name: "First", symbol: "AlphaService")
+        let second = makeProject(name: "Second", symbol: "BetaService")
+        let engine = CodeNavigatorEngine()
+        defer { Task { await engine.shutDown() } }
+
+        try await engine.openProject(at: first.rootURL)
+        #expect(await engine.project.definitions(named: "AlphaService").count == 1)
+
+        try await engine.openProject(at: second.rootURL)
+        #expect(await engine.project.definitions(named: "BetaService").count == 1)
+        #expect(await engine.project.definitions(named: "AlphaService").isEmpty)
+
+        let entries = try await engine.project.directoryEntries(atRelativePath: "src")
+        #expect(entries.map(\.name) == ["Second.kt"])
+        #expect(await engine.project.currentProject()?.rootPath == second.rootURL)
+    }
+
+    @Test("전환하면 편집기도 새 프로젝트를 따라간다 — 트리만 바뀌고 에디터가 남는 일이 없다")
+    func switchingMovesTheEditorToo() async throws {
+        let first = makeProject(name: "First", symbol: "AlphaService")
+        let second = makeProject(name: "Second", symbol: "BetaService")
+        let engine = CodeNavigatorEngine()
+        defer { Task { await engine.shutDown() } }
+
+        try await engine.start(projectRoot: first.rootURL, columns: 80, rows: 24)
+        try await engine.editor.openFile(atRelativePath: "src/First.kt", line: 1, recordJump: false)
+
+        try await engine.openProject(at: second.rootURL)
+
+        // 새 프로젝트의 상대 경로가 열려야 한다. 편집기가 옛 루트를 붙들고 있으면 여기서 실패한다.
+        try await engine.editor.openFile(atRelativePath: "src/Second.kt", line: 1, recordJump: false)
+        try await Task.sleep(for: .milliseconds(300))
+
+        let line = try await engine.editor.currentLineForTesting()
+        #expect(line == "package Second")
+    }
+
+    @Test("전환에 실패하면 이전 프로젝트가 그대로 남는다")
+    func failedSwitchKeepsPreviousProject() async throws {
+        let first = makeProject(name: "First", symbol: "AlphaService")
+        let engine = CodeNavigatorEngine()
+        defer { Task { await engine.shutDown() } }
+
+        try await engine.openProject(at: first.rootURL)
+        await #expect(throws: (any Error).self) {
+            try await engine.openProject(at: URL(fileURLWithPath: "/nonexistent/second"))
+        }
+
+        #expect(await engine.project.definitions(named: "AlphaService").count == 1)
+        #expect(await engine.project.currentProject()?.rootPath == first.rootURL)
+    }
+}
