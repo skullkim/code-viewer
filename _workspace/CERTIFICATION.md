@@ -12,7 +12,7 @@
 | 1 | 게이트 그린 | `bash _workspace/gate.sh` → `GATE: PASS` | ✅ |
 | 2 | `.app` 조립·실행 | 게이트 프론트 블록 | ✅ |
 | 3 | **화면 잠금 해제** | `ioreg -n Root -d1 -a \| grep -A1 CGSSessionScreenIsLocked` → `<false/>` 또는 키 부재 | ❌ 사용자 조치 대기 |
-| 4 | **미연결 뷰 연결** | 아래 §1 마운트 카운트 | ❌ |
+| 4 | **미연결 뷰 연결** (23:03 기준 **9종** 미연결) | 아래 §1 마운트 카운트 | ❌ |
 
 3번이 없으면 라이브 E2E·디자인 충실도를 **실행할 수 없다**. 4번이 없으면 **검증할 대상이 화면에 없다** —
 플레이스홀더는 클릭할 수 없다.
@@ -22,20 +22,43 @@
 정의부를 뺀 참조 수를 센다:
 
 ```bash
-for v in PlaceholderPane MainWindowView StatusBarView FileTreeView EditorGridView \
-         ProjectOpenView DefinitionCandidatesView EditSessionOverlayView; do
+for v in PlaceholderPane MainWindowView StatusBarView ToolbarView FileTreeView EditorGridView \
+         ProjectOpenView DefinitionCandidatesView EditSessionOverlayView ReferencePanelView \
+         TextSearchPanelView SidePanelView; do
   n=$(grep -rn "$v(" Sources/ --include="*.swift" | grep -v "struct $v" | wc -l | tr -d ' ')
-  echo "$v: $n"
+  printf "%-26s %s\n" "$v:" "$n"
 done
 ```
 
 **합격선: `PlaceholderPane` 이 0 이고, 나머지 화면 뷰가 각각 1 이상.**
 
-이 값이 필요한 이유: 뷰가 컴파일되고 테스트를 통과해도 **아무도 인스턴스화하지 않으면 사용자에게
-도달하지 않는다**. 그리고 그 상태에서도 게이트는 초록이다. 실제로 630 테스트가 통과하는 동안
-창은 회색 판 3장이었다.
+**23:03 실측 — 미연결 9종.** 창에는 여전히 회색 판 3장이다.
 
-⚠ 마운트 카운트는 *꽂혔는지*만 본다. *제대로 그려지는지*는 §3·§4 가 본다.
+| 미연결 뷰 | 막힌 요구사항 |
+|---|---|
+| **`EditorGridView`** | **REQ-004 AC-2 — 에디터 화면 그 자체(본체)** |
+| `FileTreeView` | REQ-003 (파일 트리 전부) |
+| `ProjectOpenView` | REQ-001 (프로젝트 열기) |
+| `ReferencePanelView` | REQ-006 (참조 패널) |
+| `TextSearchPanelView` | REQ-008 (전문 검색) |
+| `DefinitionCandidatesView` | REQ-005 AC-2 (동명 정의 후보) |
+| `EditSessionOverlayView` | REQ-004 AC-5 (편집 세션 끊김) |
+| `ToolbarView` · `SidePanelView` | 셸 구성요소 |
+
+이 값이 필요한 이유: 뷰가 컴파일되고 테스트를 통과해도 **아무도 인스턴스화하지 않으면
+사용자에게 도달하지 않는다**. 그리고 그 상태에서도 게이트는 초록이다. 실제로 630여 테스트가
+통과하는 동안 창은 회색 판 3장이었고, 그 사이 미연결 뷰는 5종에서 9종으로 **늘었다**.
+
+**병목은 만드는 것이 아니라 꽂는 것이다.** 조립 지점(`MainWindowView`)은 프론트 시니어 소유다.
+
+⚠ 마운트 카운트는 *꽂혔는지*만 본다. *제대로 그려지는지*는 아래가 본다.
+
+### 이미 있는 렌더링 계기 (QA 정정 반영)
+`GridRenderingTests` 는 **오프스크린 비트맵에 실제로 그리고 픽셀을 샘플링**한다 — 순수 함수
+테스트가 아니다. 더블폭 문자·`startColumn`·커서 폭이 픽셀 수준 방어선을 갖는다(변이 실측 확인).
+**화면 잠금과 무관하게 돈다.**
+→ 그러므로 "렌더링을 재는 계기가 하나도 없다"는 틀렸다. **없는 것은 합성 층의 계기** —
+어떤 뷰가 실제로 창에 꽂히는가. 마운트 카운트가 그 자리를 메운다.
 
 ## 2. 게이트 (리더가 직접 재실행 — 팀 주장이 아니라)
 
