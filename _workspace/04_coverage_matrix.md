@@ -3,12 +3,34 @@
 각 개발자가 **자기 기여분만 추가**한다(행 추가·자기 행 수정). 게이트 상태는 `_workspace/gate.sh`를
 실제로 돌린 사람(backend-senior)만 갱신한다.
 
+> ## 이 표가 증명하지 않는 것 — 화면 (2026-08-29 22:5x, 리더)
+>
+> `테스트 상태` 열은 **"나열된 테스트가 통과한다"** 만 뜻한다. **"그 요구사항이 화면에서
+> 성립한다"는 뜻이 아니다.** 화면 동작을 요구하는 AC(파일을 선택하면 에디터에 열린다 ·
+> 트리에서 강조된다 · 화면에 반영된다 …)가 지금 순수 함수 테스트만을 근거로 PASS 로 적혀
+> 있는데, 정작 그 뷰들은 **어디에도 마운트돼 있지 않다**. 값이 틀린 게 아니라 스키마에
+> 렌더링이 드러날 자리가 없다.
+>
+> **완료 인증에서 이 표의 PASS 를 화면 근거로 쓰지 않는다.** 화면 판정은 둘로만 한다:
+>
+> 1. **마운트 카운트**(기계적) — 정의부를 뺀 참조 수:
+>    `grep -rn "ViewName(" Sources/ --include="*.swift" | grep -v "struct ViewName"`
+>    합격선 = `PlaceholderPane` 이 **0** 이고, 화면 뷰(`FileTreeView` · `EditorGridView` ·
+>    `ProjectOpenView` · `StatusBarView` · `MainWindowView` 등)가 각각 **1 이상**.
+> 2. **리더 인증** — 실제 `.app` 라이브 E2E + 프로토타입 스크린샷 대조(화면 잠금 해제 필요).
+>
+> 22:56 실측: `PlaceholderPane` **3** · `FileTreeView`·`EditorGridView`·`ProjectOpenView` 각 **0**.
+> 이 시점의 화면 관련 PASS 는 전부 **리더 인증 대기**다.
+
 | REQ-ID | 영역 | 커버하는 테스트 | 담당 | 테스트 상태 |
 |--------|------|---------------|------|-----------|
 | REQ-001 AC-1 · AC-4 | backend | `ProjectIndexerTests` — 열기 시 전체 인덱싱·제외/gitignore 반영 · `ProjectScannerTests` (12) | backend-senior | PASS |
 | REQ-001 AC-2 | backend | `ProjectSwitchingTests` (3) — 인덱스·검색·트리 교체 · **편집기도 새 루트를 따라감** · 실패 시 이전 프로젝트 유지 | backend-senior | PASS |
 | REQ-001 AC-3 | backend | `ProjectIndexerTests` "존재하지 않는 경로는 에러이고 이전 프로젝트가 유지된다" · `ProjectScannerTests` 누락/파일루트 에러 | backend-senior | PASS |
 | REQ-002 AC-1 · AC-2 | backend | `SymbolExtractorTests` (Kotlin 5 / Java 2 / TS·JS 5) — 7종 심볼 전량, 4언어 | backend-senior | PASS |
+| REQ-010 AC-2 (마우스) | backend | `NeovimMouseInputTests` (5) — 드래그 선택·휠 스크롤·수식키 전달·그리드 셀 좌표계(스크롤 상태)·기동 전 무시 | backend-junior | PASS |
+| REQ-004 AC-4 (저장 통지 값) | backend | `EditorSavedFileTests` (2) — 줄 수·바이트 수를 픽스처·디스크와 등호 대조(한글 픽스처로 바이트≠글자 확인) | backend-junior | PASS |
+| REQ-002 AC-4 (인덱스 통계) | backend | `ProjectEngineStatisticsTests` (2) — 읽지 못한 파일만 건너뜀으로 집계·열기 전 빈 통계 | backend-junior | PASS |
 | REQ-002 AC-3 | backend | `SourceLanguageTests` (4) 미지원 확장자 nil · `SymbolExtractorTests` 미지원 확장자 빈 결과 · `ProjectScannerTests` 미지원 파일도 검색 대상 유지 | backend-senior | PASS |
 | REQ-004 AC-2 (셀 좌표) | backend | `NeovimGridStateWideCharacterTests` (5) — 한글 줄 문자7/셀10 · 한글 뒤 startColumn · run 타일링 · 커서 좌표계 일치 · ASCII 동치 | backend-senior | PASS |
 | REQ-NF-005 (버전) | backend | `NeovimVersionTests` (6) 파싱·나이틀리 접미사·숫자 비교 · `NeovimEditorSessionTests` 기동 실패 구조화·실설치 버전 판독 | backend-senior | PASS |
@@ -28,6 +50,7 @@
 | REQ-005 AC-2 · SC-2 | backend | `AcceptanceScenarioTests` SC-2 동명 정의 3건 · `SymbolIndexTests` 동명 정의 전량·정렬 | backend-senior | PASS |
 | REQ-005 AC-3 | backend | `SymbolIndexTests` "없는 이름은 빈 배열이다 — nil이 아니다" (호출자가 "찾을 수 없음"을 구분 가능) | backend-senior | PASS |
 | REQ-005 AC-4 | backend | `NeovimEditorSessionTests` `recordJump` 경로 · `NeovimChannelTests` 점프 목록 | backend-senior | PASS |
+| REQ-006 AC-1 (강조) | backend | `ReferenceHighlightTests` (7) — 구간이 미리보기 심볼을 가리킴 · 한 줄 2회 · 부분 단어 미강조 · **한글 접두 식별자 미강조**(경계 규칙 한 벌) · UTF-16 환산 · 선행 공백 보정 · 정의도 구간 보유 | backend-senior | PASS |
 | REQ-006 AC-2 | backend | `AcceptanceScenarioTests` "참조 목록에 정의가 포함되고 플래그로 구분된다" | backend-senior | PASS |
 | REQ-007 AC-1 · AC-2 · AC-4 | backend | `SymbolSearcherTests` (7) 관련도 순위·동점 규칙·상한 50·강조 구간·빈 결과 · `AcceptanceScenarioTests` 퍼지 검색 | backend-senior | PASS |
 | REQ-008 AC-2 · SC-6 | backend | `AcceptanceScenarioTests` SC-6 잘못된 정규식은 에러(같은 문자열의 리터럴 검색은 정상 빈 결과) | backend-senior | PASS |
@@ -58,7 +81,9 @@
 | REQ-010 AC-3 (모드 상시 표시) | frontend | `StatusBarPresentationTests` (15) — Vim 4모드 칩·표준 칩·끊김 시 편집 불가 · **모든 창 폭에서 모드 세그먼트·인덱스 칩 생존** | frontend-senior | PASS |
 | REQ-010 AC-5 (모드별 편집 메뉴) | frontend | `MenuAvailabilityTests` (12) — Vim에서 ⌘Z·⌘C·⌘V·⌘A 비활성, ⌘S만 공통 활성 · 세션 끊겨도 검색은 동작 · 24명령 전수 | frontend-senior | PASS |
 | REQ-009 (인덱스 상태 UI) | frontend | `StatusBarPresentationTests` — 인덱스 5상태 칩 §6과 1:1 · 비-최신 상태 툴팁("직전 인덱스로 응답 중") | frontend-senior | PASS |
-| REQ-004 AC-2 (그리드 렌더) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 · `GridFrameBuilderTests` (18) **startColumn 기반 배치·더블폭 2셀 전진·반전 표시·커서 폭** · `DisplayWidthTests` (8) 한글/한자/전각/이모지 2셀·결합문자 0셀 | frontend-senior | PASS |
+| REQ-004 AC-2 (그리드 렌더 — **픽셀 검증**) | frontend | `GridRenderingTests` (9) — **오프스크린 비트맵에 실제로 그리고 픽셀을 읽어** 검증. 런 안에서 `한A`의 A가 셀 2 · `가나다라X`의 X가 셀 8 · `👍A`의 A가 셀 2 · 더블폭 문자 위 커서가 두 셀 · 공백은 잉크 없음. **ADR-0101의 핵심 주장을 산술이 아니라 그려진 결과로 확인** | frontend-senior | PASS |
+| REQ-011 AC-4 (배지 색) | frontend | `DesignTokenTests` — 심볼 종류 배지 4색(accent·**teal**·purple·warning) × 실제 표면 4종이 §4.5의 3:1을 넘는지. teal은 프로토타입 `--syn-type`과 같은 값으로 고정 | frontend-senior | PASS |
+| REQ-004 AC-2 (그리드 산술) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 · `GridFrameBuilderTests` (18) **startColumn 기반 배치·더블폭 2셀 전진·반전 표시·커서 폭** · `DisplayWidthTests` (8) 한글/한자/전각/이모지 2셀·결합문자 0셀 | frontend-senior | PASS |
 | REQ-004 AC-5 · AC-1 · REQ-NF-005 | frontend | `EditSessionOverlayTests` (11) — 연결 중·**기동 실패(미설치 vs 버전 미달 문구 분리)**·끊김 3카드 · 재기동 시 디스크 재로드 고지 · 에디터만 흐림 · `StatusBarPresentationTests` 세션 5상태 칩 | frontend-senior | PASS |
 | REQ-010 AC-4 · AC-6 (모드 보존·복원) | frontend | `AppModelTests` (15) — 전환이 `:w`를 보내지 않고 저장 피드백도 없음(AC-4) · 재시작 후 모드 복원(AC-6) | frontend-senior | PASS |
 | REQ-004 AC-4 (저장 피드백) | frontend | `AppModelTests` 저장 이벤트 → `✓ 저장됨 · {파일명} ({줄 수}, {크기})` · `ByteSizeText` 바이트/KB 분기 | frontend-senior | PASS |
