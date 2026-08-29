@@ -78,6 +78,16 @@ bash _workspace/gate.sh
 
 ## 3. 라이브 E2E — 실제 `.app` 을 띄워서
 
+### 대상 프로젝트 (미리 정해 둔다 — 인증 때 고르면 멈춘다)
+지원 언어는 **Kotlin · Java · TypeScript · JavaScript** 다. **Swift 는 지원하지 않으므로 이
+레포 자신을 열어서는 E2E 를 할 수 없다.**
+
+| 용도 | 프로젝트 | 근거 |
+|---|---|---|
+| 시나리오 정밀 검증 | `_workspace/e2e-fixture/` (리더가 만든 픽스처) | SC-1 `SymbolIndex` 1곳 · SC-2 `resolveTarget` **3곳** · 한글 줄 · `node_modules` 제외 확인 |
+| 실제 규모·성능 | `/Users/skull/Documents/repo/code-navigator` (TS 119파일) | 우리가 만든 웹앱판. `server/src/core/SymbolIndex.ts` 에 실제 `SymbolIndex` 가 있고 `SymbolIndexHolder` 도 있어 단어 경계가 같이 드러난다 |
+
+
 목·단위 테스트가 통과해도 앱에서는 깨질 수 있다. 아래를 **실제 앱에서** 확인한다.
 
 | 시나리오 | 확인할 것 |
