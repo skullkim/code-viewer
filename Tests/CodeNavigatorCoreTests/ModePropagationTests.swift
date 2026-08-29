@@ -86,6 +86,10 @@ struct ModePropagationTests {
 
         try await waitUntilDragSelects(session)
 
+        // 워밍업의 클릭과 본 드래그의 클릭이 같은 자리에서 연달아 일어나면 Neovim 이 더블클릭으로
+        // 해석한다(`mousetime`, 기본 500ms). 그 창을 넘겨 보내야 드래그가 드래그로 읽힌다.
+        try await Task.sleep(for: .milliseconds(600))
+
         let statuses = await session.statusUpdates()
         try await dragAcrossProbeArea(session)
 

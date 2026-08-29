@@ -164,8 +164,14 @@ struct NeovimEditorSessionTests {
         let dirty = await firstValue(from: await session.statusUpdates()) { $0.isDirty }
         #expect(dirty != nil)
 
+        // 저장을 보내기 전에 버퍼가 실제로 더티인지 확인한다. 부하가 걸린 실행에서는 앞선
+        // 키 입력이 아직 반영되지 않은 채 :write 가 나가고, 바꿀 것이 없으면 쓰기도 통지도
+        // 일어나지 않는다 — 그러면 "저장 통지가 안 온다"로 보이지만 원인은 그 앞이다.
+        try await Task.sleep(for: .milliseconds(200))
         try await session.sendKeys(":write<CR>")
-        let saved = await firstValue(from: savedFiles) { (file: SavedFile) in file.path.hasSuffix("App.kt") }
+        let saved = await firstValue(from: savedFiles, timeout: .seconds(10)) { (file: SavedFile) in
+            file.path.hasSuffix("App.kt")
+        }
         let savedFile = try #require(saved)
         // 줄 수·크기는 Neovim 이 저장 시점에 알고 있는 값이다. 앱이 파일을 다시 읽지 않는다.
         #expect(savedFile.lineCount > 0)
