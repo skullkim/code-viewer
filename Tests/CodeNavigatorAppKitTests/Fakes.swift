@@ -189,7 +189,31 @@ final class FakeEditorSession: EditorSession, @unchecked Sendable {
         locked { openedFiles.append((relativePath, line, recordJump)) }
     }
 
-    func jumpBack() async throws {}
+    private(set) var jumpBackCount = 0
+    /// Mode-independent editing commands, in the order the router asked for them. Recorded by
+    /// name so a test can assert *which* command ran without depending on key notation — the
+    /// point of these methods is that no key notation is involved.
+    private(set) var editorCommands: [String] = []
+
+    private func record(_ command: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        editorCommands.append(command)
+    }
+
+    func jumpForward() async throws { record("jumpForward") }
+    func save() async throws { record("save") }
+    func undo() async throws { record("undo") }
+    func redo() async throws { record("redo") }
+    func copySelection() async throws { record("copySelection") }
+    func cutSelection() async throws { record("cutSelection") }
+    func paste() async throws { record("paste") }
+    func selectAll() async throws { record("selectAll") }
+
+    func jumpBack() async throws {
+        locked { jumpBackCount += 1 }
+        record("jumpBack")
+    }
 
     func wordUnderCursor() async throws -> String? {
         wordUnderCursorValue

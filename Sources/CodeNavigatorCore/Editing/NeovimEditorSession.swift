@@ -267,8 +267,83 @@ public actor NeovimEditorSession: EditorSession {
     }
 
     public func jumpBack() async throws {
+        try await runModeIndependently("execute \"normal! \\<C-o>\"")
+    }
+
+    public func jumpForward() async throws {
+        // The count is load-bearing: `<C-i>` is a tab, and `:normal!` strips leading whitespace
+        // from its argument, so the bare form fails with "E471: Argument required".
+        try await runModeIndependently("execute \"normal! 1\\<C-i>\"")
+    }
+
+    // MARK: - Editing commands
+    //
+    // Each of these runs as an ex command or through `:normal!`, both of which execute
+    // independently of the mode the user is in. Sending the equivalent keystrokes instead would
+    // mean the same command doing different things in Vim and standard mode — `u` reverses a
+    // change in normal mode and types the letter "u" in insert mode, and `:w` sent as keys does
+    // not write at all from insert mode. A save that silently does not save is the worst of them,
+    // because it looks like it worked.
+
+    public func save() async throws {
+        try await runModeIndependently("write")
+    }
+
+    public func undo() async throws {
+        try await runModeIndependently("undo")
+    }
+
+    public func redo() async throws {
+        try await runModeIndependently("redo")
+    }
+
+    public func copySelection() async throws {
+        try await runOnSelection(operator: "y")
+    }
+
+    public func cutSelection() async throws {
+        try await runOnSelection(operator: "d")
+    }
+
+    public func paste() async throws {
+        try await runModeIndependently("normal! \"+p")
+    }
+
+    /// Selects the whole buffer.
+    ///
+    /// `stopinsert` comes first because `:normal!` returns to the mode it was called from: run
+    /// from insert mode it makes the selection and then throws it away, leaving the user in
+    /// insert with nothing selected (measured). Leaving normal mode first makes the selection
+    /// stick, which is what "select all" has to mean in either input mode.
+    public func selectAll() async throws {
+        try await runModeIndependently("stopinsert | normal! ggVG")
+    }
+
+    /// Applies a clipboard operator to the current selection.
+    ///
+    /// Whether the selection has to be restored first depends on where the editor is: from normal
+    /// mode `gv` brings back the last selection, but running `gv` while a selection is *already*
+    /// active swaps to the previous one instead — the opposite of what is wanted. The engine
+    /// checks; the caller does not have to know any of this, which is the point of these methods.
+    private func runOnSelection(operator operatorKey: String) async throws {
+        let isSelecting = try await currentModeNameForTesting().map { mode in
+            mode.hasPrefix("v") || mode.hasPrefix("V") || mode.hasPrefix("s") || mode.hasPrefix("S")
+        } ?? false
+        let keys = isSelecting ? "\"+\(operatorKey)" : "gv\"+\(operatorKey)"
+        try await runModeIndependently("normal! \(keys)")
+    }
+
+    /// Runs an ex command and refreshes the status, surfacing Neovim's own error message.
+    private func runModeIndependently(_ command: String) async throws {
         let channel = try requireChannel()
-        try await channel.request("nvim_command", [.string("execute \"normal! \\<C-o>\"")])
+        do {
+            try await channel.request("nvim_command", [.string(command)])
+        } catch {
+            throw NavigatorError.editorRequestFailed(
+                method: command,
+                reason: (error as? NeovimChannel.RequestFailure)?.reason ?? "\(error)"
+            )
+        }
         await refreshStatus()
     }
 
@@ -555,6 +630,63 @@ public actor NeovimEditorSession: EditorSession {
         guard let channel else { return nil }
         let reply = try await channel.request("nvim_get_mode", [])
         return reply.mapValue?.first { $0.key.stringValue == "mode" }?.value.stringValue
+    }
+
+    /// Buffer and register access for tests that must check the editor's real state rather than
+    /// what the engine reports about it. Not part of the contract.
+    func bufferLinesForTesting() async throws -> [String] {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_buf_get_lines", [
+            .integer(0), .integer(0), .integer(-1), .boolean(false),
+        ])
+        return value.arrayValue?.compactMap(\.stringValue) ?? []
+    }
+
+    func replaceBufferForTesting(with lines: [String]) async throws {
+        let channel = try requireChannel()
+        try await channel.request("nvim_buf_set_lines", [
+            .integer(0), .integer(0), .integer(-1), .boolean(false),
+            .array(lines.map { .string($0) }),
+        ])
+    }
+
+    func isDirtyForTesting() async throws -> Bool {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_get_option_value", [
+            .string("modified"), .map([]),
+        ])
+        return value.booleanValue ?? false
+    }
+
+    func cursorLineForTesting() async throws -> Int {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_win_get_cursor", [.integer(0)])
+        return value.arrayValue?.first?.integerValue ?? -1
+    }
+
+    func clipboardRegisterForTesting() async throws -> String {
+        let channel = try requireChannel()
+        return (try await channel.request("nvim_eval", [.string("getreg('+')")])).stringValue ?? ""
+    }
+
+    func setClipboardRegisterForTesting(_ text: String) async throws {
+        let channel = try requireChannel()
+        try await channel.request("nvim_call_function", [
+            .string("setreg"), .array([.string("+"), .string(text)]),
+        ])
+    }
+
+    func clearClipboardRegisterForTesting() async throws {
+        try await setClipboardRegisterForTesting("")
+    }
+
+    /// How many lines the current visual selection spans.
+    func selectedLineCountForTesting() async throws -> Int {
+        let channel = try requireChannel()
+        let value = try await channel.request(
+            "nvim_eval", [.string("abs(line('v') - line('.')) + 1")]
+        )
+        return value.integerValue ?? 0
     }
 
     /// Internal mode bookkeeping, so a test can see where mode propagation stopped rather than

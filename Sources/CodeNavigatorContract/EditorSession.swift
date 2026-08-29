@@ -51,6 +51,36 @@ public protocol EditorSession: Sendable {
     /// Returns to the previous jump-list position.
     func jumpBack() async throws
 
+    /// Moves forward again through the jump list.
+    func jumpForward() async throws
+
+    /// Writes the current buffer to disk.
+    ///
+    /// Neovim performs the write, as it does for every change to a file (INV-3). What this method
+    /// guarantees over sending `:w` as keys is that it behaves the same in both input modes:
+    /// key notation is interpreted against the editor's current mode, so the same keystrokes mean
+    /// different things depending on where the user happens to be — and for a save, that
+    /// difference is a file that silently does not get written.
+    func save() async throws
+
+    /// Reverses the last change.
+    func undo() async throws
+
+    /// Reapplies the last reversed change.
+    func redo() async throws
+
+    /// Copies the current selection to the system clipboard.
+    func copySelection() async throws
+
+    /// Cuts the current selection to the system clipboard.
+    func cutSelection() async throws
+
+    /// Pastes the system clipboard at the cursor.
+    func paste() async throws
+
+    /// Selects the whole buffer.
+    func selectAll() async throws
+
     /// The identifier under the cursor, used as the query for go-to-definition and references.
     func wordUnderCursor() async throws -> String?
 
