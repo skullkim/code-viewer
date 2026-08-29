@@ -39,6 +39,8 @@
 | REQ-010 AC-4 | backend | `NeovimEditorSessionTests` "입력 모드를 바꿔도 편집 내용과 더티 상태가 보존된다"(전환만으로 저장되지 않음 포함) | backend-senior | PASS |
 | INV-2 (파생물) | backend | `ProjectIndexerTests` 열기 시 전량 재생성 · 디스크 영속 코드 부재(ADR-0003) | backend-senior | PASS |
 | INV-3 (편집 단일 경로) | backend | `NeovimChannelTests` "버퍼를 고쳐도 디스크는 그대로고 :w 시점에만 쓰인다" · `ProjectSession`에 쓰기 API 부재(타입 수준 강제) | backend-senior | PASS |
+| REQ-NF-003 | backend | `StartupAndBulkChangeTests` — 3,000파일 엔진 기동 **0.19초**(목표 2초) · 인덱싱·편집기 병렬성(합보다 짧음) | backend-senior | PASS |
+| SC-5 (실 git) | backend | `StartupAndBulkChangeTests` — 실제 `git init`+`commit`+`checkout -- .` 300파일 되돌림 후 유령 0 · 추적 안 된 파일 보존 · 검색이 디스크와 일치 | backend-senior | PASS |
 | REQ-NF-001 | backend | `IndexingPerformanceTests` (3) — 5,000파일 인덱싱 0.28초 / 정의 조회 0.0ms / 증분 갱신 0.4ms | backend-senior | PASS |
 | REQ-NF-004 | backend | `SymbolExtractorTests` 깨진 소스 · `ProjectScannerTests` 심링크 루프·읽기 실패 · `ProjectIndexerTests` 바이너리/초대형 파일 스킵 · `NeovimGridStateTests` 미지 이벤트·범위 밖 좌표 | backend-senior | PASS |
 | REQ-NF-005 | backend | `NeovimChannelTests` 미설치 시 `editorNotInstalled` · 실행 불가 경로 에러 | backend-senior | PASS |
