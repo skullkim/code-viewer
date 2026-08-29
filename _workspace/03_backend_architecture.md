@@ -151,7 +151,8 @@ _workspace/gate.sh          # 게이트: 빌드 + 테스트 + 민감정보 스�
 
 ## 7. 알려진 함정 (구현자 필독)
 1. `signal(SIGPIPE, SIG_IGN)` 없이 죽은 Neovim에 쓰면 **앱이 통째로 종료된다**.
-2. `--embed`는 `nvim_ui_attach` 전까지 시동을 멈춘다. 그 전에는 사용자 설정이 로드되지 않았다.
+2. `--embed`는 `nvim_ui_attach` 전까지 시동을 멈춘다. 그 전에는 사용자 설정이 로드되지 않았고,
+   **키 입력도 처리되지 않는다**(조용히 무시됨). 기동 순서가 계약이다.
 3. FSEvents 콜백은 `main.swift`에 두면 컴파일되지 않는다(암묵 `@MainActor`).
 4. FSEvents 경로 비교는 `realpath(3)` 기준. `URL.resolvingSymlinksInPath()`는 `/tmp`를 해소하지 않아 전부 빗나간다.
 5. 리터럴 검색에 `String.range(of:)`를 쓰지 말 것 — grapheme 비교로 4.6배 느리다.

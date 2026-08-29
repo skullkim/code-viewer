@@ -5,3 +5,10 @@
 - [backend-senior] 심볼의 라인·시그니처 기준을 선언 노드가 아니라 이름 노드로 바꿨다(웹앱판과 의도적 분기) / 선언 노드는 어노테이션에서 시작해서 `@Service` 붙은 클래스의 시그니처가 "@Service"로 나오고 정의 이동이 어노테이션 줄로 떨어졌다
 - [backend-senior] tree-sitter-kotlin 1.1.0은 백틱 없는 한글 식별자를 파싱하지 못한다(ERROR) — 문자열·주석·백틱 식별자는 정상 / 상류 문법 한계라 우회 불가, 실제 코틀린 코드는 백틱 관용구를 쓰므로 영향은 무시할 수준. 테스트를 실제 코드에 나오는 형태로 맞췄다
 - [backend-senior] 공유 테스트 타깃에서 주니어의 "컴파일 에러 Red"가 팀 전원의 swift test를 막았다 / Swift는 --filter를 줘도 타깃 전체를 컴파일하므로, 테스트와 함께 스텁 타입을 넣어 "단언 실패 Red"로 만드는 규율을 주니어에게 전달했다
+- [frontend-senior] spike 3종 실측 완료(그리드 렌더·키 라우팅·.app 번들) / 틀렸으면 설계가 통째로 바뀌는 가정이었다. 셀 단위 글리프 배치가 가장 빠르면서 유일하게 정확하다는 결과는 착수 전엔 예상하지 못했다.
+- [frontend-senior] nvim `grid_line` 원본 덤프로 "런 텍스트에서 컬럼을 유도할 수 없다"를 확인 → 계약 변경(`startColumn`) 제안 / 문서만 읽었으면 한글 파일에서 커서가 어긋난 뒤에야 발견했을 문제다.
+- [frontend-senior] spike가 내 구현 버그 2건을 착수 전에 잡았다(대문자 keyEquivalent + Shift 마스크 이중 계산 → ⇧⌘F 누출 / `charactersIgnoringModifiers` → `:`가 `;`로 나가 Vim 명령 모드 진입 불가) / 둘 다 "돌려보지 않으면 그린으로 보이는" 종류였다.
+- [backend-junior] msgpack 와이어에는 "부호 있는 양수"가 없어서 `.integer(5)`는 `.unsignedInteger(5)`로 돌아온다 / 왕복 동일성을 코덱 계약에서 빼고 `integerValue` 접근자로 흡수했다 — Neovim도 positive fixint로 보내므로 어차피 소비 측이 두 케이스를 다 받아야 한다
+- [backend-junior] 디코더가 실패하면 `position`을 프레임 시작으로 되돌리도록 바꿨다(spike 참고 구현은 부분 소비한 채로 throw) / 파이프는 프레임 경계에서 잘리지 않으므로, 되돌리지 않으면 "미완성"을 받은 호출자가 다음 읽기와 이어 붙일 시작점을 잃는다
+- [backend-senior] `nvim_ui_attach`는 렌더링뿐 아니라 **입력의 전제조건**이었다 — attach 전 `nvim_input`은 조용히 무시된다 / spike에서는 attach를 먼저 했던 탓에 못 봤고, 통합 테스트를 attach 없이 짜다가 드러났다. 기동 순서를 ADR·계약에 고정하고 회귀 테스트로 박았다
+- [backend-senior] NeovimExecutableLocator가 PATH 실패 시 알려진 경로로 폴백해서 "미설치" 경로를 테스트할 수 없었다 / 폴백 목록을 주입 가능하게 바꿨다 — 테스트가 못 만드는 상태는 제품에서도 진단할 수 없다
