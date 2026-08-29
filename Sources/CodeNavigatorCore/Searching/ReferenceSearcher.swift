@@ -48,6 +48,7 @@ struct ReferenceSearcher {
                     path: matched.path,
                     line: matched.line,
                     previewText: matched.previewText,
+                    matchRanges: matched.matchRanges,
                     isDefinition: isDefinition
                 )
             )
@@ -74,7 +75,8 @@ struct ReferenceSearcher {
 
         for filePath in filePaths {
             FileLineScanner.scanLines(ofFileAt: rootPath.appendingPathComponent(filePath)) { lineNumber, line in
-                guard containsWholeToken(needle, in: line) else {
+                let tokenRanges = wholeTokenRanges(of: needle, in: line)
+                guard !tokenRanges.isEmpty else {
                     return .continueScanning
                 }
 
@@ -87,14 +89,18 @@ struct ReferenceSearcher {
                     return .stopScanning
                 }
 
+                // The ranges the boundary check already produced are carried through rather than
+                // thrown away, so the view highlights exactly what the search matched.
+                let preview = PreviewTextBuilder.makePreview(
+                    line: String(decoding: line, as: UTF8.self),
+                    utf8MatchRanges: tokenRanges
+                )
                 matchedLines.append(
                     MatchedLine(
                         path: filePath,
                         line: lineNumber,
-                        previewText: PreviewTextBuilder.makePreview(
-                            line: String(decoding: line, as: UTF8.self),
-                            utf8MatchRanges: []
-                        ).previewText
+                        previewText: preview.previewText,
+                        matchRanges: preview.matchRanges
                     )
                 )
                 return .continueScanning
@@ -108,9 +114,14 @@ struct ReferenceSearcher {
         return (matchedLines.sorted(by: byPathThenLine), observedCount, truncated)
     }
 
-    /// True when the name appears at least once as a whole identifier token.
-    private func containsWholeToken(_ needle: [UInt8], in line: ArraySlice<UInt8>) -> Bool {
+    /// Every position where the name appears as a whole identifier token, as byte offsets into
+    /// the line. Empty means the line does not reference the symbol.
+    ///
+    /// Returning the positions rather than a yes/no keeps one rule for what a reference *is*:
+    /// the same boundary test that decides whether to keep the line decides what gets highlighted.
+    private func wholeTokenRanges(of needle: [UInt8], in line: ArraySlice<UInt8>) -> [Range<Int>] {
         let base = line.startIndex
+        var ranges: [Range<Int>] = []
 
         for range in ByteSequenceSearch.occurrences(of: needle, in: line) {
             let byteBefore = base + range.lowerBound - 1
@@ -120,11 +131,11 @@ struct ReferenceSearcher {
             let continuesAfter = byteAfter < line.endIndex && isIdentifierByte(line[byteAfter])
 
             if !continuesBefore, !continuesAfter {
-                return true
+                ranges.append(range)
             }
         }
 
-        return false
+        return ranges
     }
 
     /// Bytes that can continue an identifier. Anything from 0x80 up is part of a multi-byte
