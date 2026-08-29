@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W-6 전문 검색 패널 — 결과 상한 도달</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="titlebar">
+    <div class="lights"><span class="light l-close"></span><span class="light l-min"></span><span class="light l-max"></span></div>
+    <div class="win-title">SymbolIndex.swift</div>
+    <div class="tb-group">
+      <button class="tb-btn wide" aria-haspopup="menu">📁 <span class="lbl">code-navigator-mac</span> <span class="caret">▾</span></button>
+    </div>
+    <div class="tb-spacer"></div>
+    <div class="tb-group">
+      <div class="seg" role="group" aria-label="입력 모드">
+        <button class="on" aria-pressed="true">Vim</button>
+        <button class="" aria-pressed="false">표준</button>
+      </div>
+      <button class="tb-btn"><span class="ico">🔍</span><span class="lbl">심볼</span><kbd>⌘P</kbd></button>
+      <button class="tb-btn"><span class="ico">☰</span><span class="lbl">전문 검색</span><kbd>⇧⌘F</kbd></button>
+      <button class="tb-btn" aria-pressed="true"><span class="lbl">패널</span><kbd>⌥⌘0</kbd></button>
+    </div>
+  </header>
+  <div class="body">
+    <nav class="tree" aria-label="파일 트리">
+      <div class="tree-title">code-navigator-mac</div>
+      <div class="tree-item "><span class="tw">▾</span><span class="ic">📂</span>Sources</div>
+      <div class="tree-item d1"><span class="tw">▾</span><span class="ic">📂</span>Index</div>
+      <div class="tree-item d2 active"><span class="tw"></span><span class="ic">📄</span>SymbolIndex.swift</div>
+      <div class="tree-item d2"><span class="tw"></span><span class="ic">📄</span>Parser.swift</div>
+      <div class="tree-item d2"><span class="tw"></span><span class="ic">📄</span>Symbol.swift</div>
+      <div class="tree-item d1"><span class="tw">▸</span><span class="ic">📂</span>Editor</div>
+      <div class="tree-item d1"><span class="tw">▸</span><span class="ic">📂</span>Search</div>
+      <div class="tree-item d1"><span class="tw"></span><span class="ic">📄</span>App.swift</div>
+      <div class="tree-item "><span class="tw">▸</span><span class="ic">📂</span>Tests</div>
+      <div class="tree-item "><span class="tw"></span><span class="ic">📄</span>Package.swift</div>
+      <div class="tree-item "><span class="tw"></span><span class="ic">📄</span>README.md</div>
+    </nav>
+    <main class="editor" aria-label="에디터 — Neovim 렌더 영역">
+      <!-- 이 영역의 텍스트·라인번호·구문강조·커서는 모두 Neovim이 그린다. 앱은 그리지 않는다. -->
+      <div class="nvim">
+        <div class="cl"><span class="ln">1</span><span class="lc"><span class="k">import</span> Foundation</span></div>
+        <div class="cl"><span class="ln">2</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">3</span><span class="lc"><span class="c">/// 정방향·역방향 인덱스 — 소스에서 전량 재생성 가능한 파생물</span></span></div>
+        <div class="cl"><span class="ln">4</span><span class="lc"><span class="k">final class</span> <span class="t">SymbolIndex</span> {</span></div>
+        <div class="cl"><span class="ln">5</span><span class="lc">    <span class="k">private var</span> byFile: [<span class="t">String</span>: [<span class="t">Symbol</span>]] = [:]</span></div>
+        <div class="cl"><span class="ln">6</span><span class="lc">    <span class="k">private var</span> byName: [<span class="t">String</span>: [<span class="t">Location</span>]] = [:]</span></div>
+        <div class="cl"><span class="ln">7</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">8</span><span class="lc">    <span class="k">func</span> <span class="f">buildIndex</span>(files: [<span class="t">URL</span>]) {</span></div>
+        <div class="cl"><span class="ln">9</span><span class="lc">        <span class="k">for</span> file <span class="k">in</span> files { <span class="f">indexFile</span>(file) }</span></div>
+        <div class="cl"><span class="ln">10</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">11</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">12</span><span class="lc">    <span class="k">func</span> <span class="f">indexFile</span>(<span class="k">_</span> url: <span class="t">URL</span>) {</span></div>
+        <div class="cl hl"><span class="ln">13</span><span class="lc">        <span class="f">removeFile</span>(url)  <span class="c">// 증분 갱신: 옛 심볼 제거 후 대체</span></span></div>
+        <div class="cl"><span class="ln">14</span><span class="lc">        <span class="k">let</span> symbols = <span class="t">Parser</span>.<span class="f">parse</span>(url)</span></div>
+        <div class="cl"><span class="ln">15</span><span class="lc">        byFile[url.path] = symbols</span></div>
+        <div class="cl"><span class="ln">16</span><span class="lc">        <span class="k">for</span> symbol <span class="k">in</span> symbols {</span></div>
+        <div class="cl"><span class="ln">17</span><span class="lc">            byName[symbol.name, <span class="k">default</span>: []].<span class="f">append</span>(symbol.location)</span></div>
+        <div class="cl"><span class="ln">18</span><span class="lc">        }</span></div>
+        <div class="cl"><span class="ln">19</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">20</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">21</span><span class="lc">    <span class="k">func</span> <span class="f">definitions</span>(of name: <span class="t">String</span>) -> [<span class="t">Location</span>] {</span></div>
+        <div class="cl"><span class="ln">22</span><span class="lc">        byName[name] ?? []</span></div>
+        <div class="cl"><span class="ln">23</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">24</span><span class="lc">}</span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+      </div>
+      <!-- 아래 상태줄은 사용자의 ~/.config/nvim 설정이 그린 Neovim 상태줄이다(앱 상태바와 별개, INV-4) -->
+      <div class="nvim-status">
+        <span class="seg-mode">NORMAL</span>
+        <span class="seg-file">SymbolIndex.swift</span>
+        <span class="seg-meta">swift  utf-8  LF</span>
+        <span class="seg-pos">8:5  32%</span>
+      </div>
+      <div class="nvim-cmdline"></div>
+
+    </main>
+    <aside class="panel" aria-label="전문 검색 패널">
+      <div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="false">참조</button><button class="tab active" role="tab" aria-selected="true">검색</button></div>
+      <div class="search-row"><input class="input" value="증분 갱신" aria-label="검색어"><button class="toggle" aria-pressed="false">.*</button></div>
+      <div class="result-meta">500건 표시 · 4,812 파일 검색 · 0.8초</div>
+      <div class="cap-bar">상위 500건만 표시합니다 — 검색어를 더 구체적으로 좁혀 주세요</div>
+      <div class="plist" role="listbox">
+        <div class="pgroup">Sources/Index/SymbolIndex.swift</div>
+        <div class="pitem active"><span class="loc">13</span><span class="prev">removeFile(url)  // <mark>증분 갱신</mark>: 옛 심볼 제거 후 대체</span></div>
+        <div class="pgroup">Sources/Index/Watcher.swift</div>
+        <div class="pitem"><span class="loc">28</span><span class="prev">/// 디바운스 후 <mark>증분 갱신</mark>을 요청한다</span></div>
+        <div class="pitem"><span class="loc">51</span><span class="prev">logger.debug("<mark>증분 갱신</mark> 시작 \(path)")</span></div>
+        <div class="pgroup">Sources/App.swift</div>
+        <div class="pitem"><span class="loc">96</span><span class="prev">// 대량 변경이면 <mark>증분 갱신</mark> 대신 전체 재스캔</span></div>
+        <div class="pgroup">Tests/WatcherTests.swift</div>
+        <div class="pitem"><span class="loc">33</span><span class="prev">func test_<mark>증분_갱신</mark>_500ms_이내() async {</span></div>
+      </div>
+    </aside>
+  </div>
+  <footer class="statusbar" role="status">
+    <div class="sb-left">
+      <span class="mode-chip mode-normal">NORMAL</span><span class="mode-layer">Vim</span>
+      <span class="sb-sep"></span>
+      <span class="sb-path">Sources/Index/<b>SymbolIndex.swift</b></span>
+    </div>
+    <div class="sb-center"><span class="sb-hint">:w 저장 · gd 정의 이동 · ⌃O 뒤로</span></div>
+    <div class="sb-right">
+      <span>13:9</span><span class="sb-sep"></span><span>Swift</span>
+      <span class="chip" title="마지막 갱신 09:41:12 · 4,812 파일 · 38,204 심볼"><i class="dot dot-ok"></i>인덱스 최신</span>
+      <span class="chip"><i class="dot dot-ok"></i>편집 세션 연결됨</span>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

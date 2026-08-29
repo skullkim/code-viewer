@@ -1,0 +1,7 @@
+- [backend-senior] tree-sitter-javascript SPM 패키지는 매니페스트가 `fileExists(atPath: "src/scanner.c")`를 소비자 CWD 기준으로 평가해 scanner.c가 빠지고 링크 실패한다 / 소비자가 못 고치는 상류 결함이라 JS·JSX를 TSX 문법으로 파싱하도록 설계를 바꿨다(의존성도 하나 줄었다)
+- [backend-senior] `nvim --embed`는 `nvim_ui_attach` 전까지 시동을 멈춘다 — attach 전에는 사용자 init.lua가 아직 로드되지 않았다 / 설정 의존 질의를 attach 전에 하면 조용히 기본값을 읽게 되므로 기동 순서를 계약에 고정했다
+- [backend-senior] SIGPIPE를 무시하지 않으면 죽은 Neovim에 쓸 때 앱이 통째로 종료된다(spike 첫 실행이 exit 141로 사망, 출력조차 못 남김) / REQ-004 AC-5 "조용한 먹통 금지"가 `signal(SIGPIPE, SIG_IGN)` 한 줄에 걸려 있어 ADR-0006에 필수 항목으로 박았다
+- [backend-senior] ripgrep 위임(웹앱판 결정)을 뒤집고 네이티브 Swift 스캔/검색으로 갔다 / 실측상 목표 대비 20배 여유가 있어 속도 이점이 사는 요구사항이 없고, 이 머신에 rg 바이너리가 실제로 없어 번들링 비용을 떠안아야 했다 — 대신 정규식 유효성 판정이 rg stderr 문자열 매칭에서 NSRegularExpression 직접 판정으로 바뀌어 오히려 견고해졌다
+- [backend-senior] 심볼의 라인·시그니처 기준을 선언 노드가 아니라 이름 노드로 바꿨다(웹앱판과 의도적 분기) / 선언 노드는 어노테이션에서 시작해서 `@Service` 붙은 클래스의 시그니처가 "@Service"로 나오고 정의 이동이 어노테이션 줄로 떨어졌다
+- [backend-senior] tree-sitter-kotlin 1.1.0은 백틱 없는 한글 식별자를 파싱하지 못한다(ERROR) — 문자열·주석·백틱 식별자는 정상 / 상류 문법 한계라 우회 불가, 실제 코틀린 코드는 백틱 관용구를 쓰므로 영향은 무시할 수준. 테스트를 실제 코드에 나오는 형태로 맞췄다
+- [backend-senior] 공유 테스트 타깃에서 주니어의 "컴파일 에러 Red"가 팀 전원의 swift test를 막았다 / Swift는 --filter를 줘도 타깃 전체를 컴파일하므로, 테스트와 함께 스텁 타입을 넣어 "단언 실패 Red"로 만드는 규율을 주니어에게 전달했다
