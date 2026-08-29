@@ -5,6 +5,34 @@
 
 | REQ-ID | 영역 | 커버하는 테스트 | 담당 | 테스트 상태 |
 |--------|------|---------------|------|-----------|
+| REQ-001 AC-1 · AC-4 | backend | `ProjectIndexerTests` — 열기 시 전체 인덱싱·제외/gitignore 반영 · `ProjectScannerTests` (12) | backend-senior | PASS |
+| REQ-001 AC-3 | backend | `ProjectIndexerTests` "존재하지 않는 경로는 에러이고 이전 프로젝트가 유지된다" · `ProjectScannerTests` 누락/파일루트 에러 | backend-senior | PASS |
+| REQ-002 AC-1 · AC-2 | backend | `SymbolExtractorTests` (Kotlin 5 / Java 2 / TS·JS 5) — 7종 심볼 전량, 4언어 | backend-senior | PASS |
+| REQ-002 AC-3 | backend | `SourceLanguageTests` (4) 미지원 확장자 nil · `SymbolExtractorTests` 미지원 확장자 빈 결과 · `ProjectScannerTests` 미지원 파일도 검색 대상 유지 | backend-senior | PASS |
+| REQ-002 AC-4 | backend | `SymbolExtractorTests` 깨진 소스·부분 깨짐·빈 소스 · `ProjectIndexerTests` "파싱이 깨지는 파일이 있어도 나머지는 인덱싱된다" | backend-senior | PASS |
+| REQ-004 AC-1 | backend | `NeovimChannelTests` 기동·요청/응답·에러 표면화 · 미설치 시 명확한 에러 · `NeovimEditorSessionTests` 끊김 상태 | backend-senior | PASS |
+| REQ-004 AC-2 | backend | `NeovimChannelTests` ui_attach 후 redraw 수신·키 입력→버퍼·모드 전이 · `NeovimGridStateTests` (16) 그리드 전 이벤트 | backend-senior | PASS |
+| REQ-004 AC-3 · INV-4 | backend | `NeovimChannelTests` "사용자 설정이 그대로 적용된다 — 단, UI를 붙인 뒤에 로드된다" (XDG 픽스처) | backend-senior | PASS |
+| REQ-004 AC-4 | backend | `NeovimEditorSessionTests` 더티→저장→경로 통지·디스크 반영 · `AcceptanceScenarioTests` SC-3 | backend-senior | PASS |
+| REQ-004 AC-5 · SC-7 | backend | `NeovimChannelTests` SIGKILL 감지·요청 즉시 실패 · `NeovimEditorSessionTests` 끊김 통지 후 재기동 | backend-senior | PASS |
+| REQ-005 AC-1 · SC-1 | backend | `AcceptanceScenarioTests` SC-1 · `NeovimEditorSessionTests` 파일 열기+라인 이동 | backend-senior | PASS |
+| REQ-005 AC-2 · SC-2 | backend | `AcceptanceScenarioTests` SC-2 동명 정의 3건 · `SymbolIndexTests` 동명 정의 전량·정렬 | backend-senior | PASS |
+| REQ-005 AC-3 | backend | `SymbolIndexTests` "없는 이름은 빈 배열이다 — nil이 아니다" (호출자가 "찾을 수 없음"을 구분 가능) | backend-senior | PASS |
+| REQ-005 AC-4 | backend | `NeovimEditorSessionTests` `recordJump` 경로 · `NeovimChannelTests` 점프 목록 | backend-senior | PASS |
+| REQ-006 AC-2 | backend | `AcceptanceScenarioTests` "참조 목록에 정의가 포함되고 플래그로 구분된다" | backend-senior | PASS |
+| REQ-007 AC-1 · AC-2 · AC-4 | backend | `SymbolSearcherTests` (7) 관련도 순위·동점 규칙·상한 50·강조 구간·빈 결과 · `AcceptanceScenarioTests` 퍼지 검색 | backend-senior | PASS |
+| REQ-008 AC-2 · SC-6 | backend | `AcceptanceScenarioTests` SC-6 잘못된 정규식은 에러(같은 문자열의 리터럴 검색은 정상 빈 결과) | backend-senior | PASS |
+| REQ-009 AC-1 | backend | `ProjectIndexerTests` 변경 파일만 재인덱싱 · `FileSystemWatcherTests` 실제 FSEvents 감지 · `FileChangeBatchTests` 디바운스 합침 | backend-senior | PASS |
+| REQ-009 AC-2 · INV-1 | backend | `ProjectIndexerTests` 삭제 시 심볼 제거 · `SymbolIndexTests` 양방향 맵 정리·빈 키 제거 | backend-senior | PASS |
+| REQ-009 AC-3 | backend | `ProjectIndexerTests` 이름 변경 후 옛 경로 잔재 없음 · gitignore 신규 적용 시 삭제 취급 | backend-senior | PASS |
+| REQ-009 AC-4 · SC-5 | backend | `ProjectIndexerTests` 대량 변경 전체 재스캔 폴백(경계 50)·드롭 신호 재스캔 · `FileChangeBatchTests` (7) · `FileSystemWatcherTests` 대량 변경 생존 | backend-senior | PASS |
+| REQ-009 AC-5 · SC-3 | backend | `AcceptanceScenarioTests` SC-3(2초 내 검색) · "저장 통지 경로만으로도 재인덱싱된다" · 프로젝트 밖 경로 무시 | backend-senior | PASS |
+| REQ-010 AC-4 | backend | `NeovimEditorSessionTests` "입력 모드를 바꿔도 편집 내용과 더티 상태가 보존된다"(전환만으로 저장되지 않음 포함) | backend-senior | PASS |
+| INV-2 (파생물) | backend | `ProjectIndexerTests` 열기 시 전량 재생성 · 디스크 영속 코드 부재(ADR-0003) | backend-senior | PASS |
+| INV-3 (편집 단일 경로) | backend | `NeovimChannelTests` "버퍼를 고쳐도 디스크는 그대로고 :w 시점에만 쓰인다" · `ProjectSession`에 쓰기 API 부재(타입 수준 강제) | backend-senior | PASS |
+| REQ-NF-001 | backend | `IndexingPerformanceTests` (3) — 5,000파일 인덱싱 0.28초 / 정의 조회 0.0ms / 증분 갱신 0.4ms | backend-senior | PASS |
+| REQ-NF-004 | backend | `SymbolExtractorTests` 깨진 소스 · `ProjectScannerTests` 심링크 루프·읽기 실패 · `ProjectIndexerTests` 바이너리/초대형 파일 스킵 · `NeovimGridStateTests` 미지 이벤트·범위 밖 좌표 | backend-senior | PASS |
+| REQ-NF-005 | backend | `NeovimChannelTests` 미설치 시 `editorNotInstalled` · 실행 불가 경로 에러 | backend-senior | PASS |
 | REQ-007 AC-1 | backend | `FuzzyMatcherTests` (10) — 부분수열 매칭·대소문자 무시·불일치·강조 구간·점수 순위 | backend-junior | PASS |
 | REQ-006 AC-1 · REQ-008 AC-1 | backend | `PreviewTextBuilderTests` (8) — UTF-8→UTF-16 환산(한글)·선행 공백 보정·200 절단·서로게이트 페어 보호 | backend-junior | PASS |
 | REQ-004 (ADR-0006 RPC 코덱) | backend | `MessagePackCodecTests` (23) — 전 타입 왕복·폭 경계·중첩·부분 프레임 판정·다중 프레임 소비 위치 | backend-junior | PASS |
@@ -15,7 +43,32 @@
 
 ## 게이트 상태
 - 풀 게이트(`_workspace/gate.sh`)는 backend-senior가 1회 실행한다. 아래 값은 그 실행 결과로만 갱신된다.
-- 마지막 실행: (미실행)
+- **마지막 실행: 2026-08-29 · `GATE: PASS` (exit 0)** — `swift build` OK · `swift test` **252 tests / 28 suites 전량 통과** · 민감정보 스캔 163파일 클린.
+- 게이트 자체 검사(`gate.sh --self-test`): 리크 픽스처 3갈래(AWS 키·토큰·camelCase 자격증명) 전부 검출 + 제거 후 클린 = 양방향 통과.
+- 게이트의 빌드 검사 실측: 일부러 컴파일 에러를 심어 `FAIL: swift build` / exit 1 확인(`set -o pipefail`이 파이프 뒤 종료코드를 보존함을 실증).
+
+## 방어선 실측 (backend-senior)
+핵심 규칙 25종을 일부러 깨뜨려 테스트가 red가 되는지 확인했다. 대표 항목:
+gitignore 별표/앵커링/디렉토리전용/부정/중첩 · 스캐너 심링크·제외·중첩 gitignore · 인덱스 역방향 정리·정렬 ·
+추출기 constructor 제외·모듈레벨 게이트 · 세션 저장 통지·flush 발행·경로 검증·끊김 통지 ·
+심볼 검색 정렬/동점 규칙/상한 · 트리 디렉토리 우선 정렬 · 참조 상한.
+
+이 과정에서 **가짜 초록 2건**을 발견해 보강했다:
+1. "부착 전 키 큐잉" 테스트가 알림 도착만 단언해, 큐잉 코드를 지워도 통과했다 → 버퍼 내용 직접 확인으로 변경.
+2. 심볼 검색 순위 테스트의 입력 순서가 기대 결과의 역순이라, 정렬을 `reverse()`로 바꿔도 통과했다 → 픽스처 재배치.
+
+또한 **변이 하네스 자체가 침묵 실패**했다(변이가 컴파일 실패하면 실패 0건 = "방어선 있음"과 구분 불가).
+빌드 실패와 테스트 실패를 분리 판정하도록 고친 뒤에야 위 2건이 드러났다.
+
+## 백엔드 미충족/범위 밖 (정직한 상태)
+- **REQ-003·REQ-011은 프론트엔드 영역**이다. 백엔드는 `directoryEntries` 데이터만 제공한다.
+- **REQ-010 AC-1·2·3·5·6, SC-9**: 엔진은 `setInputMode`와 Neovim 옵션·매핑까지 구현했고 상태 보존(AC-4)은
+  테스트로 닫혔다. 실제 키 해석 결과(AC-2 맥 관례 동작, AC-5 문자 리터럴 입력)와 토글 UI·재시작 복원(AC-3·AC-6)은
+  **프론트엔드 조립 후 라이브 검증**이 필요하다 — 백엔드 단독으로 닫았다고 주장하지 않는다.
+- **SC-4(사용자 실설정)**: 이 머신에 `~/.config/nvim`이 없어 XDG 픽스처로 *메커니즘*을 검증했다.
+  실제 사용자 설정으로의 확인은 리더/QA 몫이다.
+- **SC-8(유휴 메모리 150MB)**: 테스트 프로세스 피크 93.7MB를 실측했으나, **앱 유휴 실측은 조립 후 리더 인증 단계**의 몫이다.
+- **REQ-NF-002 앱 번들 ≤200MB · REQ-NF-003 기동 ≤2초**: 앱 조립 후에만 측정 가능하다.
 
 ## 기여 범위 메모 (backend-junior)
 위 네 행은 **단위 수준** 커버리지다. 해당 REQ가 끝단까지 충족됐다는 뜻이 아니다:
