@@ -1,0 +1,418 @@
+import CodeNavigatorContract
+import Foundation
+
+/// The embedded Neovim editing session (REQ-004, REQ-005, REQ-010).
+///
+/// Neovim owns the buffers, the undo history, the dirty state, and every write to disk. This type
+/// starts it, attaches a UI, forwards key input, and turns redraw events into renderable frames.
+/// It contains no code that writes to project files (INV-3) and never touches the user's
+/// configuration (INV-4).
+public actor NeovimEditorSession: EditorSession {
+    /// Neovim tells us about saves and cursor movement over these notification names.
+    private static let savedNotification = "code_navigator_saved"
+    private static let statusNotification = "code_navigator_status"
+
+    private let executableLocator: NeovimExecutableLocator
+    private let executableOverridePath: String?
+
+    private var channel: NeovimChannel?
+    private var gridState = NeovimGridState()
+    private var projectRoot: URL?
+    private var gridSize = (columns: 80, rows: 24)
+    private var currentInputMode: InputMode = .vim
+    private var isUserInterfaceAttached = false
+
+    /// Keys that arrived before the UI attached. Neovim ignores input until then (ADR-0006), so
+    /// dropping them would silently lose the user's first keystrokes.
+    private var queuedKeys: [String] = []
+
+    private var stateBroadcaster = EventBroadcaster<EditorSessionState>(initialValue: .notStarted)
+    private var gridBroadcaster = EventBroadcaster<EditorGridSnapshot>()
+    private var statusBroadcaster = EventBroadcaster<EditorStatus>()
+    private var savedPathBroadcaster = EventBroadcaster<String>()
+    private var notificationTask: Task<Void, Never>?
+
+    /// Creates a session. Pass `executableOverridePath` to use a specific Neovim build; by
+    /// default the usual install locations are searched.
+    public init(executableOverridePath: String? = nil) {
+        self.executableLocator = NeovimExecutableLocator()
+        self.executableOverridePath = executableOverridePath
+    }
+
+    /// Lets tests describe a machine where Neovim is missing, which the public initializer
+    /// deliberately cannot express.
+    init(executableLocator: NeovimExecutableLocator, executableOverridePath: String? = nil) {
+        self.executableLocator = executableLocator
+        self.executableOverridePath = executableOverridePath
+    }
+
+    // MARK: - Lifecycle
+
+    public func start(projectRoot: URL, columns: Int, rows: Int) async throws {
+        self.projectRoot = projectRoot
+        gridSize = (max(columns, 1), max(rows, 1))
+        updateState(.connecting)
+
+        let executableURL: URL
+        do {
+            executableURL = try executableLocator.locate(overridePath: executableOverridePath)
+        } catch {
+            let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
+            updateState(.disconnected(reason: reason))
+            throw error
+        }
+
+        let channel = NeovimChannel()
+        self.channel = channel
+        do {
+            // No `--clean`: the user's configuration must load exactly as it would in a terminal.
+            try await channel.start(
+                executableURL: executableURL,
+                arguments: ["--cmd", "cd \(shellQuoted(projectRoot.path))"]
+            )
+        } catch {
+            let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
+            updateState(.disconnected(reason: reason))
+            throw error
+        }
+
+        await startConsumingNotifications(from: channel)
+        await channel.onTermination { [weak self] status in
+            Task { await self?.handleProcessExit(status: status) }
+        }
+
+        try await attachUserInterface(to: channel)
+        try await installNotificationHooks(on: channel)
+
+        updateState(.connected)
+        await flushQueuedKeys()
+        await refreshStatus()
+    }
+
+    public func restart() async throws {
+        guard let projectRoot else {
+            throw NavigatorError.noProjectOpen
+        }
+        await shutDown()
+        try await start(projectRoot: projectRoot, columns: gridSize.columns, rows: gridSize.rows)
+    }
+
+    public func shutDown() async {
+        notificationTask?.cancel()
+        notificationTask = nil
+        await channel?.terminate()
+        channel = nil
+        isUserInterfaceAttached = false
+        gridState = NeovimGridState()
+        updateState(.notStarted)
+    }
+
+    public func state() async -> EditorSessionState {
+        stateBroadcaster.latest ?? .notStarted
+    }
+
+    // MARK: - Streams
+
+    public func stateUpdates() async -> AsyncStream<EditorSessionState> {
+        stateBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.unsubscribeState(identifier) }
+        }
+    }
+
+    public func gridUpdates() async -> AsyncStream<EditorGridSnapshot> {
+        gridBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.unsubscribeGrid(identifier) }
+        }
+    }
+
+    public func statusUpdates() async -> AsyncStream<EditorStatus> {
+        statusBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.unsubscribeStatus(identifier) }
+        }
+    }
+
+    public func savedFilePaths() async -> AsyncStream<String> {
+        savedPathBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.unsubscribeSavedPath(identifier) }
+        }
+    }
+
+    private func unsubscribeState(_ identifier: Int) { stateBroadcaster.unsubscribe(identifier) }
+    private func unsubscribeGrid(_ identifier: Int) { gridBroadcaster.unsubscribe(identifier) }
+    private func unsubscribeStatus(_ identifier: Int) { statusBroadcaster.unsubscribe(identifier) }
+    private func unsubscribeSavedPath(_ identifier: Int) { savedPathBroadcaster.unsubscribe(identifier) }
+
+    // MARK: - Input
+
+    public func resizeGrid(columns: Int, rows: Int) async throws {
+        gridSize = (max(columns, 1), max(rows, 1))
+        guard let channel, isUserInterfaceAttached else { return }
+        try await channel.request("nvim_ui_try_resize", [
+            .integer(Int64(gridSize.columns)), .integer(Int64(gridSize.rows)),
+        ])
+    }
+
+    public func sendKeys(_ keys: String) async throws {
+        guard !keys.isEmpty else { return }
+        guard let channel, isUserInterfaceAttached else {
+            queuedKeys.append(keys)
+            return
+        }
+        try await channel.request("nvim_input", [.string(keys)])
+    }
+
+    public func setInputMode(_ mode: InputMode) async throws {
+        guard mode != currentInputMode else { return }
+        let channel = try requireChannel()
+        let script = mode == .standard ? NeovimStandardMode.enterScript : NeovimStandardMode.exitScript
+        try await channel.request("nvim_exec_lua", [.string(script), .array([])])
+        currentInputMode = mode
+        await refreshStatus()
+    }
+
+    public func inputMode() async -> InputMode {
+        currentInputMode
+    }
+
+    // MARK: - Navigation
+
+    public func openFile(atRelativePath relativePath: String, line: Int?, recordJump: Bool) async throws {
+        let channel = try requireChannel()
+        guard let projectRoot else {
+            throw NavigatorError.noProjectOpen
+        }
+        guard !relativePath.split(separator: "/").contains("..") else {
+            throw NavigatorError.invalidPath(relativePath)
+        }
+
+        // Mark the current spot first so the Vim jump motions come back here (REQ-005 AC-4).
+        if recordJump {
+            try await channel.request("nvim_command", [.string("normal! m'")])
+        }
+
+        let absolutePath = projectRoot.appendingPathComponent(relativePath).path
+        try await channel.request("nvim_command", [.string("edit \(shellQuoted(absolutePath))")])
+
+        if let line, line > 0 {
+            try await channel.request("nvim_win_set_cursor", [
+                .integer(0), .array([.integer(Int64(line)), .integer(0)]),
+            ])
+            // Put the target line in the middle of the window so its context is visible.
+            try await channel.request("nvim_command", [.string("normal! zz")])
+        }
+        await refreshStatus()
+    }
+
+    public func jumpBack() async throws {
+        let channel = try requireChannel()
+        try await channel.request("nvim_command", [.string("execute \"normal! \\<C-o>\"")])
+        await refreshStatus()
+    }
+
+    public func wordUnderCursor() async throws -> String? {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_eval", [.string("expand('<cword>')")])
+        guard let word = value.stringValue, !word.isEmpty else { return nil }
+        return word
+    }
+
+    // MARK: - Start-up steps
+
+    private func attachUserInterface(to channel: NeovimChannel) async throws {
+        // `--embed` holds Neovim's start-up until a UI attaches, so this call is what makes the
+        // user's configuration run and what makes key input start being processed (ADR-0006).
+        try await channel.request("nvim_ui_attach", [
+            .integer(Int64(gridSize.columns)),
+            .integer(Int64(gridSize.rows)),
+            .map([
+                MessagePackKeyValuePair(key: .string("ext_linegrid"), value: .boolean(true)),
+                MessagePackKeyValuePair(key: .string("rgb"), value: .boolean(true)),
+            ]),
+        ])
+        isUserInterfaceAttached = true
+    }
+
+    /// Asks Neovim to tell us when a file is written and when the buffer state changes, instead of
+    /// polling. The save signal is what re-indexes an in-app edit without waiting for the file
+    /// watcher (REQ-009 AC-5).
+    private func installNotificationHooks(on channel: NeovimChannel) async throws {
+        let apiInfo = try await channel.request("nvim_get_api_info", [])
+        guard let channelIdentifier = apiInfo.arrayValue?.first?.integerValue else {
+            throw NavigatorError.editorUnavailable(reason: "채널 식별자를 얻지 못했습니다")
+        }
+
+        let script = """
+        local channelIdentifier = ...
+        local function reportStatus()
+          local buffer = vim.api.nvim_get_current_buf()
+          local cursor = vim.api.nvim_win_get_cursor(0)
+          vim.rpcnotify(channelIdentifier, '\(Self.statusNotification)', {
+            path = vim.api.nvim_buf_get_name(buffer),
+            modified = vim.api.nvim_get_option_value('modified', { buf = buffer }),
+            line = cursor[1],
+            column = cursor[2] + 1,
+          })
+        end
+        vim.api.nvim_create_autocmd({'BufWritePost'}, {
+          callback = function(arguments)
+            vim.rpcnotify(channelIdentifier, '\(Self.savedNotification)', vim.api.nvim_buf_get_name(arguments.buf))
+            reportStatus()
+          end
+        })
+        vim.api.nvim_create_autocmd(
+          {'BufEnter', 'TextChanged', 'TextChangedI', 'CursorMoved', 'CursorMovedI', 'ModeChanged'},
+          { callback = reportStatus }
+        )
+        """
+        try await channel.request("nvim_exec_lua", [
+            .string(script), .array([.integer(Int64(channelIdentifier))]),
+        ])
+    }
+
+    private func flushQueuedKeys() async {
+        let keys = queuedKeys
+        queuedKeys.removeAll()
+        for chunk in keys {
+            try? await sendKeys(chunk)
+        }
+    }
+
+    // MARK: - Notification handling
+
+    private func startConsumingNotifications(from channel: NeovimChannel) async {
+        let notifications = await channel.notifications()
+        notificationTask = Task { [weak self] in
+            for await notification in notifications {
+                await self?.handle(notification)
+            }
+        }
+    }
+
+    private func handle(_ notification: NeovimNotification) {
+        switch notification.method {
+        case "redraw":
+            handleRedraw(notification.parameters)
+        case Self.savedNotification:
+            if let path = notification.parameters.first?.stringValue, !path.isEmpty {
+                savedPathBroadcaster.send(path)
+            }
+        case Self.statusNotification:
+            if let fields = notification.parameters.first?.mapValue {
+                statusBroadcaster.send(makeStatus(fromFields: fields))
+            }
+        default:
+            break
+        }
+    }
+
+    /// A redraw notification carries a batch of events. `flush` marks the end of a frame, which is
+    /// the only point the screen is consistent and therefore the only point worth publishing.
+    private func handleRedraw(_ events: [MessagePackValue]) {
+        var didFlush = false
+        for event in events {
+            guard let parts = event.arrayValue, let name = parts.first?.stringValue else { continue }
+            if name == "flush" {
+                didFlush = true
+                continue
+            }
+            // Each event carries one or more argument tuples for the same event name.
+            for argumentTuple in parts.dropFirst() {
+                guard let arguments = argumentTuple.arrayValue else { continue }
+                gridState.apply(eventName: name, arguments: arguments)
+            }
+        }
+        if didFlush {
+            gridBroadcaster.send(gridState.makeSnapshot())
+        }
+    }
+
+    private func makeStatus(fromFields fields: [MessagePackKeyValuePair]) -> EditorStatus {
+        var path: String?
+        var isDirty = false
+        var line = 1
+        var column = 1
+
+        for field in fields {
+            switch field.key.stringValue {
+            case "path":
+                let value = field.value.stringValue ?? ""
+                path = value.isEmpty ? nil : value
+            case "modified":
+                isDirty = field.value.booleanValue ?? false
+            case "line":
+                line = field.value.integerValue ?? 1
+            case "column":
+                column = field.value.integerValue ?? 1
+            default:
+                break
+            }
+        }
+
+        return EditorStatus(
+            filePath: path,
+            isDirty: isDirty,
+            cursorLine: line,
+            cursorColumn: column,
+            mode: gridBroadcaster.latest?.mode ?? .normal,
+            inputMode: currentInputMode
+        )
+    }
+
+    /// Pulls the current buffer state once, for the moments no autocommand fires — right after
+    /// start-up, and immediately after a navigation the interface needs reflected at once.
+    private func refreshStatus() async {
+        guard let channel, isUserInterfaceAttached else { return }
+        let script = """
+        local buffer = vim.api.nvim_get_current_buf()
+        local cursor = vim.api.nvim_win_get_cursor(0)
+        return {
+          path = vim.api.nvim_buf_get_name(buffer),
+          modified = vim.api.nvim_get_option_value('modified', { buf = buffer }),
+          line = cursor[1],
+          column = cursor[2] + 1,
+        }
+        """
+        guard let value = try? await channel.request("nvim_exec_lua", [.string(script), .array([])]),
+              let fields = value.mapValue
+        else {
+            return
+        }
+        statusBroadcaster.send(makeStatus(fromFields: fields))
+    }
+
+    private func handleProcessExit(status: Int32) {
+        isUserInterfaceAttached = false
+        updateState(.disconnected(reason: "편집 세션이 종료됐습니다 (상태 \(status)). 재기동할 수 있습니다."))
+    }
+
+    /// The current buffer's line under the cursor, so a test can assert that input actually
+    /// reached the buffer rather than merely that a notification arrived. Not part of the contract.
+    func currentLineForTesting() async throws -> String? {
+        guard let channel else { return nil }
+        return try await channel.request("nvim_get_current_line", []).stringValue
+    }
+
+    /// The embedded process id, so a test can simulate a crash. Not part of the contract.
+    func processIdentifierForTesting() async -> Int32? {
+        guard let channel else { return nil }
+        return await channel.processIdentifier
+    }
+
+    // MARK: - Helpers
+
+    private func updateState(_ newState: EditorSessionState) {
+        stateBroadcaster.send(newState)
+    }
+
+    private func requireChannel() throws -> NeovimChannel {
+        guard let channel else {
+            throw NavigatorError.editorNotRunning
+        }
+        return channel
+    }
+
+    /// Escapes a path for a Neovim ex command, where spaces separate arguments.
+    private func shellQuoted(_ path: String) -> String {
+        path.replacingOccurrences(of: " ", with: "\\ ")
+    }
+}
