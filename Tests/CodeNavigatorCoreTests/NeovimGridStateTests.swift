@@ -256,3 +256,111 @@ struct NeovimGridStateTests {
         #expect(snapshot.cursor.column < snapshot.columns)
     }
 }
+
+@Suite("NeovimGridState — 더블폭 문자와 컬럼 좌표")
+struct NeovimGridStateWideCharacterTests {
+
+    /// Neovim sends a double-width glyph as one cell followed by an **empty** cell, so a run's
+    /// character count and its column span differ. This is the fixture that was missing: every
+    /// other offset path in the engine had a Korean case, this one did not.
+    private func gridWithKoreanLine() -> NeovimGridState {
+        var grid = NeovimGridState()
+        // 그리드 폭을 셀 수와 정확히 맞춘다. 남는 칸이 있으면 같은 하이라이트의 빈 칸이
+        // 같은 run 으로 합쳐져서(정상 동작) 이 테스트의 의도가 흐려진다.
+        grid.apply(eventName: "grid_resize", arguments: [.integer(1), .integer(10), .integer(1)])
+        grid.apply(eventName: "grid_line", arguments: [
+            .integer(1), .integer(0), .integer(0),
+            .array([
+                cell("인"), cell(""), cell("덱"), cell(""), cell("스"), cell(""),
+                cell(" "), cell("a"), cell("b"), cell("c"),
+            ]),
+            .boolean(false),
+        ])
+        return grid
+    }
+
+    @Test("한글 줄의 run은 문자 수가 아니라 실제 셀 수를 보고한다")
+    func reportsCellWidthNotCharacterCount() {
+        var grid = gridWithKoreanLine()
+        let line = grid.makeSnapshot().lines[0]
+        let run = line.runs[0]
+
+        // '인덱스 abc' = 문자 7개(공백 포함), 점유 셀 10개. 이 차이가 이 필드의 존재 이유다.
+        #expect(run.text == "인덱스 abc")
+        #expect(run.text.count == 7)
+        #expect(run.cellWidth == 10)
+        #expect(run.startColumn == 0)
+    }
+
+    @Test("한글 뒤에 오는 run의 시작 컬럼이 셀 기준으로 정확하다")
+    func reportsCorrectStartColumnAfterWideCharacters() {
+        var grid = NeovimGridState()
+        grid.apply(eventName: "grid_resize", arguments: [.integer(1), .integer(7), .integer(1)])
+        grid.apply(eventName: "hl_attr_define", arguments: [
+            .integer(5),
+            .map([MessagePackKeyValuePair(key: .string("bold"), value: .boolean(true))]),
+            .map([]), .array([]),
+        ])
+        // '인덱스'(6셀) 뒤에 다른 하이라이트로 'x' — x는 반드시 컬럼 6에서 시작해야 한다.
+        grid.apply(eventName: "grid_line", arguments: [
+            .integer(1), .integer(0), .integer(0),
+            .array([cell("인", 0), cell(""), cell("덱"), cell(""), cell("스"), cell(""), cell("x", 5)]),
+            .boolean(false),
+        ])
+
+        let runs = grid.makeSnapshot().lines[0].runs
+        let styledRun = try! #require(runs.first { $0.style.isBold })
+        #expect(styledRun.text == "x")
+        #expect(styledRun.startColumn == 6)
+
+        // 문자 수로 컬럼을 유도했다면 3이 나온다. 그게 이 필드가 존재하는 이유다.
+        #expect(runs[0].text.count == 3)
+        #expect(runs[0].cellWidth == 6)
+    }
+
+    @Test("run들의 시작 컬럼과 폭이 줄 전체를 빈틈없이 덮는다")
+    func runsTileTheLineWithoutGaps() {
+        var grid = gridWithKoreanLine()
+        let snapshot = grid.makeSnapshot()
+        let runs = snapshot.lines[0].runs
+
+        var expectedColumn = 0
+        for run in runs {
+            #expect(run.startColumn == expectedColumn)
+            expectedColumn += run.cellWidth
+        }
+        #expect(expectedColumn == snapshot.columns)
+    }
+
+    @Test("커서 컬럼은 셀 좌표라 한글 뒤에서도 run 좌표와 같은 공간에 있다")
+    func cursorColumnSharesTheCellCoordinateSpace() {
+        var grid = gridWithKoreanLine()
+        // '인덱스 ' 다음, 즉 'a' 위 — 셀 기준 7번째.
+        grid.apply(eventName: "grid_cursor_goto", arguments: [.integer(1), .integer(0), .integer(7)])
+
+        let snapshot = grid.makeSnapshot()
+        #expect(snapshot.cursor.column == 7)
+
+        // 커서가 놓인 셀을 run 좌표로 찾을 수 있어야 한다.
+        let run = snapshot.lines[0].runs.first {
+            snapshot.cursor.column >= $0.startColumn
+                && snapshot.cursor.column < $0.startColumn + $0.cellWidth
+        }
+        #expect(run != nil)
+    }
+
+    @Test("ASCII 전용 줄에서는 문자 수와 셀 수가 같다")
+    func asciiLineHasMatchingCharacterAndCellCounts() {
+        var grid = NeovimGridState()
+        grid.apply(eventName: "grid_resize", arguments: [.integer(1), .integer(5), .integer(1)])
+        grid.apply(eventName: "grid_line", arguments: [
+            .integer(1), .integer(0), .integer(0),
+            .array([cell("h"), cell("e"), cell("l"), cell("l"), cell("o")]),
+            .boolean(false),
+        ])
+
+        let run = grid.makeSnapshot().lines[0].runs[0]
+        #expect(run.text.count == run.cellWidth)
+        #expect(run.cellWidth == 5)
+    }
+}

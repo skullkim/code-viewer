@@ -192,20 +192,38 @@ struct NeovimGridState {
             var runs: [EditorTextRun] = []
             var currentText = ""
             var currentIdentifier: Int?
+            var runStartColumn = 0
 
-            for cell in row {
+            // The cell index *is* the grid column, so the run's position and width come straight
+            // from the loop. This is the value a view cannot reconstruct from the text alone.
+            for (column, cell) in row.enumerated() {
                 if cell.highlightIdentifier == currentIdentifier {
                     currentText += cell.text
                     continue
                 }
                 if let identifier = currentIdentifier {
-                    runs.append(EditorTextRun(text: currentText, style: style(for: identifier)))
+                    runs.append(
+                        EditorTextRun(
+                            text: currentText,
+                            style: style(for: identifier),
+                            startColumn: runStartColumn,
+                            cellWidth: column - runStartColumn
+                        )
+                    )
                 }
                 currentText = cell.text
                 currentIdentifier = cell.highlightIdentifier
+                runStartColumn = column
             }
             if let identifier = currentIdentifier {
-                runs.append(EditorTextRun(text: currentText, style: style(for: identifier)))
+                runs.append(
+                    EditorTextRun(
+                        text: currentText,
+                        style: style(for: identifier),
+                        startColumn: runStartColumn,
+                        cellWidth: row.count - runStartColumn
+                    )
+                )
             }
             return EditorGridLine(runs: runs)
         }
