@@ -58,7 +58,10 @@ struct ProjectScanner {
     ) throws {
         // This directory's own .gitignore governs everything below it, so it must be loaded
         // before any child is judged.
-        if let ruleSet = loadGitignore(in: directoryURL, relativeDirectory: relativeDirectory) {
+        if let ruleSet = GitignoreRuleSet.load(
+            inDirectoryAt: directoryURL,
+            relativeDirectory: relativeDirectory
+        ) {
             ruleSets.append(ruleSet)
         }
         let matcher = GitignoreMatcher(ruleSets: ruleSets)
@@ -116,13 +119,5 @@ struct ProjectScanner {
                 indexableFilePaths.append(relativePath)
             }
         }
-    }
-
-    private func loadGitignore(in directoryURL: URL, relativeDirectory: String) -> GitignoreRuleSet? {
-        let gitignoreURL = directoryURL.appendingPathComponent(".gitignore")
-        guard let text = try? String(contentsOf: gitignoreURL, encoding: .utf8) else {
-            return nil
-        }
-        return GitignoreRuleSet(baseDirectory: relativeDirectory, patternText: text)
     }
 }

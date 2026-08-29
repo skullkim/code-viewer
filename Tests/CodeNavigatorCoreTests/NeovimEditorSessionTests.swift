@@ -55,8 +55,10 @@ struct NeovimEditorSessionTests {
         #expect(frame.lines.count == 24)
     }
 
-    @Test("Neovim이 없으면 명확한 에러와 함께 끊김 상태가 된다 — 무반응 금지")
-    func reportsMissingEditorAsDisconnected() async {
+    // 기동 실패와 끊김은 사용자에게 다른 조치를 요구한다 — 하나는 설치·업그레이드, 다른 하나는
+    // 재기동이다. 그래서 상태를 나눴고, 기동 실패는 구조화된 정보를 싣는다 (REQ-NF-005).
+    @Test("Neovim이 없으면 기동 실패 상태가 되고 안내에 필요한 정보를 싣는다")
+    func reportsMissingEditorAsStructuredStartupFailure() async {
         let fixture = TemporaryProjectFixture()
         let session = NeovimEditorSession(
             executableLocator: NeovimExecutableLocator(wellKnownPaths: ["/nonexistent/nvim"]),
@@ -66,11 +68,45 @@ struct NeovimEditorSessionTests {
         await #expect(throws: (any Error).self) {
             try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
         }
-        guard case .disconnected(let reason) = await session.state() else {
-            Issue.record("끊김 상태여야 한다")
+        guard case .startupFailed(let failure) = await session.state() else {
+            Issue.record("기동 실패 상태여야 한다")
             return
         }
-        #expect(!reason.isEmpty)
+        #expect(!failure.reason.isEmpty)
+        #expect(!failure.searchedPaths.isEmpty)
+        #expect(failure.requiredVersion == "0.9.0")
+        // 아예 못 찾은 경우와 "설치돼 있지만 낡음"은 다른 문구가 나가야 한다.
+        #expect(failure.foundVersion == nil)
+    }
+
+    @Test("설치된 Neovim의 버전을 실제로 읽는다")
+    func readsInstalledNeovimVersion() throws {
+        let locator = NeovimExecutableLocator()
+        let executable = try locator.locate()
+        let version = try #require(locator.version(of: executable))
+        #expect(version >= NeovimVersion.minimumSupported)
+    }
+
+    @Test("마우스 클릭을 그리드 셀 좌표로 전달한다 — 표준 모드의 커서 이동")
+    func forwardsMouseClicksInGridCoordinates() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: (1...10).map { "line \($0) text" }.joined(separator: "\n"))
+        let session = NeovimEditorSession()
+        try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        defer { Task { await session.shutDown() } }
+
+        try await session.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        try await Task.sleep(for: .milliseconds(200))
+
+        // 4행 6열을 누르면 커서가 그 줄로 가야 한다. 키 표기법으로는 위치를 실을 수 없어
+        // 이 경로가 따로 필요하다 (REQ-010 AC-2).
+        try await session.sendMouse(
+            EditorMouseEvent(button: .left, action: .press, row: 3, column: 6)
+        )
+        try await Task.sleep(for: .milliseconds(300))
+
+        let line = try await session.currentLineForTesting()
+        #expect(line == "line 4 text")
     }
 
     @Test("파일을 열고 지정한 라인으로 이동한다")
@@ -121,7 +157,7 @@ struct NeovimEditorSessionTests {
         let session = try await startSession(fixture)
         defer { Task { await session.shutDown() } }
 
-        let savedPaths = await session.savedFilePaths()
+        let savedFiles = await session.savedFiles()
         try await session.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
         try await session.sendKeys("ofun added() {}<Esc>")
 
@@ -129,8 +165,11 @@ struct NeovimEditorSessionTests {
         #expect(dirty != nil)
 
         try await session.sendKeys(":write<CR>")
-        let savedPath = await firstValue(from: savedPaths) { $0.hasSuffix("App.kt") }
-        #expect(savedPath != nil)
+        let saved = await firstValue(from: savedFiles) { (file: SavedFile) in file.path.hasSuffix("App.kt") }
+        let savedFile = try #require(saved)
+        // 줄 수·크기는 Neovim 이 저장 시점에 알고 있는 값이다. 앱이 파일을 다시 읽지 않는다.
+        #expect(savedFile.lineCount > 0)
+        #expect(savedFile.byteSize > 0)
 
         let onDisk = try String(contentsOf: fixture.rootURL.appendingPathComponent("src/App.kt"), encoding: .utf8)
         #expect(onDisk.contains("fun added()"))

@@ -36,4 +36,7 @@ public protocol ProjectSession: Sendable {
 
     /// One level of the file tree. Pass `""` for the project root (REQ-003).
     func directoryEntries(atRelativePath relativePath: String) async throws -> [DirectoryEntry]
+
+    /// A summary of the index for the details view, including how many files were skipped.
+    func indexStatistics() async -> IndexStatistics
 }

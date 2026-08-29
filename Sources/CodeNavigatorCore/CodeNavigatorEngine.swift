@@ -75,11 +75,11 @@ public final class CodeNavigatorEngine: Sendable {
     }
 
     private func beginObservingSaves() async {
-        let savedPaths = await editor.savedFilePaths()
+        let savedFiles = await editor.savedFiles()
         let project = self.project
         await saveObservationTask.replace(with: Task {
-            for await absolutePath in savedPaths {
-                await project.reindexSavedFile(atAbsolutePath: absolutePath)
+            for await saved in savedFiles {
+                await project.reindexSavedFile(atAbsolutePath: saved.path)
             }
         })
     }

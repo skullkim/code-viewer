@@ -28,6 +28,36 @@ pass() {
 }
 
 # ---------------------------------------------------------------------------
+# 실행 테스트 수 하한 (0매치 초록불 방어)
+# ---------------------------------------------------------------------------
+# swift test 는 --filter 가 아무것도 매칭하지 않아도 "0 tests passed" 를 찍고 종료 코드 0 을 낸다.
+# 실측: `swift test --filter ThisSuiteDoesNotExistXyz` -> "Test run with 0 tests in 0 suites passed", exit 0.
+# 통과 문구나 종료 코드만 보는 게이트는 오타 난 필터를 초록불로 통과시킨다. 그래서 건수를 직접 센다.
+#
+# 이 값은 래칫이다. 테스트가 늘면 올려라. 내리는 것은 테스트를 의도적으로 지웠을 때만이고,
+# 그때는 왜 줄었는지 저널에 남긴다.
+MINIMUM_TEST_COUNT=240
+
+test_count_from() {
+    printf '%s\n' "$1" | sed -nE 's/.*Test run with ([0-9]+) tests?.*/\1/p' | tail -1
+}
+
+check_test_count() {
+    local count
+    count="$(test_count_from "$1")"
+
+    if [ -z "$count" ]; then
+        fail "실행 테스트 수를 읽지 못했다 — 테스트가 아예 돌지 않았거나 출력 형식이 바뀌었다"
+        return
+    fi
+    if [ "$count" -lt "$MINIMUM_TEST_COUNT" ]; then
+        fail "실행 테스트 ${count}건 < 하한 ${MINIMUM_TEST_COUNT}건 — 필터나 타깃이 테스트를 걸러내고 있다"
+        return
+    fi
+    pass "실행 테스트 ${count}건 (하한 ${MINIMUM_TEST_COUNT}건)"
+}
+
+# ---------------------------------------------------------------------------
 # 민감정보 스캔 (공통)
 # ---------------------------------------------------------------------------
 # 검사 대상 파일 목록은 find 로 만든다. grep 의 --include 에 중괄호 glob 을 주면
@@ -72,7 +102,7 @@ secret_scan() {
 # 검사기 자체 검사 — 리크 픽스처로 양방향 실측
 # ---------------------------------------------------------------------------
 self_test() {
-    printf '=== 검사기 자체 검사 (리크 픽스처 양방향) ===\n'
+    printf '=== 검사기 자체 검사 (리크 픽스처 + 건수 하한, 양방향) ===\n'
     local fixture="./_gate_leak_fixture.swift"
     local status=0
 
@@ -107,6 +137,32 @@ self_test() {
         status=1
     fi
 
+    # 3) 건수 하한 가드도 양방향으로 검사한다. 검사기는 조용히 통과하는 쪽으로 고장난다.
+    local -a count_probes=(
+        "0|✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.|잡아야 한다"
+        "1|error: build failed — 건수 줄 없음|잡아야 한다"
+    )
+    local probe_case
+    for probe_case in "${count_probes[@]}"; do
+        FAILURES=0
+        check_test_count "${probe_case#*|}" >/dev/null 2>&1
+        if [ "$FAILURES" -gt 0 ]; then
+            printf '  ok: 건수 가드가 잡는다 — %s\n' "${probe_case##*|}"
+        else
+            printf '  FAIL: 건수 가드가 통과시켰다 — %s\n' "${probe_case#*|}"
+            status=1
+        fi
+    done
+
+    FAILURES=0
+    check_test_count "✔ Test run with $MINIMUM_TEST_COUNT tests in 30 suites passed after 4.0 seconds." >/dev/null 2>&1
+    if [ "$FAILURES" -eq 0 ]; then
+        printf '  ok: 하한 이상 실행은 통과시킨다 (오탐 없음)\n'
+    else
+        printf '  FAIL: 정상 실행을 실패로 잡는다 — 오탐이다\n'
+        status=1
+    fi
+
     rm -f "$fixture"
     return $status
 }
@@ -127,11 +183,18 @@ else
 fi
 
 section "백엔드: swift test"
-if swift test 2>&1 | tail -5; then
+# 출력을 잡아 두고 통과 여부와 실행 건수 양쪽에 쓴다 — 테스트를 두 번 돌리지 않는다.
+TEST_OUTPUT="$(swift test 2>&1)"
+TEST_STATUS=$?
+printf '%s\n' "$TEST_OUTPUT" | tail -5
+if [ "$TEST_STATUS" -eq 0 ]; then
     pass "swift test"
 else
     fail "swift test"
 fi
+
+section "백엔드: 실행 테스트 수"
+check_test_count "$TEST_OUTPUT"
 
 # ---------------------------------------------------------------------------
 # 프론트엔드 블록은 frontend-senior 가 이 아래에 추가한다.

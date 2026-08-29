@@ -118,7 +118,10 @@ struct DirectoryTreeLister {
         var directoryURL = rootPath
         var relativeDirectory = ""
 
-        if let ruleSet = loadGitignore(in: directoryURL, relativeDirectory: relativeDirectory) {
+        if let ruleSet = GitignoreRuleSet.load(
+            inDirectoryAt: directoryURL,
+            relativeDirectory: relativeDirectory
+        ) {
             ruleSets.append(ruleSet)
         }
 
@@ -126,20 +129,15 @@ struct DirectoryTreeLister {
             directoryURL.appendPathComponent(segment)
             relativeDirectory = relativeDirectory.isEmpty ? segment : "\(relativeDirectory)/\(segment)"
 
-            if let ruleSet = loadGitignore(in: directoryURL, relativeDirectory: relativeDirectory) {
+            if let ruleSet = GitignoreRuleSet.load(
+                inDirectoryAt: directoryURL,
+                relativeDirectory: relativeDirectory
+            ) {
                 ruleSets.append(ruleSet)
             }
         }
 
         return ruleSets
-    }
-
-    private func loadGitignore(in directoryURL: URL, relativeDirectory: String) -> GitignoreRuleSet? {
-        let gitignoreURL = directoryURL.appendingPathComponent(".gitignore")
-        guard let text = try? String(contentsOf: gitignoreURL, encoding: .utf8) else {
-            return nil
-        }
-        return GitignoreRuleSet(baseDirectory: relativeDirectory, patternText: text)
     }
 
     private func byName(_ left: DirectoryEntry, _ right: DirectoryEntry) -> Bool {

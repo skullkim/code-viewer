@@ -2,7 +2,7 @@
 
 상세 스펙·완료 기준은 `03_frontend_architecture.md §4`. 아래는 상태 추적용.
 
-> **현황 (2026-08-29 17:26 실측)**: 순수 로직 16개 스위트 **161 테스트 전부 통과**.
+> **현황 (2026-08-29 17:33 실측)**: 순수 로직 18개 스위트 **187 테스트 전부 통과**.
 > **단, 이 테스트는 아직 레포의 `swift test`로 돌지 않는다.** `Package.swift`의 프론트 타깃 분리가
 > 미반영이라(16:33 이후 미변경) 코드가 `_workspace/frontend-staging/`의 미러 패키지에서 돈다.
 > 계약은 실제 소스를 심볼릭 링크로 물려 쓴다(복사본 드리프트 방지). SPM이 `_workspace/`를 보지
@@ -16,8 +16,8 @@
 | F-01 | 디자인 토큰 | REQ-011 AC-4 | **로직 완료** | `DesignTokenTests`(6) · `ColorContrastTests`(5) |
 | F-02 | ShellLayout 치수 계산 | REQ-011 AC-3 | **로직 완료** | `ShellLayoutTests`(13) |
 | F-03 | KeyNotation + 단축키 판별 | REQ-010·011 | **로직 완료** | `KeyNotationTests`(12) |
-| F-04 | 그리드 렌더러 | REQ-004 | **부분 완료** — 기하·배치 완료, 스냅샷→셀 변환은 계약 #1 대기 | `GridGeometryTests`(9) · `GlyphBatcherTests`(9) |
-| F-05 | EditorGridView + 키 배선 | REQ-004·010 | 대기(계약 #1 · 타깃) | — |
+| F-04 | 그리드 렌더러 | REQ-004 | **로직 완료** (계약 #1 반영됨) | `GridGeometryTests`(9) · `GlyphBatcherTests`(9) · `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
+| F-05 | EditorGridView + 키 배선 | REQ-004·010 | 대기(타깃) — 로직은 전부 준비됨 | — |
 | F-06 | AppModel + 스트림 소비 | REQ-004·009·010 | 대기(타깃) | — |
 | F-07 | 메인 창 셸 | REQ-011 | 대기(타깃) | — |
 | F-08 | 상태바 W-7 | REQ-004·009·010·011 | **로직 완료**, 뷰 대기 | `StatusBarPresentationTests`(15) |
@@ -25,7 +25,7 @@
 | F-10 | 입력 모드 토글 | REQ-010 | 로직은 F-03·F-09에 포함, 뷰·복원 대기 | — |
 | F-11 | 편집 세션 오버레이 W-8 | REQ-004 | 대기(계약 #2 — 기동 실패/끊김 구분) | — |
 | F-17 | 정의 후보 팝오버 W-4 | REQ-005 | **로직 완료**, 뷰 대기 | `DefinitionRoutingTests`(5) |
-| F-19 | .app 조립 + 실행 검증 | REQ-011 AC-1 | 대기(타깃) — spike로 방식은 실증됨 | — |
+| F-19 | .app 조립 + 실행 검증 | REQ-011 AC-1 | **스크립트 완료·검증됨** (`scripts/bundle.sh` · `scripts/verify-bundle.sh` + `--self-test`). 대상 앱 생기면 이름만 기본값으로 동작 | spike 번들로 4방향 실측 |
 
 ## 공통 기반 (주니어가 소비)
 
@@ -38,6 +38,7 @@
 | `SymbolSearchPresentation` | W-3 | `SymbolSearchPresentationTests`(15) |
 | `ReferencePresentation` | W-5 | `ReferencePresentationTests`(9) |
 | `TextSearchPresentation` | W-6 | `TextSearchPresentationTests`(12) |
+| `GridFrameBuilder` · `DisplayWidth` | 에디터 그리드 | `GridFrameBuilderTests`(18) · `DisplayWidthTests`(8) |
 
 ## 주니어 위임 후보
 
@@ -61,9 +62,10 @@
 | # | 내용 | 소유자 | 요청 시각 |
 |---|------|--------|----------|
 | 1 | `Package.swift` 프론트 타깃 분리 (테스트를 레포에서 못 돌림) | backend-senior / 리더 판정 요청함 | 17:00 · 17:14 · 17:17 |
-| 2 | `EditorTextRun.startColumn`·`cellWidth` (F-04·F-05 선행) | backend-senior | 17:00 · 17:14 |
+| ~~2~~ | ~~`EditorTextRun.startColumn`·`cellWidth`~~ | **해결됨 17:30** | — |
 | 3 | `EditorSessionState` 기동 실패 분리 (F-11 선행) | backend-senior | 17:00 |
 | 4 | 인덱스 통계 조회 (F-18 — REQ-002 AC-4의 유일한 UI 표면) | backend-senior | 17:00 |
+| 5 | 전문 검색 `filesSearched` (선택) — 없으면 "일치한 파일 수"로 대체 구현 완료 | backend-senior | 17:33 |
 
 ## 발견 사항 (다른 사람에게도 영향)
 

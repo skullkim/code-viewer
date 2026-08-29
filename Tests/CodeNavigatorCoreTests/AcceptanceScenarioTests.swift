@@ -44,10 +44,17 @@ struct AcceptanceScenarioTests {
 
         // 사용처를 열고 심볼 위에 커서를 둔다.
         try await engine.editor.openFile(atRelativePath: "src/Consumer.kt", line: 5, recordJump: false)
-        try await engine.editor.sendKeys("^f S")
+        // '^' 로 첫 비공백, 'fS' 로 SymbolIndexHolder 의 S 까지. 사이에 공백을 넣으면
+        // 'f<space>' 다음 'S'(줄 치환)가 되어 버퍼를 망가뜨린다.
+        try await engine.editor.sendKeys("^fS")
         try await Task.sleep(for: .milliseconds(300))
 
-        let definitions = await engine.project.definitions(named: "SymbolIndexHolder")
+        // 이름을 하드코딩하지 않는다. 커서 위치에서 심볼을 읽어 그것으로 조회해야
+        // REQ-005 AC-1 의 "커서 위치 심볼에 대해"가 실제로 검증된다.
+        let symbolUnderCursor = try #require(try await engine.editor.wordUnderCursor())
+        #expect(symbolUnderCursor == "SymbolIndexHolder")
+
+        let definitions = await engine.project.definitions(named: symbolUnderCursor)
         let target = try #require(definitions.first)
         #expect(target.path == "src/SymbolIndexHolder.kt")
         #expect(target.kind == .class)
@@ -285,5 +292,103 @@ struct ProjectSwitchingTests {
 
         #expect(await engine.project.definitions(named: "AlphaService").count == 1)
         #expect(await engine.project.currentProject()?.rootPath == first.rootURL)
+    }
+}
+
+/// Gaps QA identified: paths that are correct today but had no test holding them in place.
+@Suite("회귀 방어 — QA 지적 갭", .serialized)
+struct QaIdentifiedGapTests {
+
+    @Test("정의 이동 시 대상 줄이 잠시 강조되고, 스스로 사라진다")
+    func jumpTargetIsHighlightedThenClears() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: (1...30).map { "line \($0)" }.joined(separator: "\n"))
+        let session = NeovimEditorSession()
+        try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        defer { Task { await session.shutDown() } }
+
+        try await session.openFile(atRelativePath: "src/App.kt", line: 20, recordJump: true)
+        #expect(try await session.jumpHighlightCountForTesting() == 1)
+
+        // 스스로 지워져야 한다. 남으면 선택 영역처럼 보인다.
+        var cleared = false
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(100))
+            if try await session.jumpHighlightCountForTesting() == 0 {
+                cleared = true
+                break
+            }
+        }
+        #expect(cleared)
+    }
+
+    @Test("라인을 지정하지 않은 열기는 강조하지 않는다")
+    func openingWithoutALineDoesNotHighlight() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class App\n")
+        let session = NeovimEditorSession()
+        try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        defer { Task { await session.shutDown() } }
+
+        try await session.openFile(atRelativePath: "src/App.kt", line: nil, recordJump: false)
+        #expect(try await session.jumpHighlightCountForTesting() == 0)
+    }
+
+    @Test("편집기 재기동 후에도 저장이 인덱스에 반영된다")
+    func savesAreStillIndexedAfterEditorRestart() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application\n")
+        let engine = CodeNavigatorEngine()
+        try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        defer { Task { await engine.shutDown() } }
+
+        // 앱은 계약상 editor.restart() 를 직접 부를 수 있다. 그때 저장 구독이 끊기면
+        // 이후 모든 저장이 조용히 인덱스에 반영되지 않는다 — 증상 없는 INV-1 위반이다.
+        try await engine.editor.restart()
+        #expect(await engine.editor.state() == .connected)
+
+        try await engine.editor.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        try await engine.editor.sendKeys("ofun addedAfterRestart() {}<Esc>")
+        try await Task.sleep(for: .milliseconds(200))
+        try await engine.editor.sendKeys(":write<CR>")
+
+        let deadline = Date().addingTimeInterval(3)
+        var found: [SymbolDefinition] = []
+        while Date() < deadline {
+            found = await engine.project.definitions(named: "addedAfterRestart")
+            if !found.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(found.count == 1)
+    }
+
+    @Test("편집기가 보고한 경로를 루트로 상대화하면 트리 경로와 일치한다")
+    func editorPathsRelativizeToTreePaths() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application\n")
+        let engine = CodeNavigatorEngine()
+        try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        defer { Task { await engine.shutDown() } }
+
+        try await engine.editor.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+
+        var editorPath: String?
+        for await status in await engine.editor.statusUpdates() {
+            if let path = status.filePath {
+                editorPath = path
+                break
+            }
+        }
+        let absolute = try #require(editorPath)
+
+        // 프론트엔드는 이 상대화로 트리를 강조한다(REQ-003 AC-3). 심링크·/private 접두
+        // 같은 정규화 차이가 생기면 매칭이 조용히 실패하므로 여기서 고정한다.
+        let root = fixture.rootURL.path.hasSuffix("/") ? fixture.rootURL.path : fixture.rootURL.path + "/"
+        #expect(absolute.hasPrefix(root))
+        let relative = String(absolute.dropFirst(root.count))
+        #expect(relative == "src/App.kt")
+
+        let entries = try await engine.project.directoryEntries(atRelativePath: "src")
+        #expect(entries.contains { $0.path == relative })
     }
 }

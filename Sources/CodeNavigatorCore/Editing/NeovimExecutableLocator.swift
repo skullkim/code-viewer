@@ -26,6 +26,34 @@ struct NeovimExecutableLocator {
         self.wellKnownPaths = wellKnownPaths
     }
 
+    /// Every place this locator would look, for the failure message.
+    func candidatePaths(environment: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
+        let fromPath = (environment["PATH"] ?? "").split(separator: ":").map { "\($0)/nvim" }
+        return fromPath + wellKnownPaths
+    }
+
+    /// Reads the version by running the binary, because that is the only thing that reports the
+    /// build actually installed — a path name tells us nothing.
+    func version(of executableURL: URL) -> NeovimVersion? {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = ["--version"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard let output = String(data: data, encoding: .utf8),
+              let firstLine = output.split(separator: "\n").first
+        else {
+            return nil
+        }
+        return NeovimVersion(versionOutput: String(firstLine))
+    }
+
     /// An explicit override wins, then `PATH`, then the well-known locations.
     func locate(overridePath: String? = nil, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> URL {
         if let overridePath {

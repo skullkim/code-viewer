@@ -281,10 +281,13 @@ struct SymbolExtractorRobustnessTests {
         #expect(extractSymbols(from: "key: value", path: "config.yaml").isEmpty)
     }
 
-    @Test("완전히 깨진 소스에서도 죽지 않는다")
-    func survivesCompletelyBrokenSource() {
-        let symbols = extractSymbols(from: " {{{{ %%% ]]]] class @@@@ ", path: "broken.kt")
-        #expect(symbols.count >= 0)
+    // 이전 판은 `symbols.count >= 0` 을 단언했는데, 배열 개수는 언제나 0 이상이라
+    // 절대 실패할 수 없었다. 추출기가 쓰레기 심볼을 뱉어도 통과했을 것이다.
+    @Test("완전히 깨진 소스는 허위 심볼을 만들지 않는다")
+    func brokenSourceProducesNoPhantomSymbols() {
+        #expect(extractSymbols(from: " {{{{ %%% ]]]] class @@@@ ", path: "broken.kt").isEmpty)
+        #expect(extractSymbols(from: "))))) ;;;; class", path: "broken.java").isEmpty)
+        #expect(extractSymbols(from: "<<<<<<< HEAD\n=======\n>>>>>>> branch", path: "conflict.ts").isEmpty)
     }
 
     @Test("일부만 깨진 소스에서 정상 부분의 심볼은 추출된다")

@@ -67,7 +67,8 @@ HTTP가 없으므로 **Swift 프로토콜과 값 타입이 계약**이다. 코�
 | `DirectoryEntry` | `name` `path` `isDirectory` | 디렉토리 먼저, 그다음 이름순 |
 | `IndexProgress` | `completed` `total` | `total`=0이면 파일 목록 작성 중 |
 | `IndexState` | `notIndexed` `indexing(p)` `ready` `updating` `rescanning(p)` | 요구사항 §6 상태표와 1:1 |
-| `EditorSessionState` | `notStarted` `connecting` `connected` `disconnected(reason:)` | `reason`은 표시용 문구 |
+| `EditorSessionState` | `notStarted` `connecting` `connected` `startupFailed(EditorStartupFailure)` `disconnected(reason:)` | 기동 실패와 끊김은 **다른 조치**를 부른다(설치·업그레이드 vs 재기동) |
+| `EditorStartupFailure` | `reason` `searchedPaths` `requiredVersion` `foundVersion?` | `foundVersion`이 있으면 "낡음", nil이면 "없음" (REQ-NF-005) |
 | `EditorMode` | `normal` `insert` `visual` `replace` `commandLine` `terminal` `other(String)` | 미지 모드도 표시 가능 |
 | `InputMode` | `vim` `standard` | 기본 `vim` |
 | `EditorGridSnapshot` | `columns` `rows` `lines` `cursor` `mode` `defaultForeground` `defaultBackground` `revision` | `flush`마다 1개. `revision` 단조 증가 |
@@ -88,6 +89,7 @@ func searchSymbols(matching query: String) async -> [SymbolSearchResult]
 func references(to symbolName: String) async throws -> ReferenceSearchResult
 func searchText(_ query: String, mode: TextSearchMode) async throws -> TextSearchResult
 func directoryEntries(atRelativePath relativePath: String) async throws -> [DirectoryEntry]
+func indexStatistics() async -> IndexStatistics
 ```
 
 - 조회는 **모든 인덱스 상태에서 응답한다.** 갱신 중이면 직전 인덱스로 답하고, 갱신 사실은
@@ -106,15 +108,21 @@ func gridUpdates() async -> AsyncStream<EditorGridSnapshot>
 func statusUpdates() async -> AsyncStream<EditorStatus>
 func resizeGrid(columns: Int, rows: Int) async throws
 func sendKeys(_ keys: String) async throws                     // Neovim 키 표기: "ihello<Esc>"
+func sendMouse(_ event: EditorMouseEvent) async throws         // 클릭·드래그 (표기법은 위치를 못 싣는다)
 func setInputMode(_ mode: InputMode) async throws
 func inputMode() async -> InputMode
 func openFile(atRelativePath: String, line: Int?, recordJump: Bool) async throws
 func jumpBack() async throws
 func wordUnderCursor() async throws -> String?
-func savedFilePaths() async -> AsyncStream<String>
+func savedFiles() async -> AsyncStream<SavedFile>
 func shutDown() async
 ```
 
+- **키 표기법은 앱이 만들고, 모드별 해석은 세션이 한다.** 앱은 입력 모드와 무관하게 항상 같은
+  표기법을 생성한다. 표준 모드의 맥 관례 동작은 Neovim 옵션·매핑으로 세션이 적용한다
+  (프론트 ADR-0102와 합의된 경계).
+- **뷰는 `EditorTextRun.startColumn`으로만 위치를 잡는다.** run 텍스트의 문자 수로 컬럼을
+  유도하면 한글이 한 글자라도 있는 줄부터 전부 어긋난다.
 - **프론트엔드는 Neovim redraw 프로토콜을 몰라도 된다.** 증분 갱신·스크롤 리전·하이라이트 테이블은
   엔진이 처리하고, 뷰는 완성된 `EditorGridSnapshot`만 그린다.
 - 정의 이동은 `openFile(…, recordJump: true)` 한 번이면 된다 — 점프 목록 기록까지 엔진이 한다.

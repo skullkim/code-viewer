@@ -7,23 +7,23 @@
 |---|---|---|---|---|---|---|
 | BE-01 | `SourceLanguage` 확장자 매핑 | 002 AC-3 | senior | 완료 | `Support/SourceLanguage.swift` | 9개 확장자 매핑 + 미지원 확장자 nil |
 | BE-02 | `SymbolExtractor` (tree-sitter 4언어) | 002 | senior | 완료 | `Indexing/SymbolExtractor.swift` 외 | 4언어 전 종류 추출, 파싱 실패 시 그 파일만 스킵 |
-| BE-03 | `SymbolIndex` actor (정방향/역방향) | 005·006·007 | senior | 완료(테스트 대기) | `Indexing/SymbolIndex.swift` | 교체·삭제·이름변경 후 유령 0(INV-1) |
-| BE-04 | `FuzzyMatcher` 점수 알고리즘 | 007 AC-1 | **junior** | 대기 | `Searching/FuzzyMatcher.swift` | 아래 §BE-04 명세의 점수·순위 전부 재현 |
-| BE-05 | `PreviewTextBuilder` (오프셋 환산·절단) | 006·008 | **junior** | 대기 | `Support/PreviewTextBuilder.swift` | UTF-8→UTF-16 환산, 한글 픽스처 통과 |
-| BE-06 | `GitignoreMatcher` | 001 AC-4 | senior | 진행 | `Scanning/GitignoreMatcher.swift` | 부정·디렉토리전용·`**`·앵커링·중첩 |
-| BE-07 | `ProjectScanner` (열거+제외) | 001 AC-4 | senior | 대기 | `Scanning/ProjectScanner.swift` | 기본 제외+gitignore+심링크 미추적 |
-| BE-08 | `TextSearcher` (리터럴·정규식·상한) | 008 | **junior** | 차단(BE-05·07) | `Searching/TextSearcher.swift` | 잘못된 정규식은 에러, 빈 결과 금지 |
-| BE-09 | `ReferenceSearcher` (단어 경계) | 006 | **junior** | 차단(BE-03·07) | `Searching/ReferenceSearcher.swift` | 부분 단어 불일치, 정의 플래그 |
-| BE-10 | `DirectoryTreeLister` | 003 | **junior** | 차단(BE-06) | `Scanning/DirectoryTreeLister.swift` | 디렉토리 우선 정렬, 제외 반영 |
-| BE-11 | `ProjectIndexer` (상태기계·진행률) | 001·002·009 | senior | 대기 | `Indexing/ProjectIndexer.swift` | 상태표(§6) 전이 전부 |
-| BE-12 | `FileWatcher` + `ChangeDebouncer` | 009 | senior | 대기 | `Watching/*.swift` | 디바운스 300ms, 50개 폴백, 드롭 신호 |
-| BE-13 | `MessagePack` 인코더/디코더 | ADR-0006 | **junior** | 대기 | `Editing/MessagePackValue.swift` 외 | 전 타입 왕복, 부분 프레임 안전 |
-| BE-14 | `NeovimProcess` + RPC 클라이언트 | 004 AC-1·AC-5 | senior | 대기 | `Editing/NeovimProcess.swift` 외 | 기동·요청·알림·사망 감지 |
-| BE-15 | `NeovimGridState` (redraw→스냅샷) | 004 AC-2 | senior | 대기 | `Editing/NeovimGridState.swift` | grid_line·scroll·hl 반영 |
-| BE-16 | `NeovimEditorSession` (조립) | 004·005·010 | senior | 대기 | `Editing/NeovimEditorSession.swift` | 계약 §3.3 전 메서드 |
-| BE-17 | `StandardInputTranslator` (맥 키→Vim 키) | 010 AC-2·AC-5 | **junior** | 대기 | `Editing/StandardInputTranslator.swift` | 화살표·⌘조합·선택·복사 매핑 |
-| BE-18 | `CodeNavigatorEngine` (ProjectSession 조립) | 전체 | senior | 대기 | `CodeNavigatorEngine.swift` | 계약 §3.2 전 메서드 |
-| BE-19 | `gate.sh` (빌드·테스트·민감정보) | — | senior | 완료(자체검사 양방향 통과) | `_workspace/gate.sh` | 리크 픽스처 양방향 실측 |
+| BE-03 | `SymbolIndex` actor (정방향/역방향) | 005·006·007 | senior | 완료 | `Indexing/SymbolIndex.swift` | 교체·삭제·이름변경 후 유령 0(INV-1) |
+| BE-04 | `FuzzyMatcher` 점수 알고리즘 | 007 AC-1 | **junior** | 완료(리뷰 승인) | `Searching/FuzzyMatcher.swift` | 아래 §BE-04 명세의 점수·순위 전부 재현 |
+| BE-05 | `PreviewTextBuilder` (오프셋 환산·절단) | 006·008 | **junior** | 완료(리뷰 승인) | `Support/PreviewTextBuilder.swift` | UTF-8→UTF-16 환산, 한글 픽스처 통과 |
+| BE-06 | `GitignoreMatcher` | 001 AC-4 | senior | 완료 | `Scanning/GitignoreMatcher.swift` | 부정·디렉토리전용·`**`·앵커링·중첩 |
+| BE-07 | `ProjectScanner` (열거+제외) | 001 AC-4 | senior | 완료 | `Scanning/ProjectScanner.swift` | 기본 제외+gitignore+심링크 미추적 |
+| BE-08 | `TextSearcher` (리터럴·정규식·상한) | 008 | **junior** | 완료(리뷰 승인) | `Searching/TextSearcher.swift` | 잘못된 정규식은 에러, 빈 결과 금지 |
+| BE-09 | `ReferenceSearcher` (단어 경계) | 006 | **junior** | 완료(리뷰 승인) | `Searching/ReferenceSearcher.swift` | 부분 단어 불일치, 정의 플래그 |
+| BE-10 | `DirectoryTreeLister` | 003 | **junior** | 완료(리뷰 승인) | `Scanning/DirectoryTreeLister.swift` | 디렉토리 우선 정렬, 제외 반영 |
+| BE-11 | `ProjectIndexer` (상태기계·진행률) | 001·002·009 | senior | 완료 | `Indexing/ProjectIndexer.swift` | 상태표(§6) 전이 전부 |
+| BE-12 | `FileWatcher` + `ChangeDebouncer` | 009 | senior | 완료 | `Watching/*.swift` | 디바운스 300ms, 50개 폴백, 드롭 신호 |
+| BE-13 | `MessagePack` 인코더/디코더 | ADR-0006 | **junior** | 완료(리뷰 승인) | `Editing/MessagePackValue.swift` 외 | 전 타입 왕복, 부분 프레임 안전 |
+| BE-14 | `NeovimProcess` + RPC 클라이언트 | 004 AC-1·AC-5 | senior | 완료 | `Editing/NeovimProcess.swift` 외 | 기동·요청·알림·사망 감지 |
+| BE-15 | `NeovimGridState` (redraw→스냅샷) | 004 AC-2 | senior | 완료 | `Editing/NeovimGridState.swift` | grid_line·scroll·hl 반영 |
+| BE-16 | `NeovimEditorSession` (조립) | 004·005·010 | senior | 완료 | `Editing/NeovimEditorSession.swift` | 계약 §3.3 전 메서드 |
+| BE-17 | `StandardInputTranslator` (맥 키→Vim 키) | 010 AC-2·AC-5 | **junior** | 삭제 예정(설계 변경 — 주니어 배정) | `Editing/StandardInputTranslator.swift` | 화살표·⌘조합·선택·복사 매핑 |
+| BE-18 | `CodeNavigatorEngine` (ProjectSession 조립) | 전체 | senior | 완료 | `CodeNavigatorEngine.swift` | 계약 §3.2 전 메서드 |
+| BE-19 | `gate.sh` (빌드·테스트·민감정보) | — | senior | 완료 | `_workspace/gate.sh` | 리크 픽스처 양방향 실측 |
 
 ## 주니어 즉시 착수 가능 배치 (의존성 없음 — 계약 타입만 사용)
 **BE-04, BE-05, BE-13, BE-17** 네 건. 서로 다른 파일이고 시니어 작업과 겹치지 않는다.
@@ -117,3 +117,23 @@ REQ-010 AC-2의 표준 모드. 맥 키 입력을 **Neovim 키 표기 문자열**
 반드시 통과해야 할 테스트:
 각 매핑 1건씩 / `<` 문자 이스케이프 / ⌘ 조합이 아닌 `i`·`:`·`hjkl`이 그대로 문자로 나올 것 /
 알 수 없는 조합은 nil.
+
+
+## 추가 완료분 (계약 2차 반영 · QA 대응)
+| ID | 작업 | REQ | 소유자 | 상태 |
+|---|---|---|---|---|
+| BE-23 | `EditorTextRun.startColumn`·`cellWidth` (프론트 블로커) | 004 AC-2 | senior | 완료 |
+| BE-24 | `EditorSessionState.startupFailed` + 버전 검사 | NF-005 | senior | 완료 |
+| BE-25 | `IndexStatistics` (스킵 집계) | 002 AC-4 | senior | 완료 |
+| BE-26 | `SavedFile` (줄 수·크기) | 004 AC-4 | senior | 완료 |
+| BE-27 | `sendMouse` (그리드 셀 좌표) | 010 AC-2 | senior | 완료 |
+| BE-28 | 정의 이동 임시 강조 | 005 AC-1 | senior | 완료 |
+| BE-29 | QA 지적 회귀 테스트 4종 | 003·005·009 | senior | 완료 |
+
+## 주니어 진행 중
+| ID | 작업 | 소유자 | 상태 |
+|---|---|---|---|
+| BE-20 | `loadGitignore` 중복 제거 | junior | 배정 |
+| BE-21 | 게이트 "0매치 초록불" 방어 | junior | 배정 |
+| BE-22 | REQ-002 AC-3 테스트 갭 | junior | 배정 |
+| BE-17 | `StandardInputTranslator` 삭제 + 근거 이관 | junior | 배정 |

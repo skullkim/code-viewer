@@ -10,6 +10,13 @@
 | REQ-001 AC-3 | backend | `ProjectIndexerTests` "존재하지 않는 경로는 에러이고 이전 프로젝트가 유지된다" · `ProjectScannerTests` 누락/파일루트 에러 | backend-senior | PASS |
 | REQ-002 AC-1 · AC-2 | backend | `SymbolExtractorTests` (Kotlin 5 / Java 2 / TS·JS 5) — 7종 심볼 전량, 4언어 | backend-senior | PASS |
 | REQ-002 AC-3 | backend | `SourceLanguageTests` (4) 미지원 확장자 nil · `SymbolExtractorTests` 미지원 확장자 빈 결과 · `ProjectScannerTests` 미지원 파일도 검색 대상 유지 | backend-senior | PASS |
+| REQ-004 AC-2 (셀 좌표) | backend | `NeovimGridStateWideCharacterTests` (5) — 한글 줄 문자7/셀10 · 한글 뒤 startColumn · run 타일링 · 커서 좌표계 일치 · ASCII 동치 | backend-senior | PASS |
+| REQ-NF-005 (버전) | backend | `NeovimVersionTests` (6) 파싱·나이틀리 접미사·숫자 비교 · `NeovimEditorSessionTests` 기동 실패 구조화·실설치 버전 판독 | backend-senior | PASS |
+| REQ-010 AC-2 (마우스) | backend | `NeovimEditorSessionTests` "마우스 클릭을 그리드 셀 좌표로 전달한다" | backend-senior | PASS |
+| REQ-002 AC-4 (UI 표면) | backend | `IndexStatisticsTests` (5) — 스킵 집계·복구·삭제와 구분·전환 시 초기화 | backend-senior | PASS |
+| REQ-005 AC-1 (강조) | backend | `QaIdentifiedGapTests` 정의 이동 시 임시 강조 후 자동 소멸 · 라인 미지정 시 미강조 | backend-senior | PASS |
+| REQ-009 AC-5 (재기동 후) | backend | `QaIdentifiedGapTests` "편집기 재기동 후에도 저장이 인덱스에 반영된다" | backend-senior | PASS |
+| REQ-003 AC-3 (경로 정합) | backend | `QaIdentifiedGapTests` 편집기 절대경로 → 트리 상대경로 상대화 일치 | backend-senior | PASS |
 | REQ-002 AC-4 | backend | `SymbolExtractorTests` 깨진 소스·부분 깨짐·빈 소스 · `ProjectIndexerTests` "파싱이 깨지는 파일이 있어도 나머지는 인덱싱된다" | backend-senior | PASS |
 | REQ-004 AC-1 | backend | `NeovimChannelTests` 기동·요청/응답·에러 표면화 · 미설치 시 명확한 에러 · `NeovimEditorSessionTests` 끊김 상태 | backend-senior | PASS |
 | REQ-004 AC-2 | backend | `NeovimChannelTests` ui_attach 후 redraw 수신·키 입력→버퍼·모드 전이 · `NeovimGridStateTests` (16) 그리드 전 이벤트 | backend-senior | PASS |
@@ -37,7 +44,6 @@
 | REQ-007 AC-1 | backend | `FuzzyMatcherTests` (10) — 부분수열 매칭·대소문자 무시·불일치·강조 구간·점수 순위 | backend-junior | PASS |
 | REQ-006 AC-1 · REQ-008 AC-1 | backend | `PreviewTextBuilderTests` (8) — UTF-8→UTF-16 환산(한글)·선행 공백 보정·200 절단·서로게이트 페어 보호 | backend-junior | PASS |
 | REQ-004 (ADR-0006 RPC 코덱) | backend | `MessagePackCodecTests` (23) — 전 타입 왕복·폭 경계·중첩·부분 프레임 판정·다중 프레임 소비 위치 | backend-junior | PASS |
-| REQ-010 AC-2 · AC-5 | backend | `StandardInputTranslatorTests` (14) — 화살표/⌘·⌥ 조합·클립보드·undo/redo·저장·전체선택·문자 리터럴·`<` 이스케이프 | backend-junior | PASS |
 | REQ-003 AC-1 · AC-2 | backend | `DirectoryTreeListerTests` (13) — 한 레벨 지연 로드·디렉토리 우선 정렬·제외/gitignore·`..` 세그먼트 거부·읽기 실패 | backend-junior | PASS |
 | REQ-006 AC-1 · AC-2 · AC-4 | backend | `ReferenceSearcherTests` (11) — 단어 경계(부분 단어 불일치)·정의 플래그·정렬·상한 1000 경계 | backend-junior | PASS |
 | REQ-008 AC-1~AC-4 | backend | `TextSearcherTests` (15) — 리터럴/정규식·잘못된 정규식 에러·제외 미노출·이진 파일 스킵·상한 500 경계 | backend-junior | PASS |
@@ -48,7 +54,7 @@
 | REQ-010 AC-3 (모드 상시 표시) | frontend | `StatusBarPresentationTests` (15) — Vim 4모드 칩·표준 칩·끊김 시 편집 불가 · **모든 창 폭에서 모드 세그먼트·인덱스 칩 생존** | frontend-senior | PASS* |
 | REQ-010 AC-5 (모드별 편집 메뉴) | frontend | `MenuAvailabilityTests` (12) — Vim에서 ⌘Z·⌘C·⌘V·⌘A 비활성, ⌘S만 공통 활성 · 세션 끊겨도 검색은 동작 · 24명령 전수 | frontend-senior | PASS* |
 | REQ-009 (인덱스 상태 UI) | frontend | `StatusBarPresentationTests` — 인덱스 5상태 칩 §6과 1:1 · 비-최신 상태 툴팁("직전 인덱스로 응답 중") | frontend-senior | PASS* |
-| REQ-004 AC-2 (그리드 렌더) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술·더블폭 커서 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 | frontend-senior | PASS* |
+| REQ-004 AC-2 (그리드 렌더) | frontend | `GridGeometryTests` (9) 뷰 크기→행·열 역산·셀 원점 산술 · `GlyphBatcherTests` (9) 폰트·색 배치·결정적 순서 · `GridFrameBuilderTests` (18) **startColumn 기반 배치·더블폭 2셀 전진·반전 표시·커서 폭** · `DisplayWidthTests` (8) 한글/한자/전각/이모지 2셀·결합문자 0셀 | frontend-senior | PASS* |
 | REQ-004 AC-5 (세션 상태 표시) | frontend | `StatusBarPresentationTests` — 세션 4상태 칩 §6과 1:1 · **끊김 안내가 어떤 메시지보다 우선**(저장 토스트에 가려지지 않음) | frontend-senior | PASS* |
 | REQ-005 (정의 이동 분기) | frontend | `DefinitionRoutingTests` (5) — 1건 즉시 이동 / N건 후보 / **0건 상태바 에러(무반응 금지, AC-3)** / 커서에 심볼 없음 | frontend-senior | PASS* |
 | REQ-006 AC-3 · AC-4 (참조 패널) | frontend | `ReferencePresentationTests` (9) — **근사 안내 배너 전 상태 상시**(0건 포함) · 정의 배지 · 파일별 그룹 · 인덱싱 중 고지 | frontend-senior | PASS* |
@@ -62,12 +68,13 @@
 > **\* 프론트 행의 PASS는 아직 레포의 `swift test` 결과가 아니다.** `Package.swift` 프론트 타깃 분리
 > 미반영으로 `_workspace/frontend-staging/`의 미러 패키지에서 실행한 결과다(계약은 실제 소스를
 > 심볼릭 링크로 사용). **타깃 반영 후 레포에서 재실행하기 전까지 리더 인증 대상이 아니다.**
-> 실측 시각 2026-08-29 17:26 — 16개 스위트 161 테스트 전부 통과.
+> 실측 시각 2026-08-29 17:33 — 18개 스위트 **187 테스트** 전부 통과.
 >
 > 프론트 각 규칙은 **일부러 깨뜨려 Red를 확인**했다(방어선 실측): REQ-010 AC-5 편집 명령 활성화 ·
 > §2 F-9 세션 끊김 시 검색 비활성화 · §3 W-7 끊김 안내가 메시지에 밀림 · §4.3 상태바 높이 0 ·
 > REQ-006 AC-3 0건에서 배너 제거 · REQ-007 AC-3 선택 클램프 제거 · SC-6 정규식 에러 시 이전 결과 삭제 ·
-> spike 키 버그 2건 재주입 · text-3 원안 복원(17건 Red). 전부 Red 확인 후 복구해 Green 재확인.
+> spike 키 버그 2건 재주입 · text-3 원안 복원(17건 Red) · **ADR-0101이 막은 버그 재주입(컬럼을 문자 수로 계산)** ·
+> 반전 표시 무시(선택 영역 안 보임). 전부 Red 확인 후 복구해 Green 재확인.
 
 ## 게이트 상태
 - 풀 게이트(`_workspace/gate.sh`)는 backend-senior가 1회 실행한다. 아래 값은 그 실행 결과로만 갱신된다.
@@ -102,4 +109,5 @@ gitignore 별표/앵커링/디렉토리전용/부정/중첩 · 스캐너 심링�
 위 네 행은 **단위 수준** 커버리지다. 해당 REQ가 끝단까지 충족됐다는 뜻이 아니다:
 - REQ-006·008의 검색기는 완료됐고 `PreviewTextBuilder`를 실제로 쓴다. 남은 것은 `CodeNavigatorEngine`(BE-18)이
   이들을 `ProjectSession` 계약에 배선하는 것과, 프론트엔드 화면(F-12·15·16)이다.
-- REQ-004·010은 `NeovimEditorSession`(BE-16)이 코덱·번역기를 배선한 테스트가 있어야 닫힌다.
+- REQ-004는 `NeovimEditorSession`(BE-16)이 코덱을 배선한 테스트가 있어야 닫힌다. REQ-010은 표준 모드가
+  앱 측 번역표에서 Neovim 옵션·매핑(`NeovimStandardMode`, 시니어 소유)으로 옮겨져 그쪽 테스트가 커버한다.

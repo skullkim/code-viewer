@@ -117,10 +117,15 @@ extension StatusBarPresentation {
         editorStatus: EditorStatus?,
         inputMode: InputMode
     ) -> InputModeSegment {
-        // A dead session outranks the mode: which keys you are typing stops mattering when
-        // none of them arrive anywhere.
-        if case .disconnected = sessionState {
+        // A session that cannot take input outranks the mode: which keys you are typing
+        // stops mattering when none of them arrive anywhere.
+        switch sessionState {
+        case .disconnected:
             return InputModeSegment(primaryLabel: "편집 불가", secondaryLabel: "세션 끊김", tone: .danger)
+        case .startupFailed:
+            return InputModeSegment(primaryLabel: "편집 불가", secondaryLabel: "Neovim 없음", tone: .danger)
+        case .notStarted, .connecting, .connected:
+            break
         }
 
         guard inputMode == .vim else {
@@ -170,8 +175,13 @@ extension StatusBarPresentation {
         inputMode: InputMode,
         layout: ShellLayout
     ) -> (text: String, role: StatusCenterRole) {
-        if case .disconnected = sessionState {
+        switch sessionState {
+        case .disconnected:
             return (lostSessionNotice, .persistentError)
+        case .startupFailed(let failure):
+            return ("⚠ \(failure.reason) — 필요 버전 \(failure.requiredVersion) 이상", .persistentError)
+        case .notStarted, .connecting, .connected:
+            break
         }
         if let message {
             return (message.text, message.kind == .success ? .success : .error)
@@ -242,6 +252,10 @@ extension StatusBarPresentation {
             return StatusChip(label: "편집 세션 연결 중", tone: .warning, tooltip: nil, progress: nil)
         case .connected:
             return StatusChip(label: "편집 세션 연결됨", tone: .success, tooltip: nil, progress: nil)
+        case .startupFailed(let failure):
+            // Distinct from "disconnected": nothing crashed, nothing ever started, and the
+            // fix is installing or upgrading rather than restarting.
+            return StatusChip(label: "편집 세션 기동 실패", tone: .danger, tooltip: failure.reason, progress: nil)
         case .disconnected(let reason):
             return StatusChip(label: "편집 세션 끊김", tone: .danger, tooltip: reason, progress: nil)
         }

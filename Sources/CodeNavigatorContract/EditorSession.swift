@@ -29,7 +29,14 @@ public protocol EditorSession: Sendable {
     func resizeGrid(columns: Int, rows: Int) async throws
 
     /// Forwards key input in Neovim's key notation, for example `"ihello<Esc>"`.
+    ///
+    /// The notation is produced by the application and is the **same in both input modes** — how
+    /// it is interpreted is this session's business, not the caller's. That split is what keeps
+    /// the standard-mode rules in one place instead of half here and half in the view.
     func sendKeys(_ keys: String) async throws
+
+    /// Forwards a mouse event, which key notation cannot express because it carries no position.
+    func sendMouse(_ event: EditorMouseEvent) async throws
 
     /// Switches the key-interpretation layer. Buffer state is untouched (REQ-010 AC-4).
     func setInputMode(_ mode: InputMode) async throws
@@ -47,9 +54,9 @@ public protocol EditorSession: Sendable {
     /// The identifier under the cursor, used as the query for go-to-definition and references.
     func wordUnderCursor() async throws -> String?
 
-    /// Absolute paths Neovim reports as written, one per `:w`. The engine re-indexes each of
-    /// them, so an in-app save is reflected without waiting on the file watcher (REQ-009 AC-5).
-    func savedFilePaths() async -> AsyncStream<String>
+    /// Files Neovim reports as written, one per `:w`. The engine re-indexes each of them, so an
+    /// in-app save is reflected without waiting on the file watcher (REQ-009 AC-5).
+    func savedFiles() async -> AsyncStream<SavedFile>
 
     func shutDown() async
 }

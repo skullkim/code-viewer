@@ -15,6 +15,33 @@ enum NeovimStandardMode {
     ///
     /// `<C-o>` runs one normal-mode command and returns to insert, so each mapping is a single
     /// undo-able action that leaves the user back where they were typing.
+    ///
+    /// Why each key is spelled the way it is. These reasons were established while REQ-010 AC-2
+    /// was implemented as an app-side translation table; that table is gone, so the table below
+    /// is now the only place the knowledge lives:
+    ///
+    /// - **Clipboard uses the `+` register**, which is the system pasteboard. Vim's unnamed
+    ///   register is process-local, so ⌘C into it would copy nothing other apps could paste.
+    /// - **Paste is `P`, not `p`.** `p` puts *after* the cursor, which in insert mode lands one
+    ///   character right of the caret — off by one from where the user is typing.
+    /// - **⌘← / ⌘→ map straight to `<Home>` / `<End>`**, not through `<C-o>`. A normal-mode round
+    ///   trip would end the shift-selection that `keymodel=startsel` started.
+    /// - **⌘↑ / ⌘↓ are `gg` / `G`** — macOS moves to document start and end, which is what those
+    ///   two motions are.
+    /// - **⌥← / ⌥→ become `<C-Left>` / `<C-Right>`**, Neovim's word-wise motions, because
+    ///   option-arrow is word movement on macOS.
+    /// - **⌘⇧Z is redo (`<C-r>`), ⌘Z is undo (`u`)** — macOS has no dedicated redo key, so redo
+    ///   is the shifted undo.
+    /// - **⌘S is `:write` spelled out**, not `:w`, so a reader who does not know Vim
+    ///   abbreviations can still see what it does. Saving stays Neovim's job (INV-3).
+    ///
+    /// What is deliberately **absent** matters as much: arrows, Home/End, Delete, Enter, Tab and
+    /// Esc need no mapping because they already behave the macOS way in insert mode, and `i`,
+    /// `:` and `hjkl` are ordinary characters there. REQ-010 AC-5 therefore holds by
+    /// construction rather than by a table someone has to keep complete.
+    ///
+    /// Escaping a literally typed `<` as `<lt>` is the app's key-notation layer's concern
+    /// (ADR-0102), not this table's.
     static let commandShortcuts: [(key: String, action: String)] = [
         ("<D-s>", "<C-o>:write<CR>"),
         ("<D-z>", "<C-o>u"),

@@ -202,3 +202,92 @@ struct ProjectIndexerTests {
         #expect(await indexer.indexState() == .ready)
     }
 }
+
+@Suite("IndexStatistics — 스킵 건수와 갱신 시각", .serialized)
+struct IndexStatisticsTests {
+
+    @Test("통계가 파일·심볼 수와 마지막 갱신 시각을 보고한다")
+    func reportsCountsAndTimestamp() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application\nfun start() {}\n")
+        let indexer = ProjectIndexer()
+        try await indexer.openProject(at: fixture.rootURL)
+
+        let statistics = await indexer.statistics()
+        #expect(statistics.fileCount == 1)
+        #expect(statistics.symbolCount == 2)
+        #expect(statistics.skippedCount == 0)
+        #expect(statistics.lastUpdatedAt != nil)
+    }
+
+    @Test("읽을 수 없거나 파싱되지 않는 파일이 스킵으로 집계된다 — AC-4가 화면에 드러나게")
+    func countsSkippedFiles() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/Good.kt", contents: "class PerfectlyFine")
+
+        // 이진 내용을 가진 소스 확장자 — 스캔에는 잡히지만 인덱싱되지 않는다.
+        try Data([0x00, 0x01, 0x02, 0x00]).write(
+            to: fixture.rootURL.appendingPathComponent("src/Binary.kt")
+        )
+        let oversized = String(repeating: "class Padding\n", count: 120_000)
+        try oversized.write(
+            to: fixture.rootURL.appendingPathComponent("src/Huge.kt"),
+            atomically: true, encoding: .utf8
+        )
+
+        let indexer = ProjectIndexer()
+        try await indexer.openProject(at: fixture.rootURL)
+
+        let statistics = await indexer.statistics()
+        #expect(statistics.fileCount == 1)
+        #expect(statistics.skippedCount == 2)
+    }
+
+    @Test("스킵됐던 파일이 정상으로 바뀌면 집계에서 빠진다")
+    func skippedCountRecoversWhenFileBecomesReadable() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.makeDirectory("src")
+        try Data([0x00, 0x01]).write(to: fixture.rootURL.appendingPathComponent("src/Flaky.kt"))
+        let indexer = ProjectIndexer()
+        try await indexer.openProject(at: fixture.rootURL)
+        #expect(await indexer.statistics().skippedCount == 1)
+
+        fixture.write("src/Flaky.kt", contents: "class NowReadable")
+        await indexer.reindexFile(atRelativePath: "src/Flaky.kt")
+
+        let statistics = await indexer.statistics()
+        #expect(statistics.skippedCount == 0)
+        #expect(statistics.symbolCount == 1)
+    }
+
+    @Test("삭제된 파일은 스킵이 아니다 — 없는 것과 못 읽는 것은 다르다")
+    func deletedFilesAreNotCountedAsSkipped() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/Gone.kt", contents: "class WillVanish")
+        let indexer = ProjectIndexer()
+        try await indexer.openProject(at: fixture.rootURL)
+
+        fixture.remove("src/Gone.kt")
+        await indexer.reindexFile(atRelativePath: "src/Gone.kt")
+
+        #expect(await indexer.statistics().skippedCount == 0)
+    }
+
+    @Test("프로젝트를 전환하면 통계가 새 프로젝트 것으로 초기화된다")
+    func statisticsResetOnProjectSwitch() async throws {
+        let first = TemporaryProjectFixture()
+        first.makeDirectory("src")
+        try Data([0x00]).write(to: first.rootURL.appendingPathComponent("src/Binary.kt"))
+        let second = TemporaryProjectFixture()
+        second.write("src/Clean.kt", contents: "class Clean")
+
+        let indexer = ProjectIndexer()
+        try await indexer.openProject(at: first.rootURL)
+        #expect(await indexer.statistics().skippedCount == 1)
+
+        try await indexer.openProject(at: second.rootURL)
+        let statistics = await indexer.statistics()
+        #expect(statistics.skippedCount == 0)
+        #expect(statistics.fileCount == 1)
+    }
+}

@@ -23,6 +23,11 @@ public actor ProjectIndexer {
     private var pendingChanges = FileChangeBatch()
     private var debounceTask: Task<Void, Never>?
     private var indexingTask: Task<Void, Never>?
+    /// Files that were scanned as indexable but produced nothing — unreadable, binary, oversized,
+    /// or unparseable. Counted so the interface can show that the index is incomplete and why
+    /// (REQ-002 AC-4 is otherwise invisible to the user).
+    private var skippedFilePaths: Set<String> = []
+    private var lastUpdatedAt: Date?
 
     public init() {}
 
@@ -37,6 +42,8 @@ public actor ProjectIndexer {
 
         stopWatching()
         await symbolIndex.clear()
+        skippedFilePaths.removeAll()
+        lastUpdatedAt = nil
         projectRoot = rootPath
 
         startWatching(rootPath: rootPath)
@@ -48,6 +55,8 @@ public actor ProjectIndexer {
         debounceTask?.cancel()
         indexingTask?.cancel()
         await symbolIndex.clear()
+        skippedFilePaths.removeAll()
+        lastUpdatedAt = nil
         projectRoot = nil
         updateState(.notIndexed)
     }
@@ -92,6 +101,15 @@ public actor ProjectIndexer {
         await symbolIndex.symbolCount()
     }
 
+    public func statistics() async -> IndexStatistics {
+        IndexStatistics(
+            fileCount: await symbolIndex.fileCount(),
+            symbolCount: await symbolIndex.symbolCount(),
+            skippedCount: skippedFilePaths.count,
+            lastUpdatedAt: lastUpdatedAt
+        )
+    }
+
     /// The current file list, used by full-text and reference search so that searching and
     /// indexing always agree on what the project contains.
     /// The index itself, for the searchers that need to ask whether a hit is a definition site.
@@ -122,6 +140,7 @@ public actor ProjectIndexer {
             await self.reportProgress(completed: completed, total: paths.count, isRescan: false)
         }
 
+        skippedFilePaths = Set(paths).subtracting(symbolsByPath.keys)
         for (path, symbols) in symbolsByPath {
             await symbolIndex.replaceFile(path, with: symbols)
         }
@@ -129,6 +148,7 @@ public actor ProjectIndexer {
         // change we never saw an event for.
         await symbolIndex.removeFiles(notIn: Set(paths))
 
+        lastUpdatedAt = Date()
         updateState(.ready)
     }
 
@@ -144,10 +164,12 @@ public actor ProjectIndexer {
             await self.reportProgress(completed: completed, total: paths.count, isRescan: true)
         }
 
+        skippedFilePaths = Set(paths).subtracting(symbolsByPath.keys)
         for (path, symbols) in symbolsByPath {
             await symbolIndex.replaceFile(path, with: symbols)
         }
         await symbolIndex.removeFiles(notIn: Set(paths))
+        lastUpdatedAt = Date()
         updateState(.ready)
     }
 
@@ -200,14 +222,23 @@ public actor ProjectIndexer {
         let fileURL = projectRoot.appendingPathComponent(relativePath)
         guard let text = SourceFileReader.readText(at: fileURL) else {
             await symbolIndex.removeFile(relativePath)
+            // Only counts as skipped if the file is still there; a deleted file is not a skip.
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                skippedFilePaths.insert(relativePath)
+            }
+            lastUpdatedAt = Date()
             return
         }
+        skippedFilePaths.remove(relativePath)
         let extractor = SymbolExtractor()
         await symbolIndex.replaceFile(relativePath, with: extractor.extract(source: text, path: relativePath))
+        lastUpdatedAt = Date()
     }
 
     public func removeFile(atRelativePath relativePath: String) async {
         await symbolIndex.removeFile(relativePath)
+        skippedFilePaths.remove(relativePath)
+        lastUpdatedAt = Date()
     }
 
     /// Records a change and restarts the debounce window.

@@ -34,6 +34,10 @@ public actor ProjectEngine: ProjectSession {
         await indexer.indexStateUpdates()
     }
 
+    public func indexStatistics() async -> IndexStatistics {
+        await indexer.statistics()
+    }
+
     // MARK: - Symbols
 
     public func definitions(named name: String) async -> [SymbolDefinition] {

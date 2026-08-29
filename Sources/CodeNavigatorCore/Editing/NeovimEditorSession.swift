@@ -11,6 +11,9 @@ public actor NeovimEditorSession: EditorSession {
     /// Neovim tells us about saves and cursor movement over these notification names.
     private static let savedNotification = "code_navigator_saved"
     private static let statusNotification = "code_navigator_status"
+    /// How long a jump target stays highlighted. Long enough for the eye to catch the line,
+    /// short enough that it does not linger as if it were a selection.
+    private static let jumpHighlightMilliseconds = 700
 
     private let executableLocator: NeovimExecutableLocator
     private let executableOverridePath: String?
@@ -29,7 +32,7 @@ public actor NeovimEditorSession: EditorSession {
     private var stateBroadcaster = EventBroadcaster<EditorSessionState>(initialValue: .notStarted)
     private var gridBroadcaster = EventBroadcaster<EditorGridSnapshot>()
     private var statusBroadcaster = EventBroadcaster<EditorStatus>()
-    private var savedPathBroadcaster = EventBroadcaster<String>()
+    private var savedFileBroadcaster = EventBroadcaster<SavedFile>()
     private var notificationTask: Task<Void, Never>?
 
     /// Creates a session. Pass `executableOverridePath` to use a specific Neovim build; by
@@ -58,8 +61,19 @@ public actor NeovimEditorSession: EditorSession {
             executableURL = try executableLocator.locate(overridePath: executableOverridePath)
         } catch {
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
-            updateState(.disconnected(reason: reason))
+            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
             throw error
+        }
+
+        // Check the version before attaching. A too-old Neovim would otherwise fail later with
+        // an obscure RPC error, which is exactly the silent failure REQ-NF-005 forbids.
+        let installedVersion = executableLocator.version(of: executableURL)
+        if let installedVersion, installedVersion < NeovimVersion.minimumSupported {
+            let reason = "Neovim \(installedVersion)이 설치돼 있지만 \(NeovimVersion.minimumSupported) 이상이 필요합니다."
+            updateState(.startupFailed(
+                makeStartupFailure(reason: reason, foundVersion: installedVersion.description)
+            ))
+            throw NavigatorError.editorUnavailable(reason: reason)
         }
 
         let channel = NeovimChannel()
@@ -72,7 +86,7 @@ public actor NeovimEditorSession: EditorSession {
             )
         } catch {
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
-            updateState(.disconnected(reason: reason))
+            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
             throw error
         }
 
@@ -144,8 +158,8 @@ public actor NeovimEditorSession: EditorSession {
         }
     }
 
-    public func savedFilePaths() async -> AsyncStream<String> {
-        savedPathBroadcaster.subscribe { [weak self] identifier in
+    public func savedFiles() async -> AsyncStream<SavedFile> {
+        savedFileBroadcaster.subscribe { [weak self] identifier in
             Task { await self?.unsubscribeSavedPath(identifier) }
         }
     }
@@ -153,7 +167,7 @@ public actor NeovimEditorSession: EditorSession {
     private func unsubscribeState(_ identifier: Int) { stateBroadcaster.unsubscribe(identifier) }
     private func unsubscribeGrid(_ identifier: Int) { gridBroadcaster.unsubscribe(identifier) }
     private func unsubscribeStatus(_ identifier: Int) { statusBroadcaster.unsubscribe(identifier) }
-    private func unsubscribeSavedPath(_ identifier: Int) { savedPathBroadcaster.unsubscribe(identifier) }
+    private func unsubscribeSavedPath(_ identifier: Int) { savedFileBroadcaster.unsubscribe(identifier) }
 
     // MARK: - Input
 
@@ -172,6 +186,33 @@ public actor NeovimEditorSession: EditorSession {
             return
         }
         try await channel.request("nvim_input", [.string(keys)])
+    }
+
+    public func sendMouse(_ event: EditorMouseEvent) async throws {
+        guard let channel, isUserInterfaceAttached else { return }
+        // Grid 0 tells Neovim to resolve the window itself from the coordinates, which is what we
+        // want: the engine tracks one global grid and should not be routing clicks to windows.
+        try await channel.request("nvim_input_mouse", [
+            .string(event.button.rawValue),
+            .string(Self.neovimAction(for: event.action)),
+            .string(event.modifiers),
+            .integer(0),
+            .integer(Int64(event.row)),
+            .integer(Int64(event.column)),
+        ])
+    }
+
+    /// Neovim spells wheel directions as the action, not the button.
+    private static func neovimAction(for action: EditorMouseEvent.Action) -> String {
+        switch action {
+        case .press: return "press"
+        case .drag: return "drag"
+        case .release: return "release"
+        case .wheelUp: return "up"
+        case .wheelDown: return "down"
+        case .wheelLeft: return "left"
+        case .wheelRight: return "right"
+        }
     }
 
     public func setInputMode(_ mode: InputMode) async throws {
@@ -212,6 +253,7 @@ public actor NeovimEditorSession: EditorSession {
             ])
             // Put the target line in the middle of the window so its context is visible.
             try await channel.request("nvim_command", [.string("normal! zz")])
+            await highlightJumpTarget(line: line, on: channel)
         }
         await refreshStatus()
     }
@@ -227,6 +269,46 @@ public actor NeovimEditorSession: EditorSession {
         let value = try await channel.request("nvim_eval", [.string("expand('<cword>')")])
         guard let word = value.stringValue, !word.isEmpty else { return nil }
         return word
+    }
+
+    /// Briefly highlights the line jumped to, so the eye can find it after the view scrolls.
+    ///
+    /// Neovim draws it, not the application: the highlight is buffer state, and duplicating it in
+    /// the view would mean two things deciding what is emphasised. The extmark clears itself, so
+    /// a crash or a second jump cannot leave a stale band on screen.
+    private func highlightJumpTarget(line: Int, on channel: NeovimChannel) async {
+        let script = """
+        local line, clearAfterMilliseconds = ...
+        local buffer = vim.api.nvim_get_current_buf()
+        local namespace = vim.api.nvim_create_namespace('code_navigator_jump')
+        vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+        vim.api.nvim_buf_set_extmark(buffer, namespace, line - 1, 0, {
+          line_hl_group = 'Visual',
+        })
+        vim.defer_fn(function()
+          if vim.api.nvim_buf_is_valid(buffer) then
+            vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+          end
+        end, clearAfterMilliseconds)
+        return true
+        """
+        _ = try? await channel.request("nvim_exec_lua", [
+            .string(script),
+            .array([.integer(Int64(line)), .integer(Int64(Self.jumpHighlightMilliseconds))]),
+        ])
+    }
+
+    /// How many jump highlights are currently drawn. Lets a test assert the highlight exists and
+    /// then clears, rather than trusting that the Lua ran.
+    func jumpHighlightCountForTesting() async throws -> Int {
+        let channel = try requireChannel()
+        let script = """
+        local buffer = vim.api.nvim_get_current_buf()
+        local namespace = vim.api.nvim_create_namespace('code_navigator_jump')
+        return #vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {})
+        """
+        let value = try await channel.request("nvim_exec_lua", [.string(script), .array([])])
+        return value.integerValue ?? 0
     }
 
     // MARK: - Start-up steps
@@ -268,7 +350,12 @@ public actor NeovimEditorSession: EditorSession {
         end
         vim.api.nvim_create_autocmd({'BufWritePost'}, {
           callback = function(arguments)
-            vim.rpcnotify(channelIdentifier, '\(Self.savedNotification)', vim.api.nvim_buf_get_name(arguments.buf))
+            local savedPath = vim.api.nvim_buf_get_name(arguments.buf)
+            vim.rpcnotify(channelIdentifier, '\(Self.savedNotification)', {
+              path = savedPath,
+              lineCount = vim.api.nvim_buf_line_count(arguments.buf),
+              byteSize = math.max(vim.fn.getfsize(savedPath), 0),
+            })
             reportStatus()
           end
         })
@@ -306,8 +393,8 @@ public actor NeovimEditorSession: EditorSession {
         case "redraw":
             handleRedraw(notification.parameters)
         case Self.savedNotification:
-            if let path = notification.parameters.first?.stringValue, !path.isEmpty {
-                savedPathBroadcaster.send(path)
+            if let saved = Self.makeSavedFile(from: notification.parameters) {
+                savedFileBroadcaster.send(saved)
             }
         case Self.statusNotification:
             if let fields = notification.parameters.first?.mapValue {
@@ -337,6 +424,25 @@ public actor NeovimEditorSession: EditorSession {
         if didFlush {
             gridBroadcaster.send(gridState.makeSnapshot())
         }
+    }
+
+    /// Reads the save notification, whose payload Neovim fills in at write time.
+    private static func makeSavedFile(from parameters: [MessagePackValue]) -> SavedFile? {
+        guard let fields = parameters.first?.mapValue else { return nil }
+        var path = ""
+        var lineCount = 0
+        var byteSize = 0
+
+        for field in fields {
+            switch field.key.stringValue {
+            case "path": path = field.value.stringValue ?? ""
+            case "lineCount": lineCount = field.value.integerValue ?? 0
+            case "byteSize": byteSize = field.value.integerValue ?? 0
+            default: break
+            }
+        }
+        guard !path.isEmpty else { return nil }
+        return SavedFile(path: path, lineCount: lineCount, byteSize: byteSize)
     }
 
     private func makeStatus(fromFields fields: [MessagePackKeyValuePair]) -> EditorStatus {
@@ -412,6 +518,15 @@ public actor NeovimEditorSession: EditorSession {
     }
 
     // MARK: - Helpers
+
+    private func makeStartupFailure(reason: String, foundVersion: String?) -> EditorStartupFailure {
+        EditorStartupFailure(
+            reason: reason,
+            searchedPaths: executableOverridePath.map { [$0] } ?? executableLocator.candidatePaths(),
+            requiredVersion: NeovimVersion.minimumSupported.description,
+            foundVersion: foundVersion
+        )
+    }
 
     private func updateState(_ newState: EditorSessionState) {
         stateBroadcaster.send(newState)

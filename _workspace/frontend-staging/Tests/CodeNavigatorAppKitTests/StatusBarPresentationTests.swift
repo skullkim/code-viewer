@@ -83,6 +83,31 @@ struct StatusBarPresentationTests {
         #expect(bar.modeSegment.tone == .danger)
     }
 
+    @Test("기동 실패는 끊김과 다른 문구를 낸다")
+    func aStartupFailureIsNotTheSameAsADisconnection() {
+        // They look alike in a status bar but call for different responses: one is fixed by
+        // installing Neovim, the other by restarting it.
+        let failure = EditorStartupFailure(
+            reason: "Neovim을 찾을 수 없습니다",
+            searchedPaths: ["/opt/homebrew/bin/nvim"],
+            requiredVersion: "0.9.0"
+        )
+        let bar = make(session: .startupFailed(failure))
+        #expect(bar.modeSegment.primaryLabel == "편집 불가")
+        #expect(bar.modeSegment.secondaryLabel == "Neovim 없음")
+        #expect(bar.sessionChip.label == "편집 세션 기동 실패")
+        #expect(bar.sessionChip.tone == .danger)
+        #expect(bar.centerText == "⚠ Neovim을 찾을 수 없습니다 — 필요 버전 0.9.0 이상")
+        #expect(bar.centerRole == .persistentError)
+    }
+
+    @Test("기동 실패 안내도 일반 메시지보다 우선한다")
+    func aStartupFailureOutranksTransientMessages() {
+        let failure = EditorStartupFailure(reason: "Neovim을 찾을 수 없습니다", searchedPaths: [], requiredVersion: "0.9.0")
+        let bar = make(session: .startupFailed(failure), message: StatusMessage(kind: .success, text: "✓ 저장됨"))
+        #expect(bar.centerRole == .persistentError)
+    }
+
     @Test("명세에 없는 Neovim 모드도 이름을 그대로 보여준다 — 노멀로 위장하지 않는다")
     func unspecifiedModesAreShownRatherThanDisguised() {
         let bar = make(editorStatus: status(mode: .other("operator-pending")), inputMode: .vim)
