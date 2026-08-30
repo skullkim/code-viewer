@@ -45,8 +45,8 @@ is_exempt() {
         # its view is mounted — an exemption that outlives its reason is how this list becomes
         # the hand-maintained list this script was rewritten to get rid of. Both are tracked as
         # open items in _workspace/CERTIFICATION.md and must be gone before BUILD_COMPLETE.
-        ProjectTabBarView) return 0 ;;          # REQ-012 탭 — frontend-senior, AppModel 탭 단위 개편 중
         BlockedResourcePlaceholder) return 0 ;; # REQ-013 렌더 — frontend-junior, 전처리 단계 작업 중
+        RenderDocumentView) return 0 ;;         # REQ-013 렌더 — frontend-junior, 전처리 단계 작업 중
         *) return 1 ;;
     esac
 }
@@ -59,11 +59,25 @@ FORBIDDEN_VIEWS=(PlaceholderPane)
 # a name with a digit, any access modifier other than public, an indented or nested
 # declaration, and a view conforming to more than one protocol. A discovery pattern that
 # is too narrow puts the checker's silence back, just through a different door.
+#
+# It happened again, and the fifth shape got further than the others: a GENERIC view.
+# `struct RenderDocumentView<Document: View>: View` was never discovered, so it was never
+# checked, so the gate reported "23 views, all mounted" while an unmounted 24th sat beside
+# them. Undiscovered is worse than unmounted — an unmounted view fails loudly, an
+# undiscovered one is counted as absent. The report even reads as reassurance.
 discover_views() {
     # No `^` anchor: a nested declaration can sit anywhere on its line, including after
     # an enclosing `enum Foo {` on the same line. The word boundary keeps `// struct` in a
     # comment and identifiers ending in "struct" out.
-    grep -rhoE "(^|[^A-Za-z0-9_])struct [A-Za-z0-9_]+[[:space:]]*:[^{]*\bView\b" "$SOURCES" --include="*.swift" \
+    #
+    # `(<[^>]*>)?` steps over a generic parameter list before the conformance colon. It must
+    # come BEFORE the colon check, because the list carries its own colons (`<Document: View>`)
+    # and holding the name up against the first colon on the line finds the wrong one.
+    # Requiring a colon *after* the list is also what keeps `struct Box<T: View> {` — generic
+    # over a view, not a view — from being counted: the `View` inside the brackets never
+    # reaches the conformance test. Nested generics (`<A<B>>`) would defeat `[^>]*`; no such
+    # view exists here, and the self-test below fails loudly if one ever stops being found.
+    grep -rhoE "(^|[^A-Za-z0-9_])struct [A-Za-z0-9_]+(<[^>]*>)?[[:space:]]*:[^{]*\bView\b" "$SOURCES" --include="*.swift" \
         | sed -E 's/.*struct ([A-Za-z0-9_]+).*/\1/' \
         | sort -u
 }
@@ -148,6 +162,9 @@ self_test() {
         'private struct QaPrivView: View { var body: some View { EmptyView() } }|private 선언'
         'enum QaNest { struct QaNestedView: View { var body: some View { EmptyView() } } }|중첩·들여쓰기'
         'struct QaMultiView: View, Equatable { var body: some View { EmptyView() } }|다중 프로토콜'
+        # 제네릭 뷰. 실제로 놓쳤던 형태다 — 이름 뒤가 `:` 가 아니라 `<` 라서 발견 자체가 안 됐고,
+        # 그래서 "전부 마운트됨"이 미마운트 뷰 옆에서 출력됐다.
+        'struct QaGenericView<Content: View>: View { var body: some View { EmptyView() } }|제네릭 선언'
     )
 
     local probe declaration label
