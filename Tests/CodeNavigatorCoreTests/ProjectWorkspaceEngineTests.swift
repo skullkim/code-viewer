@@ -187,7 +187,7 @@ struct ProjectWorkspaceEngineTests {
 @Suite("탭 여닫기가 메모리를 누적하지 않는다 (AC-3)", .serialized)
 struct WorkspaceMemoryReuseTests {
 
-    @Test("같은 프로젝트를 다섯 번 여닫아도 footprint 가 계속 늘지 않는다")
+    @Test("같은 프로젝트를 열 번 여닫아도 footprint 가 계속 늘지 않는다")
     func repeatedOpenAndCloseDoesNotAccumulate() async throws {
         // 인덱스가 **눈에 띄게 커야** 이 검사가 무언가를 잰다. 작은 픽스처로는 인덱스를 통째로
         // 새게 만들어도 증가가 잡음에 묻힌다 — 처음에 200개로 썼다가 변이가 안 잡혀서 알았다.
@@ -211,7 +211,7 @@ struct WorkspaceMemoryReuseTests {
         try await workspace.closeTab(warmUp.tab.id)
         let baseline = await workspace.memoryFootprint().processFootprintBytes
 
-        let cycles = 5
+        let cycles = 10
         for _ in 0..<cycles {
             let outcome = try await workspace.openProject(at: fixture.rootURL)
             #expect(await workspace.session(for: outcome.tab.id) != nil)
@@ -227,10 +227,17 @@ struct WorkspaceMemoryReuseTests {
             cycles, Double(after) / megabyte, growthPerCycle / megabyte
         ))
 
-        // 닫기가 인덱스를 안 놓으면 회차마다 인덱스 하나만큼 는다. 놓으면 할당자가 페이지를
-        // 재사용하므로 그보다 훨씬 작다. 절반을 경계로 둔다 — 누수는 누적되고 재사용은 안 된다.
+        // 경계는 직관이 아니라 두 실측값 사이에서 고른다. 인덱스 하나가 약 5MB 인 픽스처에서:
+        //
+        //     정상          회당 0.09MB
+        //     닫기 무력화   회당 1.01MB   ← 변이
+        //
+        // 새는 쪽이 인덱스 값(5MB)만큼 늘지 **않는다** — 할당자가 페이지를 압축하고 공유한다.
+        // 그래서 "인덱스 하나만큼 늘 것"이라는 직관으로 경계를 잡으면 변이를 놓친다. 1/2 과
+        // 1/4 로 두 번 놓쳤고, 그 두 번이 이 주석의 근거다. 1/10 은 정상에 5배, 누수에 2배
+        // 여유를 둔다.
         #expect(
-            growthPerCycle < Double(indexCostInBytes) / 2,
+            growthPerCycle < Double(indexCostInBytes) / 10,
             "회당 \(growthPerCycle / megabyte)MB 씩 는다 — 인덱스 하나가 \(Double(indexCostInBytes) / megabyte)MB 인데 닫기가 놓지 않고 있다"
         )
         await workspace.shutDown()
