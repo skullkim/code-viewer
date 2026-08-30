@@ -17,6 +17,12 @@ public enum ShellAreaPlacement: Sendable, Hashable {
 /// editor is never in a position to push the status bar out.
 public struct ShellLayout: Sendable, Hashable {
     public let titleBarHeight: CGFloat
+    /// The project tab strip, between the toolbar and the three areas (ADR-0108).
+    ///
+    /// Fixed, and unconditional: the leader ruled the strip shows even with a single tab
+    /// (02b §12-1), because removing the toolbar's project popup left it as the only place
+    /// the open project's name appears. So the height budget carries no branch.
+    public let tabBarHeight: CGFloat
     public let statusBarHeight: CGFloat
     public let contentHeight: CGFloat
     public let treeWidth: CGFloat
@@ -38,7 +44,17 @@ extension ShellLayout {
     /// Fixed dimensions from design §4.3.
     public enum Metrics {
         public static let titleBarHeight: CGFloat = 48
+        public static let tabBarHeight: CGFloat = 32
         public static let statusBarHeight: CGFloat = 26
+
+        /// What the three areas never get: 48 + 32 + 26.
+        ///
+        /// Subtracted before anything variable is sized. The editor pushed the status bar
+        /// off screen once by growing into it (ADR-0104); a third fixed row is a third
+        /// chance to repeat that, so the total lives here rather than in view bodies.
+        public static var fixedChromeHeight: CGFloat {
+            titleBarHeight + tabBarHeight + statusBarHeight
+        }
 
         public static let treeDefaultWidth: CGFloat = 240
         public static let treeMinimumWidth: CGFloat = 180
@@ -79,7 +95,7 @@ extension ShellLayout {
         preferredPanelWidth: CGFloat? = nil
     ) -> ShellLayout {
         let width = windowSize.width
-        let contentHeight = max(0, windowSize.height - Metrics.titleBarHeight - Metrics.statusBarHeight)
+        let contentHeight = max(0, windowSize.height - Metrics.fixedChromeHeight)
 
         let treePlacement: ShellAreaPlacement = width < Breakpoint.treeOverlay ? .overlay : .column
         let panelPlacement: ShellAreaPlacement = width < Breakpoint.panelOverlay ? .overlay : .column
@@ -94,6 +110,7 @@ extension ShellLayout {
 
         return ShellLayout(
             titleBarHeight: Metrics.titleBarHeight,
+            tabBarHeight: Metrics.tabBarHeight,
             statusBarHeight: Metrics.statusBarHeight,
             contentHeight: contentHeight,
             treeWidth: widths.tree,

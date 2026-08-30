@@ -103,25 +103,7 @@ extension IndexDetailsPresentation {
     }
 
     /// Thousands separators, as design §7 writes the figures ("1,284/4,812").
-    ///
-    /// Grouped by hand rather than with `NumberFormatter`. This runs on the path the window
-    /// body takes for every index update — five times per call, and the index reports
-    /// progress every few files — so a formatter allocated here is allocated hundreds of
-    /// times a second during a large scan. The separator is `,` by design rather than by
-    /// locale (§7 writes it that way), so there is nothing a formatter would decide.
     static func grouped(_ value: Int) -> String {
-        // `magnitude` rather than `abs`, which traps on `Int.min`.
-        let digits = String(value.magnitude)
-        var result = ""
-        result.reserveCapacity(digits.count + digits.count / 3)
-
-        for (offset, digit) in digits.enumerated() {
-            if offset > 0 && (digits.count - offset) % 3 == 0 {
-                result.append(",")
-            }
-            result.append(digit)
-        }
-
-        return value < 0 ? "-" + result : result
+        GroupedNumberText.string(value)
     }
 }

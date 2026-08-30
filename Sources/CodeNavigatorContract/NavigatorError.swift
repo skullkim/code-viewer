@@ -10,6 +10,13 @@ public enum NavigatorError: Error, Sendable, Equatable {
     case noProjectOpen
     case invalidPath(String)
     case fileNotFound(path: String)
+    /// Too big to render. Carries both numbers because the view names them (design W-14).
+    case fileTooLarge(path: String, byteSize: Int, limit: Int)
+    /// Present, but the bytes could not be read at all — permissions, a vanished file, a device
+    /// error. Distinct from "read fine, but is not text".
+    case fileNotReadable(path: String, reason: String)
+    /// Read, but not decodable as text: a binary, or an encoding this build cannot interpret.
+    case fileNotDecodable(path: String)
     case invalidRegularExpression(pattern: String, reason: String)
     case editorNotInstalled
     case editorUnavailable(reason: String)
@@ -30,6 +37,12 @@ extension NavigatorError: LocalizedError {
             return "잘못된 경로입니다: \(path)"
         case .fileNotFound(let path):
             return "파일을 찾을 수 없습니다: \(path)"
+        case .fileTooLarge(_, let byteSize, let limit):
+            return "문서가 너무 큽니다 (\(byteSize / 1_048_576)MB). 렌더 상한은 \(limit / 1_048_576)MB입니다."
+        case .fileNotReadable(let path, let reason):
+            return "파일을 읽을 수 없습니다: \(path) (\(reason))"
+        case .fileNotDecodable(let path):
+            return "인코딩을 해석할 수 없습니다: \(path)"
         case .invalidRegularExpression(let pattern, let reason):
             return "잘못된 정규식: \(pattern) — \(reason)"
         case .editorNotInstalled:

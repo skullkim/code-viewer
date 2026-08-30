@@ -128,6 +128,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             perform: { command in
                 guard let model = sharedModel, let search = sharedSearch else { return }
                 Task { await MenuCommandRouter.perform(command, model: model, search: search) }
+            },
+            recentProjects: { sharedModel?.recentProjects.projects() ?? [] },
+            openRecentProject: { path in
+                guard let model = sharedModel else { return }
+                Task { await model.openProject(at: URL(fileURLWithPath: path)) }
             }
         )
     }

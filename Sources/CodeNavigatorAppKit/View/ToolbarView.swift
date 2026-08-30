@@ -104,7 +104,7 @@ struct ToolbarView: View {
                 }
                 if toolbar.showsShortcutLabels {
                     Text(button.shortcutLabel)
-                        .font(.system(size: DesignTokens.Typography.shortcutSize, design: .monospaced))
+                        .font(.shortcutLabel())
                         .foregroundStyle(DesignTokens.textTertiary.dynamicColor)
                 }
             }

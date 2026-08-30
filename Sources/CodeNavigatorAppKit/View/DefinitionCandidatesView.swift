@@ -193,7 +193,7 @@ struct DefinitionCandidatesView: View {
             Spacer()
 
             Text(presentation.keyHintText)
-                .font(.system(size: DesignTokens.Typography.shortcutSize, design: .monospaced))
+                .font(.shortcutLabel())
                 .foregroundStyle(DesignTokens.textTertiary.dynamicColor)
         }
         .padding(.horizontal, DesignTokens.Spacing.medium)

@@ -77,7 +77,35 @@ final class EditorGridNSView: NSView {
 
     // MARK: Mouse
 
-    override func mouseDown(with event: NSEvent) { forward(event, action: .press) }
+    override func mouseDown(with event: NSEvent) {
+        // AppKit does not hand a plain NSView the keyboard on click — text views ask for
+        // it themselves, and this view has to do the same. Without the ask the window
+        // stayed first responder, `keyDown` was never called, and nothing the user typed
+        // reached Neovim (REQ-010 AC-1). Measured live in the built application.
+        //
+        // This runs even when input is blocked: "Neovim is not listening" is not the same
+        // as "this is not where you type", and dropping focus would leave the user with
+        // nowhere to type once the session came back.
+        window?.makeFirstResponder(self)
+        forward(event, action: .press)
+    }
+
+    /// Takes the keyboard on appearance, but only if nothing else has claimed it.
+    ///
+    /// The editor is where typing goes by default, so requiring a click before the first
+    /// keystroke would be wrong. The condition is what keeps that from becoming a bug of
+    /// its own: SwiftUI updates this view on every frame, and an unconditional grab would
+    /// pull the caret out of the symbol-search field mid-query. A window that is its own
+    /// first responder is one where nobody has claimed the keyboard.
+    func takeFocusIfUnclaimed() {
+        guard let window, window.firstResponder === window else { return }
+        window.makeFirstResponder(self)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        takeFocusIfUnclaimed()
+    }
     override func mouseDragged(with event: NSEvent) { forward(event, action: .drag) }
     override func mouseUp(with event: NSEvent) { forward(event, action: .release) }
 
@@ -146,5 +174,10 @@ struct EditorGridView: NSViewRepresentable {
             view.frameToDraw = frame
             view.needsDisplay = true
         }
+
+        // The view is often added to its window after `viewDidMoveToWindow` would have
+        // been useful, so the claim is retried here. It is conditional, so retrying is
+        // harmless once someone holds the keyboard.
+        view.takeFocusIfUnclaimed()
     }
 }

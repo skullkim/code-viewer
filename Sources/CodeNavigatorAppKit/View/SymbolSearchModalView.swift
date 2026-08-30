@@ -241,7 +241,7 @@ public struct SymbolSearchModalView: View {
     private func keyHint(_ key: String, _ label: String) -> some View {
         HStack(spacing: DesignTokens.Spacing.extraSmall) {
             Text(key)
-                .font(.system(size: DesignTokens.Typography.shortcutSize, design: .monospaced))
+                .font(.shortcutLabel())
                 .foregroundStyle(DesignTokens.textTertiary.dynamicColor)
             Text(label)
                 .font(.system(size: DesignTokens.Typography.shortcutSize))

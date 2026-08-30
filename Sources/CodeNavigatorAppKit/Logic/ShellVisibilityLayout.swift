@@ -81,6 +81,7 @@ extension ShellVisibilityLayout {
         return ShellVisibilityLayout(
             layout: ShellLayout(
                 titleBarHeight: base.titleBarHeight,
+                tabBarHeight: base.tabBarHeight,
                 statusBarHeight: base.statusBarHeight,
                 contentHeight: base.contentHeight,
                 treeWidth: treeWidth,
