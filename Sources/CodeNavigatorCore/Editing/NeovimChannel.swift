@@ -89,6 +89,13 @@ actor NeovimChannel {
         guard isRunning else { return }
         isRunning = false
         standardOutputPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Close the channel before signalling. Measured: SIGTERM alone does stop Neovim (0.05s),
+        // so this is not what makes shutdown work — it is the orderly half of it. Ending the RPC
+        // channel is also how a child notices its parent died, which is why an embedded Neovim
+        // exits on its own when the app is killed outright.
+        try? standardInputPipe.fileHandleForWriting.close()
+
         if process.isRunning {
             process.terminate()
         }

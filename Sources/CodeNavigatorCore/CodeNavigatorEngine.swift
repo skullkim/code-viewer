@@ -33,20 +33,33 @@ public final class CodeNavigatorEngine: Sendable {
         async let editing: Void = editor.start(projectRoot: projectRoot, columns: columns, rows: rows)
 
         // Both are awaited before either failure is thrown, so one failing half cannot leave the
-        // other still starting up in the background.
-        var startFailure: (any Error)?
+        // other still starting up in the background. The failures are kept apart because the
+        // rollback below needs to know *which* half succeeded.
+        var indexingFailure: (any Error)?
+        var editingFailure: (any Error)?
         do {
             try await indexing
         } catch {
-            startFailure = error
+            indexingFailure = error
         }
         do {
             try await editing
         } catch {
-            startFailure = startFailure ?? error
+            editingFailure = error
         }
-        if let startFailure {
-            throw startFailure
+
+        // A half that succeeded while the other failed belongs to nobody: the caller sees a
+        // thrown error and reasonably assumes nothing was started. A Neovim left running that way
+        // is invisible to the application, survives its shutdown, and outlives the app itself.
+        // This attempt started it, so this attempt takes it back down.
+        if indexingFailure != nil || editingFailure != nil {
+            if editingFailure == nil {
+                await editor.shutDown()
+            }
+            if indexingFailure == nil {
+                await project.closeProject()
+            }
+            throw indexingFailure ?? editingFailure!
         }
 
         await beginObservingSaves()

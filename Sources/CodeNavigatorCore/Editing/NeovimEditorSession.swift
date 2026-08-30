@@ -101,8 +101,21 @@ public actor NeovimEditorSession: EditorSession {
             Task { await self?.handleProcessExit(status: status) }
         }
 
-        try await attachUserInterface(to: channel)
-        try await installNotificationHooks(on: channel)
+        // Everything past this point runs against a process that is already alive. A failure here
+        // used to rethrow and leave it running, owned by nobody: invisible to the application,
+        // unreachable by `shutDown`, and outliving the app itself. Whatever this call spawned,
+        // this call takes back down.
+        do {
+            try await attachUserInterface(to: channel)
+            try await installNotificationHooks(on: channel)
+        } catch {
+            await channel.terminate()
+            self.channel = nil
+            isUserInterfaceAttached = false
+            let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
+            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
+            throw error
+        }
 
         updateState(.connected)
         await flushQueuedKeys()

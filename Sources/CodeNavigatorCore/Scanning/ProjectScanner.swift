@@ -31,6 +31,17 @@ struct ProjectScanner {
         var indexableFilePaths: [String] = []
         var ruleSets: [GitignoreRuleSet] = []
 
+        // The root is read here rather than inside the walk so that a permission denial on it is
+        // an error. Inside the walk an unreadable directory is skipped — one locked folder must
+        // not stop the run — but applying that tolerance to the root turns "you cannot read this
+        // project" into "this project has no files", which is a lie the user cannot act on.
+        guard (try? fileManager.contentsOfDirectory(atPath: rootPath.path)) != nil else {
+            throw NavigatorError.projectNotReadable(
+                path: rootPath.path,
+                reason: "디렉토리를 읽을 권한이 없습니다"
+            )
+        }
+
         try walk(
             directoryURL: rootPath,
             relativeDirectory: "",
