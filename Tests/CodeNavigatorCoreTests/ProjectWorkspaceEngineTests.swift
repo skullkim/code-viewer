@@ -189,35 +189,50 @@ struct WorkspaceMemoryReuseTests {
 
     @Test("같은 프로젝트를 다섯 번 여닫아도 footprint 가 계속 늘지 않는다")
     func repeatedOpenAndCloseDoesNotAccumulate() async throws {
+        // 인덱스가 **눈에 띄게 커야** 이 검사가 무언가를 잰다. 작은 픽스처로는 인덱스를 통째로
+        // 새게 만들어도 증가가 잡음에 묻힌다 — 처음에 200개로 썼다가 변이가 안 잡혀서 알았다.
         let fixture = TemporaryProjectFixture()
-        for index in 0..<200 {
-            fixture.write("src/File\(index).kt", contents: "class Service\(index)")
+        for index in 0..<2_000 {
+            fixture.write("src/File\(index).kt", contents: "class Service\(index) { fun run() {} }")
         }
         let workspace = ProjectWorkspaceEngine(
             columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
         )
 
-        // 첫 회차는 기준선이 아니다 — 파서·캐시 등 한 번만 치르는 비용이 섞인다.
+        // 인덱스 하나의 값은 **아직 아무것도 안 연 상태**에서 재야 한다. 닫은 뒤와 비교하면
+        // 0 이 나온다 — 할당자가 페이지를 안 돌려주므로 닫은 뒤가 연 뒤보다 작지 않다.
+        // 그 0 으로 임계값을 만들면 검사가 항상 실패한다(실제로 그렇게 한 번 틀렸다).
+        let empty = await workspace.memoryFootprint().processFootprintBytes
         let warmUp = try await workspace.openProject(at: fixture.rootURL)
+        let withOneIndexOpen = await workspace.memoryFootprint().processFootprintBytes
+        let indexCostInBytes = max(withOneIndexOpen - empty, 1)
+
+        // 첫 회차는 기준선이 아니다 — 파서·캐시 등 한 번만 치르는 비용이 섞인다.
         try await workspace.closeTab(warmUp.tab.id)
         let baseline = await workspace.memoryFootprint().processFootprintBytes
 
-        for _ in 0..<5 {
+        let cycles = 5
+        for _ in 0..<cycles {
             let outcome = try await workspace.openProject(at: fixture.rootURL)
             #expect(await workspace.session(for: outcome.tab.id) != nil)
             try await workspace.closeTab(outcome.tab.id)
         }
         let after = await workspace.memoryFootprint().processFootprintBytes
 
-        let growth = after - baseline
-        let perCycle = Double(growth) / 5.0 / 1_048_576
+        let growthPerCycle = Double(after - baseline) / Double(cycles)
+        let megabyte = 1_048_576.0
         print(String(
-            format: "[AC-3] 기준선 %.1fMB → 5회 여닫기 후 %.1fMB (회당 %.2fMB)",
-            Double(baseline) / 1_048_576, Double(after) / 1_048_576, perCycle
+            format: "[AC-3] 인덱스 하나 %.1fMB · 기준선 %.1fMB → %d회 후 %.1fMB (회당 %.2fMB)",
+            Double(indexCostInBytes) / megabyte, Double(baseline) / megabyte,
+            cycles, Double(after) / megabyte, growthPerCycle / megabyte
         ))
 
-        // 인덱스 하나가 회차마다 남으면 회당 그 크기만큼 는다. 재사용이면 그보다 훨씬 작다.
-        #expect(perCycle < 1.0, "회당 \(perCycle)MB 씩 늘어난다 — 닫기가 인덱스를 안 놓고 있다")
+        // 닫기가 인덱스를 안 놓으면 회차마다 인덱스 하나만큼 는다. 놓으면 할당자가 페이지를
+        // 재사용하므로 그보다 훨씬 작다. 절반을 경계로 둔다 — 누수는 누적되고 재사용은 안 된다.
+        #expect(
+            growthPerCycle < Double(indexCostInBytes) / 2,
+            "회당 \(growthPerCycle / megabyte)MB 씩 는다 — 인덱스 하나가 \(Double(indexCostInBytes) / megabyte)MB 인데 닫기가 놓지 않고 있다"
+        )
         await workspace.shutDown()
     }
 
