@@ -51,4 +51,20 @@ for usage_key in NSDocumentsFolderUsageDescription NSDesktopFolderUsageDescripti
     fi
 done
 
+# Keeps every build, because `.build/CodeNavigator.app` is one path and each build overwrites it.
+#
+# That cost us a fallback: the plan for a bad change was "revert to the last known-good bundle",
+# and when we went to use it there was none — three builds had passed over the same path while
+# QA was still measuring the first. A revert plan with no control group is not a plan.
+#
+# Copies are clones (`cp -Rc`), so they cost almost nothing on APFS until the source changes.
+ARCHIVE_DIR="$OUTPUT_DIR/bundles"
+mkdir -p "$ARCHIVE_DIR"
+BUILD_STAMP="$(stat -f '%Sm' -t '%Y%m%d-%H%M%S' "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME")"
+ARCHIVED="$ARCHIVE_DIR/$APP_NAME-$BUILD_STAMP.app"
+if [ ! -d "$ARCHIVED" ]; then
+    cp -Rc "$APP_DIR" "$ARCHIVED" 2>/dev/null || cp -R "$APP_DIR" "$ARCHIVED"
+fi
+echo "보존: $ARCHIVED" >&2
+
 echo "$APP_DIR"
