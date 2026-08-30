@@ -24,8 +24,29 @@ struct ModeIndependentCommandTests {
         if inputMode == .standard {
             try await session.setInputMode(.standard)
         }
-        try await Task.sleep(for: .milliseconds(300))
+        // 파일이 실제로 버퍼에 올라온 뒤에 돌려준다. 여기서 시간을 추측하면 뒤따르는
+        // 모든 검사가 그 추측 위에 쌓인다.
+        try await waitUntil { try await session.bufferLinesForTesting().isEmpty == false }
         return session
+    }
+
+    /// Waits for Neovim to actually get there instead of guessing how long it needs.
+    ///
+    /// A fixed sleep bakes one machine's speed into the test: dead time while idle, and too short
+    /// when the whole suite is running. That is exactly how these failed only inside the full run
+    /// and passed on their own — a flake that teaches the team to distrust the gate, which is
+    /// worse than the flake. A real regression still fails; it just takes the deadline to say so.
+    @discardableResult
+    private func waitUntil(
+        timeout: Duration = .seconds(5),
+        _ condition: () async throws -> Bool
+    ) async rethrows -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if try await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return try await condition()
     }
 
     private func diskContents(_ fixture: TemporaryProjectFixture) throws -> String {
@@ -45,7 +66,7 @@ struct ModeIndependentCommandTests {
         #expect(try diskContents(fixture).contains("saved in") == false)
 
         try await session.save()
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { try diskContents(fixture).contains("saved in \(inputMode.rawValue) mode") }
 
         // 디스크를 직접 읽는다. "저장했다"는 보고가 아니라 파일이 증거다.
         #expect(try diskContents(fixture).contains("saved in \(inputMode.rawValue) mode"))
@@ -76,7 +97,7 @@ struct ModeIndependentCommandTests {
 
         try await session.replaceBufferForTesting(with: ["changed line"])
         try await session.undo()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.bufferLinesForTesting().first == "first line" }
 
         let lines = try await session.bufferLinesForTesting()
         // 되돌아왔어야 하고, 무엇보다 'u' 가 버퍼에 들어가 있으면 안 된다.
@@ -93,7 +114,7 @@ struct ModeIndependentCommandTests {
         try await session.replaceBufferForTesting(with: ["changed line"])
         try await session.undo()
         try await session.redo()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.bufferLinesForTesting().first == "changed line" }
 
         #expect(try await session.bufferLinesForTesting().first == "changed line")
     }
@@ -109,7 +130,10 @@ struct ModeIndependentCommandTests {
         defer { Task { await session.shutDown() } }
 
         try await session.selectAll()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil {
+            let mode = try await session.currentNeovimMode()
+            return mode?.hasPrefix("V") == true || mode?.hasPrefix("v") == true
+        }
 
         let mode = try await session.currentNeovimMode()
         #expect(mode?.hasPrefix("V") == true || mode?.hasPrefix("v") == true, "\(inputMode): mode=\(mode ?? "nil")")
@@ -127,7 +151,7 @@ struct ModeIndependentCommandTests {
         try await session.clearClipboardRegisterForTesting()
         try await session.selectAll()
         try await session.copySelection()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.clipboardRegisterForTesting().contains("copy me") }
 
         let clipboard = try await session.clipboardRegisterForTesting()
         #expect(clipboard.contains("copy me"), "\(inputMode): '\(clipboard)'")
@@ -144,7 +168,7 @@ struct ModeIndependentCommandTests {
         try await session.clearClipboardRegisterForTesting()
         try await session.selectAll()
         try await session.cutSelection()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.clipboardRegisterForTesting().contains("cut me") }
 
         #expect(try await session.clipboardRegisterForTesting().contains("cut me"), "\(inputMode)")
         let remaining = try await session.bufferLinesForTesting().joined()
@@ -159,7 +183,7 @@ struct ModeIndependentCommandTests {
 
         try await session.setClipboardRegisterForTesting("pasted text")
         try await session.paste()
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.bufferLinesForTesting().contains { $0.contains("pasted text") } }
 
         let lines = try await session.bufferLinesForTesting()
         #expect(lines.contains { $0.contains("pasted text") }, "\(inputMode): \(lines)")
@@ -177,7 +201,7 @@ struct ModeIndependentCommandTests {
         defer { Task { await session.shutDown() } }
 
         try await session.openFile(atRelativePath: "src/App.kt", line: 40, recordJump: true)
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil { try await session.cursorLineForTesting() == 40 }
 
         try await session.jumpBack()
         let afterBack = try await session.cursorLineForTesting()
