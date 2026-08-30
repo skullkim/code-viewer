@@ -115,7 +115,8 @@ public actor NeovimEditorSession: EditorSession {
             // No `--clean`: the user's configuration must load exactly as it would in a terminal.
             try await channel.start(
                 executableURL: executableURL,
-                arguments: ["--cmd", "cd \(shellQuoted(projectRoot.path))"]
+                arguments: ["--cmd", "cd \(shellQuoted(projectRoot.path))"],
+                workingDirectory: projectRoot
             )
         } catch {
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"

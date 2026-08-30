@@ -93,7 +93,17 @@ actor NeovimChannel {
 
     // MARK: - Lifecycle
 
-    func start(executableURL: URL, arguments: [String] = [], environment: [String: String]? = nil) throws {
+    /// - Parameter workingDirectory: where the editor starts. Passing this rather than letting the
+    ///   child inherit matters: the application's own directory is whatever the user happened to
+    ///   launch from, and anchoring an editor's relative paths and directory-sensitive start-up to
+    ///   that is a behaviour that changes with how the app was started. It also hands the editor a
+    ///   directory outside the open project, which is the opposite of what INV-6 asks for.
+    func start(
+        executableURL: URL,
+        arguments: [String] = [],
+        environment: [String: String]? = nil,
+        workingDirectory: URL? = nil
+    ) throws {
         // Writing to a dead process's stdin raises SIGPIPE, whose default action terminates the
         // whole application. Ignoring it turns that into an ordinary EPIPE we can report — this
         // single line is what keeps a Neovim crash from taking the app down with it.
@@ -103,6 +113,9 @@ actor NeovimChannel {
         process.arguments = ["--embed"] + arguments
         if let environment {
             process.environment = environment
+        }
+        if let workingDirectory {
+            process.currentDirectoryURL = workingDirectory
         }
         process.standardInput = standardInputPipe
         process.standardOutput = standardOutputPipe
