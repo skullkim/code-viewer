@@ -51,6 +51,9 @@
 | REQ-NF-003 (기동 ≤2초) | backend | `_workspace/measure-app-runtime.sh` | backend-junior | **측정 불가** — 화면 잠금으로 창이 CGWindowList에 안 오름. 해제 후 재실행 필요 |
 | SC-8 (.app 유휴 메모리) | backend | `measure-app-runtime.sh --idle-only` | backend-junior | **미판정** — 프로젝트 미개방 기준선만 84.8MB 실측. 인덱싱 후 값은 수동 단계 필요 |
 | REQ-NF-002 · SC-8 (유휴 메모리) | backend | `SearchPerformanceTests` + `gate.sh` 격리 측정 스텝 | backend-junior | PASS (격리 실행 27.4MB / 인덱스 비용 19.1MB) |
+| **W-8 약속 (편집기 없이도 인덱스)** · REQ-004 AC-5 | backend | `EditorFailureKeepsIndexTests` (2) — 편집기 실패해도 프로젝트 열림·심볼 검색됨·상태에 실패 남음 · **실패 후 다시 열기가 편집기를 다시 띄운다**(흡수 상태 회귀 방어) | backend-senior | PASS |
+| **기동 중 소유권 (D-7 가설 배제)** | backend | `StartupOwnershipTests` (3) — 세션만·엔진만 붙들어도 프로세스 생존 + **양성 대조: 전부 놓으면 0.07초에 죽는다**(앞 둘이 실제로 재고 있다는 증거) | backend-senior | PASS |
+| **INV-6 (엔진 파일 읽기 루트 제한)** | backend | `ProjectRelativePathTests` (7) — 절대경로 3종·상위 탈출 4종·**루트 밖 심링크**(세그먼트 검사로는 못 잡음)·루트 안 심링크 허용·`docs..old` 정상 통과·없는 파일은 경로위반 아닌 `fileNotFound` | backend-senior | PASS |
 | 계약 §3.2 표면 | backend | `ContractSurfaceTests` (3) — `any ProjectSession`으로 전 메서드 호출 + 오프셋 불변식 | backend-junior | PASS |
 | REQ-013 AC-1·AC-5·AC-6 · INV-6 | backend | `RenderSourceTests` (9) — 버퍼 우선·출처 구분·1MiB~2MB 구간 성공·2MB 초과 tooLarge·경로 이탈 거부·디코드 실패 | backend-junior | PASS |
 | REQ-001 AC-3 (열기 실패) | backend | `ProjectOpenFailureTests` (6) — 경로 없음·파일을 루트로·권한 없음 구분, 한국어 안내 문구, 실패 후 이전 프로젝트 유지 | backend-junior | PASS |
