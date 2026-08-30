@@ -193,6 +193,38 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
         }
     }
 
+    // MARK: - Cost
+
+    /// What the workspace currently costs (REQ-NF-002, AC-3).
+    ///
+    /// See `WorkspaceMemoryFootprint` for why a close that frees nothing visible is normal: the
+    /// allocator reuses the pages instead of returning them, so growth across repeated open/close
+    /// is the question, not whether the number falls.
+    public func memoryFootprint() async -> WorkspaceMemoryFootprint {
+        var symbolCount = 0
+        for session in sessions.values {
+            symbolCount += await session.indexStatistics().symbolCount
+        }
+        return WorkspaceMemoryFootprint(
+            processFootprintBytes: Self.processFootprintInBytes(),
+            openTabCount: orderedTabs.count,
+            indexedSymbolCount: symbolCount
+        )
+    }
+
+    private static func processFootprintInBytes() -> Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebound, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Int(info.phys_footprint) : 0
+    }
+
     public func shutDown() async {
         saveObservationTask?.cancel()
         saveObservationTask = nil

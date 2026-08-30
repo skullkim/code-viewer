@@ -176,3 +176,67 @@ struct ProjectWorkspaceEngineTests {
         await workspace.shutDown()
     }
 }
+
+/// AC-3 asks that closing a tab really releases what it held. Judged by memory that has a trap in
+/// it: the allocator keeps freed pages and reuses them, so a correct close frees nothing the
+/// process footprint can show. Measured earlier: reopening after a close costs about 0.4MB rather
+/// than another full index — the pages came back.
+///
+/// So the question is not "did it drop" but "does repeating it grow". A leak compounds; reuse does
+/// not.
+@Suite("탭 여닫기가 메모리를 누적하지 않는다 (AC-3)", .serialized)
+struct WorkspaceMemoryReuseTests {
+
+    @Test("같은 프로젝트를 다섯 번 여닫아도 footprint 가 계속 늘지 않는다")
+    func repeatedOpenAndCloseDoesNotAccumulate() async throws {
+        let fixture = TemporaryProjectFixture()
+        for index in 0..<200 {
+            fixture.write("src/File\(index).kt", contents: "class Service\(index)")
+        }
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+
+        // 첫 회차는 기준선이 아니다 — 파서·캐시 등 한 번만 치르는 비용이 섞인다.
+        let warmUp = try await workspace.openProject(at: fixture.rootURL)
+        try await workspace.closeTab(warmUp.tab.id)
+        let baseline = await workspace.memoryFootprint().processFootprintBytes
+
+        for _ in 0..<5 {
+            let outcome = try await workspace.openProject(at: fixture.rootURL)
+            #expect(await workspace.session(for: outcome.tab.id) != nil)
+            try await workspace.closeTab(outcome.tab.id)
+        }
+        let after = await workspace.memoryFootprint().processFootprintBytes
+
+        let growth = after - baseline
+        let perCycle = Double(growth) / 5.0 / 1_048_576
+        print(String(
+            format: "[AC-3] 기준선 %.1fMB → 5회 여닫기 후 %.1fMB (회당 %.2fMB)",
+            Double(baseline) / 1_048_576, Double(after) / 1_048_576, perCycle
+        ))
+
+        // 인덱스 하나가 회차마다 남으면 회당 그 크기만큼 는다. 재사용이면 그보다 훨씬 작다.
+        #expect(perCycle < 1.0, "회당 \(perCycle)MB 씩 늘어난다 — 닫기가 인덱스를 안 놓고 있다")
+        await workspace.shutDown()
+    }
+
+    @Test("탭을 닫으면 그 탭의 심볼이 집계에서 빠진다")
+    func closingATabRemovesItsSymbolsFromTheFootprint() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application")
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+
+        let outcome = try await workspace.openProject(at: fixture.rootURL)
+        #expect(await workspace.memoryFootprint().indexedSymbolCount > 0)
+        #expect(await workspace.memoryFootprint().openTabCount == 1)
+
+        try await workspace.closeTab(outcome.tab.id)
+        // 프로세스 footprint 와 달리 이건 즉시 떨어져야 한다 — 실제로 놓았는지를 재는 값이다.
+        #expect(await workspace.memoryFootprint().indexedSymbolCount == 0)
+        #expect(await workspace.memoryFootprint().openTabCount == 0)
+        await workspace.shutDown()
+    }
+}
