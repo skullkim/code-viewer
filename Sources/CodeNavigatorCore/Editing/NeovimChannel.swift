@@ -47,6 +47,35 @@ actor NeovimChannel {
     /// anyway, and waiting there is better than telling a user their working editor is missing.
     static let startupTimeout: Duration = .seconds(20)
 
+    /// How long the editor is given to leave on its own before it is killed outright.
+    ///
+    /// Long enough that an ordinary exit (measured at 0.02–0.04s) always wins the race, short
+    /// enough that a user closing a project does not accumulate editors.
+    private static let terminationGracePeriod: TimeInterval = 0.5
+
+    /// Stops the editor process for good, escalating if it will not leave.
+    ///
+    /// SIGTERM is not sufficient, which took measuring to believe. An abandoned session's editor
+    /// was sent SIGTERM and was still in state `S` **twenty seconds later** — every one of them,
+    /// every run. What actually stops an embedded Neovim is its stdin reaching EOF; the signal is
+    /// the polite request, and when the channel teardown does not produce that EOF the request is
+    /// simply declined. Without the escalation the editor runs until the machine reboots, which is
+    /// exactly the orphan D-2 is about.
+    ///
+    /// The delayed kill re-checks the pid rather than holding the process object, so it costs
+    /// nothing in the normal case: by then the process is gone and `kill` finds nothing.
+    private static func stopProcess(_ process: Process) {
+        guard process.isRunning else { return }
+        let processIdentifier = process.processIdentifier
+        process.terminate()
+        DispatchQueue.global().asyncAfter(deadline: .now() + terminationGracePeriod) {
+            // 죽었으면 kill(pid, 0) 이 실패하므로 아무 일도 일어나지 않는다.
+            if kill(processIdentifier, 0) == 0 {
+                kill(processIdentifier, SIGKILL)
+            }
+        }
+    }
+
     init() {}
 
     /// Last resort: an owner that disappears without saying goodbye still must not leave an
@@ -59,9 +88,7 @@ actor NeovimChannel {
     deinit {
         standardOutputPipe.fileHandleForReading.readabilityHandler = nil
         try? standardInputPipe.fileHandleForWriting.close()
-        if process.isRunning {
-            process.terminate()
-        }
+        Self.stopProcess(process)
     }
 
     // MARK: - Lifecycle
@@ -127,15 +154,13 @@ actor NeovimChannel {
         isRunning = false
         standardOutputPipe.fileHandleForReading.readabilityHandler = nil
 
-        // Close the channel before signalling. Measured: SIGTERM alone does stop Neovim (0.05s),
-        // so this is not what makes shutdown work — it is the orderly half of it. Ending the RPC
-        // channel is also how a child notices its parent died, which is why an embedded Neovim
-        // exits on its own when the app is killed outright.
+        // Close the channel before signalling. This is the half that actually works: an embedded
+        // Neovim leaves when its stdin reaches EOF, which is also how it notices its parent died.
+        // SIGTERM is only the polite request, and it is declined more often than it looks — see
+        // `stopProcess`, which is why the kill escalates.
         try? standardInputPipe.fileHandleForWriting.close()
 
-        if process.isRunning {
-            process.terminate()
-        }
+        Self.stopProcess(process)
         byteStream.finish()
         readerTask?.cancel()
         for continuation in notificationContinuations.values {
