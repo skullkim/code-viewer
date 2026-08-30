@@ -69,3 +69,23 @@ struct StartupOwnershipTests {
         #expect(!isAlive(identifier), "아무도 안 붙들고 있는데 nvim \(identifier) 이 남았다")
     }
 }
+
+/// `kill(0, …)` signals the whole process group, so a pid accessor that answers `0` for "no
+/// process" hands every caller a loaded gun. This is small and it guards something large.
+@Suite("프로세스 식별자는 0을 돌려주지 않는다")
+struct ProcessIdentifierSafetyTests {
+
+    @Test("기동하지 않은 채널의 pid 는 nil 이다 — 0 이면 kill 이 프로세스 그룹을 겨눈다")
+    func anUnlaunchedChannelHasNoProcessIdentifier() async throws {
+        let channel = NeovimChannel()
+        #expect(await channel.processIdentifier == nil)
+    }
+
+    @Test("기동 실패한 세션의 pid 도 nil 이다")
+    func aSessionThatFailedToLaunchHasNoProcessIdentifier() async throws {
+        let session = NeovimEditorSession()
+        let missing = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
+        _ = try? await session.start(projectRoot: missing, columns: 80, rows: 24)
+        #expect(await session.processIdentifierForTesting() == nil)
+    }
+}

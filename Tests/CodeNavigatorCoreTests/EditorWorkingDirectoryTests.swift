@@ -38,7 +38,7 @@ struct EditorWorkingDirectoryTests {
         // `--cmd cd` 를 일부러 주지 않는다. 그걸 주면 물려받은 cwd 를 나중에 덮어써서
         // 검사가 통과하고, 정작 재려던 것(spawn 시점의 디렉토리)은 못 잰다.
         try await channel.start(executableURL: executable, workingDirectory: fixture.rootURL)
-        let pid = await channel.processIdentifier
+        let pid = try #require(await channel.processIdentifier)
 
         let observed = workingDirectory(ofProcess: pid)
         // `realpath`, not `resolvingSymlinksInPath()`: the latter leaves `/var` unresolved while

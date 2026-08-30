@@ -184,7 +184,17 @@ actor NeovimChannel {
 
     var isAlive: Bool { isRunning && process.isRunning }
 
-    var processIdentifier: Int32 { process.processIdentifier }
+    /// The child's pid, or `nil` when there is no child.
+    ///
+    /// Foundation answers `0` for a `Process` that was never launched, and `0` is not a harmless
+    /// placeholder: `kill(0, …)` signals **the entire process group**. A caller that treats the
+    /// answer as a pid and sends a signal to it would take down every process in the group,
+    /// including the test runner and anything else the machine is sharing. Returning `nil` makes
+    /// that mistake impossible to make by accident.
+    var processIdentifier: Int32? {
+        let identifier = process.processIdentifier
+        return identifier > 0 ? identifier : nil
+    }
 
     // MARK: - Requests and notifications
 

@@ -222,7 +222,8 @@ struct NeovimChannelTests {
     func detectsProcessDeathAndFailsFast() async throws {
         let channel = try await startChannel(arguments: ["--clean", "-n"])
 
-        let identifier = await channel.processIdentifier
+        // #require: 0 이 넘어오면 kill 이 프로세스 그룹 전체를 겨눈다.
+        let identifier = try #require(await channel.processIdentifier)
         kill(identifier, SIGKILL)
         try await Task.sleep(for: .milliseconds(600))
 
