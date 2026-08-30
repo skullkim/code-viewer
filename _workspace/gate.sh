@@ -341,6 +341,26 @@ else
     printf '%s\n' "$MOUNT_SELFTEST" | sed 's/^/    /'
 fi
 
+section "프론트엔드: 포커스 표면 대칭"
+# D-11 이 두 번 살아남은 자리다. 처음엔 모달만 `.onAppear` 로 포커스를 잡고 검색 패널은
+# 안 잡았고, 코디네이터로 판단을 옮긴 뒤에도 모달만 여는 경로를 갖고 패널은 닫는 경로만
+# 가졌다. 단위 테스트는 못 본다 — 코디네이터는 물으면 옳게 답하는데 아무도 안 물었다.
+# 실측: 패널의 `.onAppear` 를 지워도 코디네이터 테스트 12건이 전부 그린이다.
+if FOCUS_OUTPUT="$("$REPO_ROOT/scripts/check-focus-symmetry.sh" 2>&1)"; then
+    pass "포커스 표면 대칭 — $(printf '%s' "$FOCUS_OUTPUT" | tail -1 | sed 's/^ *ok: //')"
+else
+    fail "포커스 표면 대칭"
+    printf '%s\n' "$FOCUS_OUTPUT" | sed 's/^/    /'
+fi
+
+section "프론트엔드: 포커스 대칭 검사기 자체 검사"
+if FOCUS_SELFTEST="$("$REPO_ROOT/scripts/check-focus-symmetry.sh" --self-test 2>&1)"; then
+    pass "check-focus-symmetry --self-test (한쪽만 있는 표면·대상 0개를 실제로 잡는다)"
+else
+    fail "check-focus-symmetry --self-test — 검사기가 잡아야 할 것을 못 잡는다"
+    printf '%s\n' "$FOCUS_SELFTEST" | sed 's/^/    /'
+fi
+
 section "프론트엔드: .app 조립"
 if "$REPO_ROOT/scripts/bundle.sh" >/dev/null 2>&1; then
     pass "scripts/bundle.sh"
