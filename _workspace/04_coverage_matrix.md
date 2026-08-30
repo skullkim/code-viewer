@@ -21,6 +21,21 @@
 >
 > 22:56 실측: `PlaceholderPane` **3** · `FileTreeView`·`EditorGridView`·`ProjectOpenView` 각 **0**.
 > 이 시점의 화면 관련 PASS 는 전부 **리더 인증 대기**다.
+>
+> ### 추가 (2026-08-30 21:2x, 리더) — REQ-012·013 을 PASS 로 읽지 마라
+>
+> 사용자가 직접 요청한 기능 둘이다. **실측**:
+> ```
+> ProjectTabBarView    소스 마운트 0            ← 탭이 화면에 없다
+> 렌더 뷰              존재하지 않음 · WKWebView 참조 0
+> RenderSandboxPolicy  소스 0 · 테스트 6        ← 완전히 테스트된 고아
+> ```
+> REQ-012 는 AC-1~AC-6 이 **71건의 테스트로 PASS** 인데 **사용자는 탭을 하나도 볼 수 없다.**
+> 이게 정확히 위 배너가 경고하는 상태이고, **이번 빌드에서 가장 비싼 오판의 형태**다 —
+> 매트릭스가 PASS 로 가득한데 화면에 그 기능이 없는 것.
+>
+> **판정: REQ-012·REQ-013 은 "로직 PASS · UI 미배선"이다.** 1차 인증 범위 밖이고,
+> **마운트되기 전까지 어떤 문서도 이 둘을 "구현됨"으로 적지 않는다.**
 
 | REQ-ID | 영역 | 커버하는 테스트 | 담당 | 테스트 상태 |
 |--------|------|---------------|------|-----------|
@@ -37,6 +52,7 @@
 | SC-8 (.app 유휴 메모리) | backend | `measure-app-runtime.sh --idle-only` | backend-junior | **미판정** — 프로젝트 미개방 기준선만 84.8MB 실측. 인덱싱 후 값은 수동 단계 필요 |
 | REQ-NF-002 · SC-8 (유휴 메모리) | backend | `SearchPerformanceTests` + `gate.sh` 격리 측정 스텝 | backend-junior | PASS (격리 실행 27.4MB / 인덱스 비용 19.1MB) |
 | 계약 §3.2 표면 | backend | `ContractSurfaceTests` (3) — `any ProjectSession`으로 전 메서드 호출 + 오프셋 불변식 | backend-junior | PASS |
+| REQ-013 AC-1·AC-5·AC-6 · INV-6 | backend | `RenderSourceTests` (9) — 버퍼 우선·출처 구분·1MiB~2MB 구간 성공·2MB 초과 tooLarge·경로 이탈 거부·디코드 실패 | backend-junior | PASS |
 | REQ-001 AC-3 (열기 실패) | backend | `ProjectOpenFailureTests` (6) — 경로 없음·파일을 루트로·권한 없음 구분, 한국어 안내 문구, 실패 후 이전 프로젝트 유지 | backend-junior | PASS |
 | REQ-010 AC-2 (편집 명령 실패 경로) | backend | `EditorCommandFailurePathTests` (8) — 선택 없는 복사/잘라내기, 예전 선택 되살리기 회귀, 이름없음·읽기전용 저장 에러, undo/redo 경계, 전체선택→잘라내기 후 타이핑 | backend-junior | PASS |
 | REQ-002 AC-3 | backend | `SourceLanguageTests` (4) 미지원 확장자 nil · `SymbolExtractorTests` 미지원 확장자 빈 결과 · `ProjectScannerTests` 미지원 파일도 검색 대상 유지 | backend-senior | PASS |
