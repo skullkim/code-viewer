@@ -95,6 +95,72 @@ public final class CodeNavigatorEngine: Sendable {
         try? await editor.startReusingAgreedGridSize(projectRoot: projectRoot)
     }
 
+    /// The text a render view draws (REQ-013).
+    ///
+    /// The **buffer wins** when the editor is holding this file: a preview is usually opened to
+    /// see how the thing just typed looks, and drawing the saved copy would show a document
+    /// missing that paragraph — wrong, not merely stale. The origin travels with the text so the
+    /// view can say which copy this is instead of the fallback being silent.
+    ///
+    /// This is the only door to project text for rendering, which is what lets INV-6 be a
+    /// boundary (`ProjectRelativePath`) rather than a rule each call site has to remember.
+    public func renderSource(atRelativePath relativePath: String) async throws -> RenderSource {
+        guard let projectRoot = await project.currentProject()?.rootPath else {
+            throw NavigatorError.noProjectOpen
+        }
+        let resolved = try ProjectRelativePath.resolve(relativePath, inProjectRoot: projectRoot)
+
+        if let lines = try? await editor.bufferLines(forFileAt: resolved.url.path) {
+            let text = lines.joined(separator: "\n")
+            // The same document must not render from one source and refuse from the other, or the
+            // limit looks random to the user.
+            try Self.checkWithinRenderLimit(byteSize: text.utf8.count, path: resolved.relativePath)
+            return RenderSource(path: resolved.relativePath, text: text, origin: .editorBuffer)
+        }
+
+        return try Self.readFromDisk(at: resolved)
+    }
+
+    private static func readFromDisk(at resolved: ProjectRelativePath) throws -> RenderSource {
+        // Size is checked before reading: measuring after the read means the memory is already
+        // spent, which is what the limit exists to prevent.
+        guard
+            let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.url.path),
+            let byteSize = attributes[.size] as? Int
+        else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath,
+                reason: "파일 정보를 읽을 수 없습니다"
+            )
+        }
+        try checkWithinRenderLimit(byteSize: byteSize, path: resolved.relativePath)
+
+        guard let data = try? Data(contentsOf: resolved.url) else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath,
+                reason: "파일을 읽을 수 없습니다"
+            )
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            // Mojibake is worse than a refusal: it looks like the document, so the user blames
+            // their own file (REQ-013 AC-6).
+            throw NavigatorError.fileNotDecodable(path: resolved.relativePath)
+        }
+
+        return RenderSource(path: resolved.relativePath, text: text, origin: .savedFile)
+    }
+
+    private static func checkWithinRenderLimit(byteSize: Int, path: String) throws {
+        guard byteSize > RenderSource.maximumByteSize else {
+            return
+        }
+        throw NavigatorError.fileTooLarge(
+            path: path,
+            byteSize: byteSize,
+            limit: RenderSource.maximumByteSize
+        )
+    }
+
     public func shutDown() async {
         await saveObservationTask.cancel()
         await editor.shutDown()

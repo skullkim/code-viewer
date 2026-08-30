@@ -719,6 +719,47 @@ public actor NeovimEditorSession: EditorSession {
     }
 
 
+    /// The lines of the loaded buffer holding this file, or nil when the editor is not holding it.
+    ///
+    /// Paths are compared after `realpath`: Neovim reports the name it was opened with, which can
+    /// differ from the canonical path by a symlink (`/var` vs `/private/var` on macOS) while
+    /// naming the same file. Comparing the strings as given would answer "not open" for a file
+    /// that is open.
+    func bufferLines(forFileAt canonicalPath: String) async throws -> [String]? {
+        guard let channel, isUserInterfaceAttached else {
+            return nil
+        }
+
+        // Buffer handles arrive as msgpack ext values; they are passed straight back as arguments
+        // rather than unwrapped, so the codec round-trip is the only thing that has to be right.
+        let buffers = try await channel.request("nvim_list_bufs", []).arrayValue ?? []
+
+        for buffer in buffers {
+            let isLoaded = try await channel.request("nvim_buf_is_loaded", [buffer]).booleanValue ?? false
+            guard isLoaded else {
+                continue
+            }
+
+            let name = try await channel.request("nvim_buf_get_name", [buffer]).stringValue ?? ""
+            guard !name.isEmpty, Self.canonicalPath(of: name) == canonicalPath else {
+                continue
+            }
+
+            let lines = try await channel.request("nvim_buf_get_lines", [
+                buffer, .integer(0), .integer(-1), .boolean(false),
+            ])
+            return lines.arrayValue?.compactMap(\.stringValue) ?? []
+        }
+
+        return nil
+    }
+
+    private static func canonicalPath(of path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     /// Buffer and register access for tests that must check the editor's real state rather than
     /// what the engine reports about it. Not part of the contract.
     func bufferLinesForTesting() async throws -> [String] {
