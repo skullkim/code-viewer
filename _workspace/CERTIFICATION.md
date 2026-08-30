@@ -103,6 +103,7 @@
 | ~~D-4~~ | ~~키 등가가 발화하지 않는다~~ | REQ-011 AC-2 | ✅ **측정 아티팩트로 닫힘** — 아래 |
 | **D-11** | **전문 검색 패널의 검색어 필드가 입력을 받지 못한다** — 포커스 링조차 없다. **심볼 검색 모달은 정상** | **REQ-008 (UI 경로 전체)** | 🔴 신규 blocker |
 | **D-12** | **INV-6 샌드박스 루트 탈출** — `resolvingSymlinksInPath()` 가 **leaf 부재 시 심링크를 안 푼다** → 미해석 경로가 접두 비교를 통과. 백엔드가 폐기 대상 파일에서 발견, **리더가 생존 파일에서도 독립 재현** | **REQ-013 · INV-6** | 🔴 신규 (1차 범위 밖, **렌더 배선 전 필수**) |
+| **부채-3** | 🔴 **엔진이 단일 프로젝트다** — `CodeNavigatorEngine` 이 `project`·`editor` 를 각 **하나씩** `let` 으로 들고, `openProject` 는 **반환값이 없다**. `ProjectSessionFactory`·`ProjectOpenOutcome` 은 `03c` 에서 **채택됐으나 소스에 없다**. → 두 번째 프로젝트를 열면 첫 번째를 **대체**한다 | **REQ-012 AC-1·AC-2 · INV-5** | 🔴 **사용자 요구 1순위의 임계 경로. backend-senior 최우선** |
 | **부채-1** | **`ProjectTabBarView` 미마운트** — 게이트 면제 중(`is_exempt`, 사유 기재). 소유자 frontend-senior | REQ-012 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **부채-2** | **`BlockedResourcePlaceholder` 미마운트** — 게이트 면제 중. 소유자 frontend-junior | REQ-013 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **D-8** | **파일 트리가 키 포커스를 못 받고, 클릭으로 펼쳐지지도 않는다** — 행 클릭 후 화살표가 nvim 커서를 움직인다 | REQ-003 | 🔴 신규 |
