@@ -132,6 +132,22 @@ actor NeovimChannel {
             Task { await self?.handleTermination(status: status) }
         }
 
+        // Our pipe ends are marked close-on-exec so that a **different** child spawned at the same
+        // moment does not inherit them. Foundation dups the intended descriptors into this child
+        // explicitly and `dup2` clears the flag on the copy, so this editor still gets its stdin
+        // and stdout — what it stops is one editor holding another editor's stdin open.
+        //
+        // That matters when the parent goes away: an embedded Neovim leaves when its stdin reaches
+        // EOF, and EOF needs *every* holder to close. Siblings holding each other's ends means
+        // nobody reaches EOF, and since SIGTERM is ignored (see `stopProcess`) they survive with
+        // no parent to reap them. Measured: one full test run left eleven.
+        for descriptor in [
+            standardInputPipe.fileHandleForWriting.fileDescriptor,
+            standardOutputPipe.fileHandleForReading.fileDescriptor,
+        ] {
+            _ = fcntl(descriptor, F_SETFD, fcntl(descriptor, F_GETFD) | FD_CLOEXEC)
+        }
+
         do {
             try process.run()
         } catch {
