@@ -75,7 +75,8 @@ HTTP가 없으므로 **Swift 프로토콜과 값 타입이 계약**이다. 코�
 | `EditorGridLine` / `EditorTextRun` / `EditorTextStyle` / `EditorColor` | — | 뷰가 그대로 그리는 형태 |
 | `EditorCursorPosition` | `row` `column` | 그리드 셀 좌표, 0부터 |
 | `EditorStatus` | `filePath` `isDirty` `cursorLine` `cursorColumn` `mode` `inputMode` | 커서는 **버퍼** 좌표(1부터) |
-| `NavigatorError` | 9개 케이스 + 한국어 `errorDescription` | 빈 결과로 실패를 위장하지 않는다 |
+| `RenderSource` | `path` `text` `origin` | REQ-013. `origin`=`editorBuffer`\|`savedFile` — **필수**. 상한 `RenderSource.maximumByteSize`=2MiB |
+| `NavigatorError` | 12개 케이스 + 한국어 `errorDescription` | 빈 결과로 실패를 위장하지 않는다 |
 
 ### 3.2 `ProjectSession` (프로젝트·인덱스·검색)
 
@@ -128,10 +129,30 @@ func shutDown() async
 - 정의 이동은 `openFile(…, recordJump: true)` 한 번이면 된다 — 점프 목록 기록까지 엔진이 한다.
 - `savedFiles()`는 엔진이 재인덱싱에 쓰는 스트림이다. 프론트엔드가 구독할 필요는 없다.
 
+### 3.3b 렌더 원문 (REQ-013)
+
+`CodeNavigatorEngine.renderSource(atRelativePath:) async throws -> RenderSource`
+
+**엔진이 읽는다.** 앱이 직접 읽으면 INV-6의 루트 제한이 두 벌이 되고, 위험은 "두 곳이 각자 읽는 것"이 아니라 **"두 곳이 각자 다른 규칙으로 읽는 것"**이다. 그리고 버퍼 우선 규칙상 두 반쪽을 다 아는 자리는 엔진뿐이다.
+
+| 규칙 | 내용 |
+|---|---|
+| **출처** | 편집기가 그 파일을 들고 있고 `.connected`면 **버퍼**(`origin: .editorBuffer`), 아니면 디스크(`.savedFile`) |
+| **왜 버퍼 우선** | 미리보기를 여는 가장 흔한 이유가 *방금 쓴 것*을 보는 것. 디스크로 그리면 방금 친 문단이 없는 화면 — "최신 아님"이 아니라 **틀린 화면**이다. AC-5("저장하면 갱신")의 상위집합이라 AC와 모순되지 않는다 |
+| **폴백은 조용하면 안 된다** | 세션이 죽어 디스크로 떨어진 것도 사용자에겐 틀린 화면이다. `origin`으로 **어느 쪽을 그렸는지 화면이 말한다**(PD: W-14에 상태 추가) |
+| **크기** | **읽기 전에 `stat`** — 읽고 나서 재면 이미 메모리를 지불한 뒤다. 초과 시 `fileTooLarge(path:byteSize:limit:)`. **자르지 않는다**(자른 렌더는 "문서가 여기서 끝났다"는 조용한 거짓말) |
+| **경로** | `ProjectRelativePath.resolve` **단일 경계**(INV-6). 올라가는 세그먼트 + 루트 밖 심링크 둘 다 거부. `..`는 **세그먼트 단위**로만(`docs..old`는 정상) |
+| **빈 파일** | 실패가 아니다 — `text: ""`로 성공. 화면이 "내용이 없습니다"를 그린다 |
+| **에러 3종** | `fileTooLarge` · `fileNotReadable(reason:)` · `fileNotDecodable` — PD §7.2 `tooLarge\|unreadable\|undecodable` 및 W-14 실패 카드와 **1:1**. 합치지 말 것 |
+
+🔴 **`SourceFileReader`를 재사용하지 않는다.** 상한이 1MiB로 렌더 상한의 절반이고, 모든 거절이 같은 `nil`로 뭉개진다. 그 사이 크기 파일이 **조용한 빈 결과**가 되어 AC-6을 위반한다.
+
 ### 3.4 경계면 규칙
 1. 계약 변경은 **백엔드 시니어만** 반영한다. 프론트엔드는 SendMessage로 제안한다.
 2. 2회 교차/불일치하면 즉시 리더 에스컬레이션 → 리더가 값을 정해 파일에 동결한다.
 3. 프론트엔드는 `CodeNavigatorContract`만 import해 가짜 구현으로 테스트할 수 있다.
+4. **편집기 실패는 프로젝트 열기 실패가 아니다.** `CodeNavigatorEngine.start()`는 **인덱싱 실패로만** 던진다. 편집기 기동 실패는 `EditorSession.state()`의 `.startupFailed`가 들고 가고 W-8 오버레이가 그것을 읽는다. 인덱스는 열린 채 남는다 — W-8이 사용자에게 한 약속("트리·심볼 검색·참조·전문 검색은 계속 사용할 수 있습니다")이 그래야만 참이다. 던지면 앱이 성공한 인덱스를 통째로 버리고 `인덱스 없음`이 뜬다(D-7).
+5. **다시 열기는 편집기가 돌아오는 지점이다.** `openProject`는 편집기가 붙어 있지 않으면 다시 띄운다. `.connected`일 때만 다루면 첫 실패가 **흡수 상태**가 되어 앱이 사는 동안 nvim이 영영 뜨지 않는다.
 
 ## 4. 성능·자원 설계 근거 (REQ-NF-001·002)
 
