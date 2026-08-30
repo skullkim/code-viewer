@@ -29,6 +29,13 @@ public actor NeovimEditorSession: EditorSession {
     /// dropping them would silently lose the user's first keystrokes.
     private var queuedKeys: [String] = []
 
+    /// Neovim's tabpage handle for each open project.
+    ///
+    /// The handles stay here rather than in the contract: they are msgpack values that mean
+    /// nothing outside this process, so handing one to the application would give it a token it
+    /// can neither read nor check. It already has a tab identity, so that is the key.
+    private var projectTabPages: [ProjectTabIdentifier: MessagePackValue] = [:]
+
     /// The last status published, so a mode change can be re-published without another round trip
     /// to Neovim. Mode arrives on the redraw stream while the rest of the status arrives from
     /// autocommands; without this the two never meet and the mode indicator lags or sticks.
@@ -302,6 +309,53 @@ public actor NeovimEditorSession: EditorSession {
         currentInputMode
     }
 
+    // MARK: - Project tabs (REQ-012)
+
+    /// Opens a tabpage for a project and points it at that project's root.
+    ///
+    /// The first project reuses the tabpage Neovim already started with. Creating one for it would
+    /// leave an empty tabpage behind forever, and the user would see a tab in the editor that
+    /// belongs to no project.
+    func openProjectTab(_ identifier: ProjectTabIdentifier, root: URL) async throws {
+        let channel = try requireChannel()
+        if projectTabPages.isEmpty == false {
+            try await channel.request("nvim_command", [.string("tabnew")])
+        }
+        // `tcd`, not `cd`: tab-local is the whole point. A global `cd` would move every project's
+        // working directory at once, which is measurably the one thing tabpages do isolate
+        // (ADR-0009).
+        try await channel.request("nvim_command", [.string("tcd \(shellQuoted(root.path))")])
+        let handle = try await channel.request("nvim_get_current_tabpage", [])
+        projectTabPages[identifier] = handle
+    }
+
+    func activateProjectTab(_ identifier: ProjectTabIdentifier) async throws {
+        let channel = try requireChannel()
+        guard let handle = projectTabPages[identifier] else {
+            throw NavigatorError.noProjectOpen
+        }
+        try await channel.request("nvim_set_current_tabpage", [handle])
+    }
+
+    /// Closes a project's tabpage.
+    ///
+    /// The last one is a special case: `tabclose` refuses on the final tabpage with `E784`, and
+    /// restarting the process instead would charge the user the start-up cost for closing a
+    /// project. So the session stays and the tabpage is emptied rather than removed.
+    func closeProjectTab(_ identifier: ProjectTabIdentifier) async throws {
+        let channel = try requireChannel()
+        guard let handle = projectTabPages[identifier] else {
+            return
+        }
+        try await channel.request("nvim_set_current_tabpage", [handle])
+        if projectTabPages.count == 1 {
+            try await channel.request("nvim_command", [.string("enew!")])
+        } else {
+            try await channel.request("nvim_command", [.string("tabclose")])
+        }
+        projectTabPages[identifier] = nil
+    }
+
     // MARK: - Navigation
 
     public func openFile(atRelativePath relativePath: String, line: Int?, recordJump: Bool) async throws {
@@ -508,6 +562,11 @@ public actor NeovimEditorSession: EditorSession {
     /// polling. The save signal is what re-indexes an in-app edit without waiting for the file
     /// watcher (REQ-009 AC-5).
     private func installNotificationHooks(on channel: NeovimChannel) async throws {
+        // The application draws the tab bar. Left on, Neovim draws a second one and every grid row
+        // shifts by one — and only once a second tabpage exists, so a single-tab check never sees
+        // it. This is a rendering contract, not a change to the user's editing preferences (INV-4).
+        _ = try? await channel.request("nvim_command", [.string("set showtabline=0")])
+
         let apiInfo = try await channel.request(
             "nvim_get_api_info", [], timeout: effectiveStartupTimeout
         )
@@ -848,6 +907,27 @@ public actor NeovimEditorSession: EditorSession {
     func processIdentifierForTesting() async -> Int32? {
         guard let channel else { return nil }
         return await channel.processIdentifier
+    }
+
+    /// Tabpage state read straight from Neovim, for tests that must check the editor rather than
+    /// what this type believes about it.
+    func currentWorkingDirectoryForTesting() async throws -> String {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_eval", [.string("getcwd()")])
+        return value.stringValue ?? ""
+    }
+
+    func tabPageCountForTesting() async throws -> Int {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_list_tabpages", [])
+        return value.arrayValue?.count ?? 0
+    }
+
+    func showTabLineSettingForTesting() async throws -> Int {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_eval", [.string("&showtabline")])
+        guard let integer = value.integerValue else { return -1 }
+        return Int(integer)
     }
 
     // MARK: - Helpers
