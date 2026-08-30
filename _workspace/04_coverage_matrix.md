@@ -26,10 +26,16 @@
 >
 > 사용자가 직접 요청한 기능 둘이다. **실측**:
 > ```
-> ProjectTabBarView    소스 마운트 0            ← 탭이 화면에 없다
+> ProjectTabSet · ProjectTab · ProjectTabBarPresentation
+> ProjectTabCommand · TabRestorePlan     소스 참조 전부 0   ← 뷰만이 아니라 모든 층
+> ProjectTabBarView                      마운트     0
+> AppModel(413줄)  indexState·editorStatus·projectRootPath·fileTree 를 직접 보유
 > 렌더 뷰              존재하지 않음 · WKWebView 참조 0
-> RenderSandboxPolicy  소스 0 · 테스트 6        ← 완전히 테스트된 고아
+> RenderSandboxPolicy  소스 0 · 테스트 33       ← 완전히 테스트된 고아
 > ```
+> **배선은 "뷰 하나 꽂기"가 아니다** — ADR-0107 이 "상태는 탭 단위"로 결정했는데 `AppModel` 이
+> 아직 단일 프로젝트 상태를 직접 들고 있다. **모델 소유 구조를 바꾸는 통합 작업**이다
+> (리더가 "한 곳"이라는 추정을 실측 없이 받아 세 번 재촉했던 것을 정정한다).
 > REQ-012 는 AC-1~AC-6 이 **71건의 테스트로 PASS** 인데 **사용자는 탭을 하나도 볼 수 없다.**
 > 이게 정확히 위 배너가 경고하는 상태이고, **이번 빌드에서 가장 비싼 오판의 형태**다 —
 > 매트릭스가 PASS 로 가득한데 화면에 그 기능이 없는 것.
@@ -130,15 +136,16 @@
 | REQ-009 (칩 표시) · §4.5 색만으로 구분 금지 | frontend | `IndexChipIndicatorTests` (4, **계약의 `allKnownCases`·`Kind.allCases` 순회 — 상태가 늘면 컴파일 실패**, 걸러낸 목록 비었을 때 조용히 통과하는 것 방지) — 5상태 → dot/펄스/스피너 매핑 · **같은 앰버인 `갱신 중`·`전체 재스캔 중`이 서로 다른 표시를 갖는지** · 스피너 상태는 항상 진행 바 동반 | frontend-junior | PASS |
 | **REQ-011 AC-3 (영역 표시/숨김 복원)** | frontend | `ShellVisibilityLayoutTests` (12) — 둘 다 보이면 기존 `resolve`와 동일(위임 확인) · **숨기면 눌려 있던 이웃이 선호 폭을 되찾음** · 에디터 최소 유지 · 오버레이는 숨겨도 에디터 폭 불변 · 8창×4조합 음수 폭 없음 · **어떤 조합에서도 모드 세그먼트·인덱스 칩 생존** · 숨김 상태에서도 드래그 왕복 성립. positive control로 순진한 구현(base 폭 상속)이 잡히는 것 실측 | frontend-junior | PASS |
 | **REQ-005 AC-2 (정의 후보 팝오버 배치)** | frontend | `DefinitionPopoverPlacementTests` (10) — 커서 셀 → 앵커 환산 · 아래 자리 있으면 아래, 없으면 **위로 플립** · **행 0~38 × 후보 2/5/12 전수에서 팝오버가 커서 줄을 덮지 않음** · 짧은 창에서는 위치가 아니라 **높이를 양보** · 목록 높이 음수 방지 · 한 줄 카드 하한. positive control로 축소 무력화 시 커서 가림 재현 실측 | frontend-junior | PASS |
-| **INV-6 (렌더 샌드박스 판정)** | frontend | `RenderSandboxPolicyTests` (23) — **`data:` 래스터 이미지 허용 / SVG·그 외 차단**(리더 판정, 이미지 자리에서만) · 원격 이미지/스타일시트/폰트 종류별 차단 · 스크립트·프레임은 **로컬이어도** 차단 · 루트 안 로컬은 허용(반대 방향 실측) · `..` 탈출·형제 폴더 접두 · **실제 심링크 루트 탈출 차단** · 탭별 루트(INV-5) · `data:`/`javascript:` 차단 · **루트 미설정 시 CWD 로 열리는 fail-open 차단** | frontend-junior | PASS |
-| **INV-6 (차단 고지 §3 W-15)** | frontend | `BlockedResourcePresentationTests` (11) — **0건에도 샌드박스 칩 상시** · 건수 천 단위 · 종류별 집계 6줄 상한 · 출처 여럿이면 `{첫 곳} 외 {n}곳` · 문서 순서 유지 · 정책 문구 상시 | frontend-junior | PASS |
-| **REQ-012 AC-4 · AC-6 (탭 복원)** | frontend | `TabRestorePlanTests` (12) — 첫 실행/전부 성공/일부 실패/전부 실패 · **사라진 탭을 조용히 버리지 않고 사유와 함께 남김**(AC-6) · `notFound`/`noPermission` 문구 비마스킹 · 활성 탭이 사라지면 생존 탭으로 폴백 · **활성 인덱스가 항상 복원 목록 안** · 복원+누락 합 = 저장 수 · **첫 실행과 전부 실패를 구별**(둘 다 웰컴이지만 시트 유무가 다르다) | frontend-junior | PASS |
+| **REQ-013 AC-5·AC-6 (렌더 표면 상태)** | frontend | `RenderDocumentPresentationTests` (13) — **문서를 못 그리는 4상태가 전부 카드+빠져나갈 길**(AC-6 빈 화면 금지) · 재렌더는 읽던 문서를 지우지 않음(AC-5) · 200ms 깜빡임 방지 · **디스크 폴백을 화면이 말함**(조용한 폴백 금지) · 읽기 전용 배지 전 상태 상시 · **크기 초과는 자르지 않고 거부**(부분 렌더=조용한 거짓말) | frontend-junior | **로직 PASS · UI 미배선** |
+| **INV-6 (렌더 샌드박스 판정)** | frontend | `RenderSandboxPolicyTests` (33) — **leaf 부재 심링크 탈출 차단(D-12 회귀, 실제 심링크)** · 해석된 경로를 결과에 실어 TOCTOU 차단 · 존재하지 않는 파일 차단 · 프로토콜 상대 참조 · 루트 자신 · **`data:` 래스터 이미지 허용 / SVG·그 외 차단**(리더 판정, 이미지 자리에서만) · 원격 이미지/스타일시트/폰트 종류별 차단 · 스크립트·프레임은 **로컬이어도** 차단 · 루트 안 로컬은 허용(반대 방향 실측) · `..` 탈출·형제 폴더 접두 · **실제 심링크 루트 탈출 차단** · 탭별 루트(INV-5) · `data:`/`javascript:` 차단 · **루트 미설정 시 CWD 로 열리는 fail-open 차단** | frontend-junior | **로직 PASS · UI 미배선** |
+| **INV-6 (차단 고지 §3 W-15)** | frontend | `BlockedResourcePresentationTests` (11) — **0건에도 샌드박스 칩 상시** · 건수 천 단위 · 종류별 집계 6줄 상한 · 출처 여럿이면 `{첫 곳} 외 {n}곳` · 문서 순서 유지 · 정책 문구 상시 | frontend-junior | **로직 PASS · UI 미배선** |
+| **REQ-012 AC-4 · AC-6 (탭 복원)** | frontend | `TabRestorePlanTests` (12) — 첫 실행/전부 성공/일부 실패/전부 실패 · **사라진 탭을 조용히 버리지 않고 사유와 함께 남김**(AC-6) · `notFound`/`noPermission` 문구 비마스킹 · 활성 탭이 사라지면 생존 탭으로 폴백 · **활성 인덱스가 항상 복원 목록 안** · 복원+누락 합 = 저장 수 · **첫 실행과 전부 실패를 구별**(둘 다 웰컴이지만 시트 유무가 다르다) | frontend-junior | **로직 PASS · UI 미배선** |
 | **REQ-012 AC-2·AC-3·AC-5 · INV-5 (탭이 상태의 단위)** | frontend | `ProjectTabSetTests` (9) — 탭마다 별도 트리·인덱스(공유하면 한 탭에서 펼친 폴더가 다른 탭에도 펼쳐진다) · 닫아도 남은 탭 상태 보존 · 재개방 시 **기존 탭 유지**(새 인스턴스로 갈아치우면 트리·인덱스가 날아간다) · 전환은 활성 id 대입 · 없는 id 무시 · 승계/마지막/배경 닫기 · 서술자 정합. AC-5 가드·id 가드 각각 제거해 Red 실측 | frontend-senior | PASS |
 | **INV-6 (렌더 리소스 루트 제한)** | frontend | `RenderResourcePolicyTests` (11) — 원격 스킴 6종 · **프로토콜 상대 `//host`**(경로처럼 보이는 원격) · `..` 탈출 · 루트 밖 절대경로 · **이름만 루트로 시작하는 형제 폴더**(문자열 접두 비교 버그) · 루트 안 복귀 `..` 허용 · 루트 자신 거부 · `data:` 통과 · **실제 심링크로 안팎 2종**. 성분비교→접두비교 / 심링크해석 제거 각각 Red 실측 | frontend-senior | PASS |
 | **REQ-013 · INV-6 (샌드박스 기제 실측)** | frontend | `scripts/spike-render-sandbox.swift` — 대조군(JS 켬·규칙 없음)=요청 다수 · **JS만 끔=9건 그대로 나감** · 규칙+JS끔=0건. `data:` 는 전면차단 아래 생존(픽셀 실측, 깨진 URI와 구별 확인). ADR-0109 근거 | frontend-senior | 스파이크 (회귀 승격은 REQ-013 착수 시) |
-| **REQ-012 AC-5 (이미 열린 프로젝트)** | frontend | `ProjectIdentityTests` (10) — 표기 차이(끝 슬래시·`.`·`..`) · **실제 심링크를 만들어** 같은 폴더 판정 · `/tmp`↔`/private/tmp` · **대소문자는 볼륨이 정한다**(구분 볼륨에서는 다른 프로젝트) · 볼륨 질의 트랩 없음 | frontend-junior | PASS |
-| **REQ-012 AC-1 (탭 목록 표시)** | frontend | `ProjectTabBarTests` (22) — **활성 탭은 어떤 탭 수·폭·위치에서도 보이는 쪽**(시니어 리뷰 지적, 전수 불변식) · 보이는 탭은 연속 구간 · 탭 0개=바 없음 / **1개도 바 표시**(§12 판정 1) · 동명 시 상위 폴더 보조 라벨(안 겹치면 미부착) · 더티·인덱싱 글리프와 툴팁 · 폭 균등 분배와 112/220 경계 · **넘침 버튼 폭을 불필요하게 예약하지 않음** · 아무리 좁아도 탭 1개 생존 · 보이는 수+넘친 수=전체 불변식 | frontend-junior | PASS |
-| **REQ-012 AC-2 · AC-3 (탭 전환·닫기)** | frontend | `ProjectTabCommandTests` (18) — `⇧⌘]`/`⇧⌘[` 양끝 순환 · `⌘1~⌘8` 위치 / **`⌘9`=마지막 탭**(Safari 관례) · `⌘W`는 닫기 **요청**(W-13 시트 선행) · 활성 탭 닫으면 오른쪽→왼쪽 승계 · 배경 탭 닫아도 화면 불변 · **마지막 탭 닫기=웰컴 복귀**(§12 판정 3) · 어떤 조합에서도 활성 탭이 실재 | frontend-junior | PASS |
+| **REQ-012 AC-5 (이미 열린 프로젝트)** | frontend | `ProjectIdentityTests` (10) — 표기 차이(끝 슬래시·`.`·`..`) · **실제 심링크를 만들어** 같은 폴더 판정 · `/tmp`↔`/private/tmp` · **대소문자는 볼륨이 정한다**(구분 볼륨에서는 다른 프로젝트) · 볼륨 질의 트랩 없음 | frontend-junior | **로직 PASS · UI 미배선** |
+| **REQ-012 AC-1 (탭 목록 표시)** | frontend | `ProjectTabBarTests` (22) — **활성 탭은 어떤 탭 수·폭·위치에서도 보이는 쪽**(시니어 리뷰 지적, 전수 불변식) · 보이는 탭은 연속 구간 · 탭 0개=바 없음 / **1개도 바 표시**(§12 판정 1) · 동명 시 상위 폴더 보조 라벨(안 겹치면 미부착) · 더티·인덱싱 글리프와 툴팁 · 폭 균등 분배와 112/220 경계 · **넘침 버튼 폭을 불필요하게 예약하지 않음** · 아무리 좁아도 탭 1개 생존 · 보이는 수+넘친 수=전체 불변식 | frontend-junior | **로직 PASS · UI 미배선** |
+| **REQ-012 AC-2 · AC-3 (탭 전환·닫기)** | frontend | `ProjectTabCommandTests` (18) — `⇧⌘]`/`⇧⌘[` 양끝 순환 · `⌘1~⌘8` 위치 / **`⌘9`=마지막 탭**(Safari 관례) · `⌘W`는 닫기 **요청**(W-13 시트 선행) · 활성 탭 닫으면 오른쪽→왼쪽 승계 · 배경 탭 닫아도 화면 불변 · **마지막 탭 닫기=웰컴 복귀**(§12 판정 3) · 어떤 조합에서도 활성 탭이 실재 | frontend-junior | **로직 PASS · UI 미배선** |
 | **REQ-011 AC-4 · REQ-004 AC-2 · §4.4 (시각 회귀 게이트)** | frontend | `DesignRegressionGateTests` (8) — 빈 캔버스 아님 · 사이드바가 라이트/**다크** 토큰 색 · 좁은 창이 툴바 단축키 라벨 제거 · **에디터에 한글이 실제로 그려짐**(빈 화면과 잉크량 비교) · 한글 잉크가 영문의 40% 이상 · 수식키 3덩어리(**실제 툴바 폰트로** 측정) · 덩어리 세기 교정 / `DesignRegressionSelfTests` (8) — 빈 캔버스·틀린 토큰 색·붙은 글리프를 **합성 비트맵에 심어** 검출 확인, 반대 방향(떨어진 것은 제 수대로)까지. `Sources/` 무변형 | frontend-junior | PASS |
 | **REQ-011 AC-3 (창 크기·위치 복원)** | frontend | `WindowFrameFitTests` (11) — **사라진 모니터 좌표 → 주 화면 중앙** · 타이틀바가 화면 위로 넘어가면 내려옴 · 걸쳐 둔 창은 유지 · 최소 720×480 · 화면보다 큰 창 캡 · 화면 목록 빈 경우 · 전 입력에서 「어느 화면에서든 잡을 수 있음」 불변식 / `ShellPreferencesWindowFrameTests` (6) — 첫 실행 nil · 재시작 왕복 · **저장은 화면에 안 맞춤**(모니터 재연결 시 복귀) · 손상 데이터 5종 → nil · 다른 복원 값 미훼손. positive control로 화면 맞춤 제거 시 검출 실측 | frontend-junior | PASS |
 | **REQ-011 AC-3 (분할 비율 드래그)** | frontend | `ShellSplitDragTests` (10) — 창 폭을 아는 클램프: 좁은 창에서 에디터 최소 보호 · 오버레이는 폭을 안 먹음 · **왕복 불변식(끌어낸 폭 == 레이아웃이 되돌려준 폭)**을 창 5종 × 제안 6종으로 · 어떤 드래그에도 에디터 최소 유지. positive control로 창 무시 클램프가 잡히는 것 실측 | frontend-junior | PASS |
