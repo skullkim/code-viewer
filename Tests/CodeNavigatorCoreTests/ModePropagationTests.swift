@@ -74,8 +74,40 @@ struct ModePropagationTests {
 
     private func dragAcrossProbeArea(_ session: NeovimEditorSession) async throws {
         try await session.sendMouse(EditorMouseEvent(button: .left, action: .press, row: 0, column: 0))
+
+        // 누름이 실제로 처리된 뒤에 끌기를 보낸다.
+        //
+        // `nvim_input_mouse` 는 입력을 **큐에 넣고** 곧바로 돌아온다. 누름과 끌기를 연달아 밀어
+        // 넣으면 한가한 기계에서는 대개 순서대로 소화되지만, 스위트 전체가 도는 동안에는 둘이
+        // 한 번의 클릭으로 뭉개져 비주얼 모드가 아예 생기지 않는다. 왕복 요청 하나가 "여기까지
+        // 처리됐다"는 확인이 된다 — 시간을 추측하는 게 아니라 순서를 강제하는 것이다.
+        //
+        // 놓은 **뒤에** 기다리는 것으로는 못 고친다. 5초를 기다려도 낫지 않았다(실측). 이미
+        // 클릭으로 확정된 것을 나중에 기다린다고 드래그가 되지는 않는다.
+        _ = try await session.currentNeovimMode()
+
         try await session.sendMouse(EditorMouseEvent(button: .left, action: .drag, row: 2, column: 5))
+
+        // 사람은 선택이 생긴 것을 보고 손을 뗀다.
+        _ = try await waitForCondition(timeout: .seconds(5)) {
+            try await session.currentNeovimMode()?.hasPrefix("v") == true
+        }
+
         try await session.sendMouse(EditorMouseEvent(button: .left, action: .release, row: 2, column: 5))
+    }
+
+    /// Polls instead of sleeping a guessed interval: returns as soon as it holds, and a real
+    /// failure still fails — it just takes the deadline to say so.
+    private func waitForCondition(
+        timeout: Duration,
+        _ condition: () async throws -> Bool
+    ) async rethrows -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if try await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return try await condition()
     }
 
     @Test("드래그로 들어간 비주얼 모드가 상태 스트림까지 도달한다")
