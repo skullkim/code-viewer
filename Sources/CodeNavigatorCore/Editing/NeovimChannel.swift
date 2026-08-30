@@ -49,6 +49,21 @@ actor NeovimChannel {
 
     init() {}
 
+    /// Last resort: an owner that disappears without saying goodbye still must not leave an
+    /// editor running.
+    ///
+    /// `shutDown()` is the intended path and every deliberate teardown uses it. This covers the
+    /// one nobody writes down — a session that simply goes out of scope, which is what a retry
+    /// looks like when the interface builds a fresh session instead of reusing the old one. The
+    /// process outlives its owner otherwise, invisible to everything that could stop it.
+    deinit {
+        standardOutputPipe.fileHandleForReading.readabilityHandler = nil
+        try? standardInputPipe.fileHandleForWriting.close()
+        if process.isRunning {
+            process.terminate()
+        }
+    }
+
     // MARK: - Lifecycle
 
     func start(executableURL: URL, arguments: [String] = [], environment: [String: String]? = nil) throws {
@@ -87,8 +102,14 @@ actor NeovimChannel {
     }
 
     private func startReading() {
-        readerTask = Task { [byteStream] in
+        // `weak self` is load-bearing, not hygiene. A strong capture here makes the channel keep
+        // itself alive through its own reader task: the task runs as long as the stream is open,
+        // the stream stays open as long as the process runs, and the process runs because nothing
+        // ever deallocates the channel to stop it. An owner that drops the session then leaks an
+        // editor that no code can reach — and `deinit` never fires to catch it.
+        readerTask = Task { [byteStream, weak self] in
             for await event in byteStream.events {
+                guard let self else { return }
                 switch event {
                 case .value(let value):
                     await self.dispatch(value)
