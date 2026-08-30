@@ -81,6 +81,43 @@ check_idle_memory() {
     pass "유휴 메모리 ${megabytes}MB (예산 ${IDLE_MEMORY_BUDGET_MB}MB, 격리 측정)"
 }
 
+# ---------------------------------------------------------------------------
+# AC-3 탭 여닫기 메모리 — 격리 실행으로만 판정한다
+# ---------------------------------------------------------------------------
+# phys_footprint 는 프로세스 전체 값이라 공유 러너 안에서는 다른 스위트의 할당이 같이 잡힌다
+# (실측: 단독 인덱스 5.3MB·회당 0.12MB, 전체 실행 1.9MB·회당 0.98MB — 양쪽이 다 움직여서
+# 비율까지 흔들린다). SC-8 과 같은 이유로 같은 방식을 쓴다.
+#
+# 경계는 실측으로 골랐다: 정상 회당 약 0.12MB, 닫기를 무력화한 변이 약 1.01MB. 새는 쪽이
+# 인덱스 크기만큼 늘지 않으므로(할당자가 페이지를 압축·공유) 인덱스에서 유도한 1/2·1/4 는
+# 변이를 놓쳤다. 1/10 이 정상에 5배, 누수에 2배 여유를 준다.
+TAB_MEMORY_GROWTH_DIVISOR=10
+
+tab_memory_index_kb_from() {
+    printf '%s\n' "$1" | sed -nE 's/.*\[AC-3\] 인덱스 ([0-9]+) KB.*/\1/p' | tail -1
+}
+
+tab_memory_growth_kb_from() {
+    printf '%s\n' "$1" | sed -nE 's/.*회당 증가 ([0-9]+) KB.*/\1/p' | tail -1
+}
+
+check_tab_memory_reuse() {
+    local index_kb growth_kb limit_kb
+    index_kb="$(tab_memory_index_kb_from "$1")"
+    growth_kb="$(tab_memory_growth_kb_from "$1")"
+
+    if [ -z "$index_kb" ] || [ -z "$growth_kb" ]; then
+        fail "AC-3 메모리 측정값을 읽지 못했다 — 테스트가 돌지 않았거나 출력 형식이 바뀌었다"
+        return
+    fi
+    limit_kb=$(( index_kb / TAB_MEMORY_GROWTH_DIVISOR ))
+    if [ "$growth_kb" -gt "$limit_kb" ]; then
+        fail "탭 여닫기 회당 ${growth_kb}KB 증가 > ${limit_kb}KB — 닫기가 인덱스를 놓지 않는다 (AC-3)"
+        return
+    fi
+    pass "탭 여닫기 회당 ${growth_kb}KB (인덱스 ${index_kb}KB, 상한 ${limit_kb}KB, 격리 측정)"
+}
+
 test_count_from() {
     printf '%s\n' "$1" | sed -nE 's/.*Test run with ([0-9]+) tests?.*/\1/p' | tail -1
 }
@@ -213,6 +250,35 @@ self_test() {
         printf '  ok: 메모리 판정기가 예산 초과를 잡는다\n'
     else
         printf '  FAIL: 999MB 를 통과시켰다\n'
+        status=1
+    fi
+
+    # 5) AC-3 메모리 판정기도 양방향으로. 이 검사는 격리에서만 유효하므로 파서가 죽으면
+    #    누수가 조용히 통과한다 — 그게 이 항목을 만든 이유 자체다.
+    FAILURES=0
+    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 회당 증가 1030 KB (10회)" >/dev/null 2>&1
+    if [ "$FAILURES" -gt 0 ]; then
+        printf '  ok: 탭 메모리 판정기가 누수(회당 1030KB)를 잡는다\n'
+    else
+        printf '  FAIL: 누수를 통과시켰다\n'
+        status=1
+    fi
+
+    FAILURES=0
+    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 회당 증가 120 KB (10회)" >/dev/null 2>&1
+    if [ "$FAILURES" -eq 0 ]; then
+        printf '  ok: 정상 재사용(회당 120KB)은 통과시킨다 (오탐 없음)\n'
+    else
+        printf '  FAIL: 정상을 누수로 잡는다 — 오탐이다\n'
+        status=1
+    fi
+
+    FAILURES=0
+    check_tab_memory_reuse "측정 줄이 없다" >/dev/null 2>&1
+    if [ "$FAILURES" -gt 0 ]; then
+        printf '  ok: AC-3 측정 줄이 없으면 잡는다\n'
+    else
+        printf '  FAIL: 측정값 없이 통과시켰다\n'
         status=1
     fi
 
@@ -400,6 +466,11 @@ section "백엔드: SC-8 유휴 메모리 (격리 측정)"
 MEMORY_OUTPUT="$(swift test --filter 'SearchPerformanceTests/idleMemoryAfterIndexingWithinBudget' 2>&1)"
 printf '%s\n' "$MEMORY_OUTPUT" | grep -F '[성능]' || true
 check_idle_memory "$MEMORY_OUTPUT"
+
+section "백엔드: AC-3 탭 여닫기 메모리 (격리 측정)"
+TAB_MEMORY_OUTPUT="$(swift test --filter 'WorkspaceMemoryReuseTests' 2>&1)"
+printf '%s\n' "$TAB_MEMORY_OUTPUT" | grep -F '[AC-3]' || true
+check_tab_memory_reuse "$TAB_MEMORY_OUTPUT"
 
 section "환경: 고아 Neovim 프로세스"
 ORPHAN_COUNT="$(count_orphaned_editors)"

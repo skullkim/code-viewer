@@ -177,13 +177,21 @@ struct ProjectWorkspaceEngineTests {
     }
 }
 
-/// AC-3 asks that closing a tab really releases what it held. Judged by memory that has a trap in
-/// it: the allocator keeps freed pages and reuses them, so a correct close frees nothing the
-/// process footprint can show. Measured earlier: reopening after a close costs about 0.4MB rather
-/// than another full index — the pages came back.
+/// AC-3 asks that closing a tab really releases what it held.
 ///
-/// So the question is not "did it drop" but "does repeating it grow". A leak compounds; reuse does
-/// not.
+/// Memory is a trap to judge that by. The allocator keeps freed pages and reuses them, so a
+/// correct close frees nothing the process footprint can show — the question is not "did it drop"
+/// but "does repeating it grow". A leak compounds; reuse does not.
+///
+/// 🔴 **The growth figure is only meaningful in isolation, so this suite does not judge it.**
+/// `phys_footprint` is process-wide, and in the shared runner a dozen other suites allocate into
+/// the same number. Measured alone this reads a 5.3MB index and 0.12MB per cycle; inside a full
+/// run the same code read 1.9MB and 0.98MB. **Both halves move, so the ratio moves too**, and the
+/// verdict would be about how busy the machine was rather than about the workspace. `gate.sh` runs
+/// this alone and judges the printed figures — the arrangement SC-8 already uses, for this reason.
+///
+/// What stays asserted here is what does not depend on load: the closed session is gone and its
+/// symbols leave the count. That is the direct evidence that closing released something.
 @Suite("탭 여닫기가 메모리를 누적하지 않는다 (AC-3)", .serialized)
 struct WorkspaceMemoryReuseTests {
 
@@ -219,27 +227,24 @@ struct WorkspaceMemoryReuseTests {
         }
         let after = await workspace.memoryFootprint().processFootprintBytes
 
-        let growthPerCycle = Double(after - baseline) / Double(cycles)
-        let megabyte = 1_048_576.0
+        let growthPerCycle = (after - baseline) / cycles
+        // gate.sh 가 이 줄을 읽어 판정한다. 형식을 바꾸면 그쪽 파서와 자체 검사도 같이 고쳐라.
         print(String(
-            format: "[AC-3] 인덱스 하나 %.1fMB · 기준선 %.1fMB → %d회 후 %.1fMB (회당 %.2fMB)",
-            Double(indexCostInBytes) / megabyte, Double(baseline) / megabyte,
-            cycles, Double(after) / megabyte, growthPerCycle / megabyte
+            format: "[AC-3] 인덱스 %d KB · 회당 증가 %d KB (%d회)",
+            indexCostInBytes / 1024, growthPerCycle / 1024, cycles
         ))
 
-        // 경계는 직관이 아니라 두 실측값 사이에서 고른다. 인덱스 하나가 약 5MB 인 픽스처에서:
+        // 증가율 판정은 여기서 하지 않는다 — 위 주석 참조. gate.sh 격리 스텝이 한다.
+        // 경계는 직관이 아니라 두 실측값 사이에서 골랐다(격리 기준): 정상 회당 약 0.12MB,
+        // 닫기를 무력화한 변이 약 1.01MB. 새는 쪽이 인덱스 값(5MB)만큼 늘지 **않는다** —
+        // 할당자가 페이지를 압축하고 공유한다. 그래서 "인덱스 하나만큼 늘 것"이라는 직관으로
+        // 경계를 잡으면 변이를 놓친다. 1/2 과 1/4 로 두 번 놓쳤다.
         //
-        //     정상          회당 0.09MB
-        //     닫기 무력화   회당 1.01MB   ← 변이
-        //
-        // 새는 쪽이 인덱스 값(5MB)만큼 늘지 **않는다** — 할당자가 페이지를 압축하고 공유한다.
-        // 그래서 "인덱스 하나만큼 늘 것"이라는 직관으로 경계를 잡으면 변이를 놓친다. 1/2 과
-        // 1/4 로 두 번 놓쳤고, 그 두 번이 이 주석의 근거다. 1/10 은 정상에 5배, 누수에 2배
-        // 여유를 둔다.
-        #expect(
-            growthPerCycle < Double(indexCostInBytes) / 10,
-            "회당 \(growthPerCycle / megabyte)MB 씩 는다 — 인덱스 하나가 \(Double(indexCostInBytes) / megabyte)MB 인데 닫기가 놓지 않고 있다"
-        )
+        // 여기서는 부하와 무관한 사실만 단언한다.
+        #expect(await workspace.session(for: warmUp.tab.id) == nil)
+        #expect(await workspace.memoryFootprint().openTabCount == 0)
+        #expect(await workspace.memoryFootprint().indexedSymbolCount == 0)
+
         await workspace.shutDown()
     }
 
