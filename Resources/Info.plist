@@ -11,6 +11,19 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
+
+    <!-- macOS 가 사용자에게 접근을 물을 때 이 문장을 그대로 읽어 준다. 없으면 대화상자는
+         이유를 말하지 못하고, 사용자는 무엇을 허락하는지 모르는 채로 고르게 된다.
+
+         이 대화상자는 D-7 의 정체이기도 했다: 그것이 열기를 막는 동안 앱은 그 차단을
+         `Neovim 이 응답하지 않습니다` 로 보고했고, 우리는 하루를 nvim 을 의심하며 보냈다.
+         문구가 이유를 말했다면 사용자도 우리도 훨씬 일찍 알았을 것이다. -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>문서 폴더에 있는 프로젝트를 열어 코드를 색인하고 편집하려면 접근이 필요합니다. 여는 프로젝트 폴더 안에서만 읽고 씁니다.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>데스크탑에 있는 프로젝트를 열어 코드를 색인하고 편집하려면 접근이 필요합니다. 여는 프로젝트 폴더 안에서만 읽고 씁니다.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>다운로드 폴더에 있는 프로젝트를 열어 코드를 색인하고 편집하려면 접근이 필요합니다. 여는 프로젝트 폴더 안에서만 읽고 씁니다.</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>

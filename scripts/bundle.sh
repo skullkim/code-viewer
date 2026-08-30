@@ -37,4 +37,18 @@ if [ "$PLIST_EXECUTABLE" != "$EXECUTABLE_NAME" ]; then
     exit 1
 fi
 
+# macOS reads these strings aloud when it asks the user for access. Without them the dialog
+# cannot say why, and a user deciding blind tends to deny.
+#
+# Checked rather than trusted, because losing one is silent: the app still builds, still
+# launches, and only a sentence in a dialog nobody on the team sees goes missing. That dialog
+# was D-7 — while it sat waiting for an answer the app reported `Neovim 이 응답하지 않습니다`,
+# and a day went into suspecting Neovim.
+for usage_key in NSDocumentsFolderUsageDescription NSDesktopFolderUsageDescription NSDownloadsFolderUsageDescription; do
+    if ! /usr/libexec/PlistBuddy -c "Print :$usage_key" "$APP_DIR/Contents/Info.plist" >/dev/null 2>&1; then
+        echo "FAIL: Info.plist에 $usage_key 가 없다 — 권한 대화상자가 이유를 설명하지 못한다" >&2
+        exit 1
+    fi
+done
+
 echo "$APP_DIR"
