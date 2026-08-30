@@ -69,6 +69,16 @@ public actor NeovimEditorSession: EditorSession {
     }
 
     public func start(projectRoot: URL, columns: Int, rows: Int) async throws {
+        // Start-up timings are carried into the failure message. A timeout here has resisted
+        // reproduction — CPU load, configuration weight, grid size, file loading and redraw
+        // volume were each measured and ruled out — so the next occurrence in the field has to
+        // be the thing that teaches us. An error that says only "no response" teaches nothing.
+        let startedAt = Date()
+        var stageTimings: [String] = []
+        func recordStage(_ name: String) {
+            stageTimings.append(String(format: "%@ %.2fs", name, Date().timeIntervalSince(startedAt)))
+        }
+
         self.projectRoot = projectRoot
         gridSize = (max(columns, 1), max(rows, 1))
         updateState(.connecting)
@@ -83,6 +93,8 @@ public actor NeovimEditorSession: EditorSession {
             ))
             throw error
         }
+
+        recordStage("탐색")
 
         // Check the version before attaching. A too-old Neovim would otherwise fail later with
         // an obscure RPC error, which is exactly the silent failure REQ-NF-005 forbids.
@@ -113,6 +125,7 @@ public actor NeovimEditorSession: EditorSession {
             throw error
         }
 
+        recordStage("기동")
         await startConsumingNotifications(from: channel)
         await channel.onTermination { [weak self] status in
             Task { await self?.handleProcessExit(status: status) }
@@ -124,7 +137,9 @@ public actor NeovimEditorSession: EditorSession {
         // this call takes back down.
         do {
             try await attachUserInterface(to: channel)
+            recordStage("부착")
             try await installNotificationHooks(on: channel)
+            recordStage("핸드셰이크")
         } catch {
             await channel.terminate()
             self.channel = nil
@@ -132,10 +147,11 @@ public actor NeovimEditorSession: EditorSession {
             // The process is alive but never finished the handshake. Saying "not installed" here
             // sends the user to reinstall an editor that is running in front of them.
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
+            let progress = stageTimings.isEmpty ? "없음" : stageTimings.joined(separator: " · ")
             updateState(.startupFailed(
                 makeStartupFailure(
                     kind: .unresponsive,
-                    reason: "Neovim이 제한 시간 안에 응답하지 않았습니다: \(reason)",
+                    reason: "Neovim이 제한 시간 안에 응답하지 않았습니다: \(reason) [단계별 경과: \(progress)]",
                     foundVersion: installedVersion?.description
                 )
             ))

@@ -108,3 +108,37 @@ struct EditorStartupFailureKindTests {
         #expect(Set(EditorStartupFailureKind.allCases).count == 4)
     }
 }
+
+@Suite("기동 실패가 스스로 진단 정보를 싣는다", .serialized)
+struct StartupFailureDiagnosticsTests {
+
+    @Test("응답 없음 실패에 단계별 경과 시간이 실린다")
+    func unresponsiveFailureCarriesStageTimings() async throws {
+        let fixture = TemporaryProjectFixture()
+        let fake = fixture.write("mute-nvim", contents: """
+        #!/bin/sh
+        case "$1" in
+          --version) echo "NVIM v0.12.5"; exit 0 ;;
+        esac
+        sleep 120
+        """)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
+
+        let session = NeovimEditorSession(
+            executableLocator: NeovimExecutableLocator(wellKnownPaths: []),
+            executableOverridePath: fake.path
+        )
+        _ = try? await session.startForTesting(
+            projectRoot: fixture.rootURL, columns: 80, rows: 24, startupTimeout: .milliseconds(300)
+        )
+
+        guard case .startupFailed(let failure) = await session.state() else {
+            Issue.record("기동 실패 상태여야 한다")
+            return
+        }
+        // 재현되지 않는 실패라, 다음 발생이 데이터가 되어야 한다.
+        #expect(failure.reason.contains("단계별 경과"), "사유: \(failure.reason)")
+        #expect(failure.reason.contains("탐색"), "탐색 단계가 빠졌다: \(failure.reason)")
+        #expect(failure.reason.contains("기동"), "기동 단계가 빠졌다: \(failure.reason)")
+    }
+}
