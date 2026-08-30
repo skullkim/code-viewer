@@ -58,13 +58,13 @@ struct ModePropagationTests {
         for _ in 0..<80 {
             try await dragAcrossProbeArea(session)
             try await Task.sleep(for: .milliseconds(50))
-            if try await session.currentModeNameForTesting()?.hasPrefix("v") == true {
+            if try await session.currentNeovimMode()?.hasPrefix("v") == true {
                 try await session.sendKeys("<Esc>")
                 // 노멀로 실제 돌아왔는지 확인한다 — 비주얼로 남으면 이어지는 드래그가 모드를
                 // 바꾸지 않아 스트림에 아무것도 실리지 않는다.
                 for _ in 0..<20 {
                     try await Task.sleep(for: .milliseconds(25))
-                    if try await session.currentModeNameForTesting() == "n" { return }
+                    if try await session.currentNeovimMode() == "n" { return }
                 }
                 return
             }
@@ -94,7 +94,7 @@ struct ModePropagationTests {
         try await dragAcrossProbeArea(session)
 
         // Neovim 자신이 비주얼이어야 하고 — 그건 마우스 경로의 문제다.
-        #expect(try await session.currentModeNameForTesting()?.hasPrefix("v") == true)
+        #expect(try await session.currentNeovimMode()?.hasPrefix("v") == true)
 
         // 그리고 그 사실이 상태 스트림에 실려야 한다 — 그건 전파 경로의 문제다. 둘은 다른 결함이라
         // 따로 단언한다. 하나만 보면 어느 쪽이 깨졌는지 알 수 없다.

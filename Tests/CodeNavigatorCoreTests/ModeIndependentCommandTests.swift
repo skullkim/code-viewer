@@ -111,7 +111,7 @@ struct ModeIndependentCommandTests {
         try await session.selectAll()
         try await Task.sleep(for: .milliseconds(200))
 
-        let mode = try await session.currentModeNameForTesting()
+        let mode = try await session.currentNeovimMode()
         #expect(mode?.hasPrefix("V") == true || mode?.hasPrefix("v") == true, "\(inputMode): mode=\(mode ?? "nil")")
         #expect(try await session.selectedLineCountForTesting() == 3, "\(inputMode)")
     }

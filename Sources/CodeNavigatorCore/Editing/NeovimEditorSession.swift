@@ -337,7 +337,7 @@ public actor NeovimEditorSession: EditorSession {
     /// True while the editor is in a visual or select mode, which is the only time a selection
     /// the user can see actually exists.
     private func isSelectionActive() async throws -> Bool {
-        guard let mode = try await currentModeNameForTesting() else { return false }
+        guard let mode = try await currentNeovimMode() else { return false }
         return mode.hasPrefix("v") || mode.hasPrefix("V") || mode.hasPrefix("\u{16}")
             || mode.hasPrefix("s") || mode.hasPrefix("S")
     }
@@ -647,14 +647,6 @@ public actor NeovimEditorSession: EditorSession {
         return try await channel.request("nvim_get_current_line", []).stringValue
     }
 
-    /// Neovim's own view of the current mode, read without touching the buffer. A test that needs
-    /// the mode must not reach it by running a command, because that changes the very state it is
-    /// asking about. Not part of the contract.
-    func currentModeNameForTesting() async throws -> String? {
-        guard let channel else { return nil }
-        let reply = try await channel.request("nvim_get_mode", [])
-        return reply.mapValue?.first { $0.key.stringValue == "mode" }?.value.stringValue
-    }
 
     /// Buffer and register access for tests that must check the editor's real state rather than
     /// what the engine reports about it. Not part of the contract.
@@ -711,6 +703,26 @@ public actor NeovimEditorSession: EditorSession {
             "nvim_eval", [.string("abs(line('v') - line('.')) + 1")]
         )
         return value.integerValue ?? 0
+    }
+
+    /// Neovim's own short mode code — `n`, `i`, `v`, `V`, `s`, `niI` and so on.
+    ///
+    /// Deliberately not the contract's `EditorMode`: that one is the *display* mode, coarse on
+    /// purpose and derived from redraw events, while this is what Neovim reports about itself
+    /// right now. Selection commands need the precise answer, and a test diagnosing a mode
+    /// problem needs to compare the two.
+    ///
+    /// Named without a `ForTesting` suffix because production depends on it: `isSelectionActive`
+    /// calls it on every copy and cut. A suffix promising "tests only" would invite the next
+    /// person to delete it, and cut would silently stop working.
+    func currentNeovimMode() async throws -> String? {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_get_mode", [])
+        guard let fields = value.mapValue else { return nil }
+        for field in fields where field.key.stringValue == "mode" {
+            return field.value.stringValue
+        }
+        return nil
     }
 
     /// Internal mode bookkeeping, so a test can see where mode propagation stopped rather than
