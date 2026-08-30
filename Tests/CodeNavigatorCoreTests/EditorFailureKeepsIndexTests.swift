@@ -53,6 +53,39 @@ struct EditorFailureKeepsIndexTests {
         await engine.shutDown()
     }
 
+    /// Switching projects after the editor died.
+    ///
+    /// The index moves first and the editor is asked to follow. A crashed session cannot follow,
+    /// and the old code did two wrong things with that: it skipped the editor entirely, so the
+    /// session never came back for the rest of the application's life, and any refusal it did
+    /// raise threw — discarding a switch the index had already completed.
+    @Test("편집기가 죽은 뒤 다른 프로젝트로 바꾸면 전환도 되고 편집기도 돌아온다")
+    func switchingProjectsAfterACrashRestoresTheEditor() async throws {
+        let first = TemporaryProjectFixture()
+        first.write("src/First.kt", contents: "class First")
+        let second = TemporaryProjectFixture()
+        second.write("src/Second.kt", contents: "class Second")
+
+        let engine = CodeNavigatorEngine()
+        try await engine.start(projectRoot: first.rootURL, columns: 80, rows: 24)
+        let identifier = try #require(await engine.editor.processIdentifierForTesting())
+
+        // 사용자 몰래 죽는다 — 크래시가 실제로 하는 일이다.
+        kill(identifier, SIGKILL)
+        while kill(identifier, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        try await engine.openProject(at: second.rootURL)
+
+        #expect(await engine.project.currentProject()?.rootPath.lastPathComponent
+                == second.rootURL.lastPathComponent)
+        #expect(await engine.project.definitions(named: "Second").isEmpty == false)
+        // 편집기가 돌아와야 한다. 안 돌아오면 사용자는 앱을 다시 켜는 것 말고 할 수 있는 게 없다.
+        #expect(await engine.editor.state() == .connected)
+        await engine.shutDown()
+    }
+
     @Test("편집기 실패 후 프로젝트를 다시 열면 편집기를 다시 띄운다")
     func reopeningAProjectRetriesTheEditor() async throws {
         let realEditor = try NeovimExecutableLocator().locate()

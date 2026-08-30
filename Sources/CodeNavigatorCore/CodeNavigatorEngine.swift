@@ -79,8 +79,13 @@ public final class CodeNavigatorEngine: Sendable {
     /// only replaced after the scan succeeds, and the editor is only redirected after that.
     public func openProject(at projectRoot: URL) async throws {
         try await project.openProject(at: projectRoot)
-        if case .connected = await editor.state() {
-            try await editor.changeProjectRoot(to: projectRoot)
+        // Redirecting a live session is the cheap path. If it refuses, the editor is now pointed
+        // at the previous project while the index has moved — a divergence that shows up much
+        // later as a file that mysteriously will not open — so the session is rebuilt on the new
+        // root rather than left disagreeing. Throwing instead would fail a switch the index has
+        // already completed, which is the same mistake `start` used to make.
+        if case .connected = await editor.state(),
+           (try? await editor.changeProjectRoot(to: projectRoot)) != nil {
             return
         }
 
