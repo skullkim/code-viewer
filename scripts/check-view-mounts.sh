@@ -34,9 +34,19 @@ trap cleanup_sandbox EXIT INT TERM
 # a door for the next person to quiet any failure; the reason is what keeps it a decision.
 is_exempt() {
     case "$1" in
-        # SwiftUI previews only; nothing in the shipped tree builds one.
-        # (No entries at present — every view is expected on screen.)
-        __never_matches__) return 0 ;;
+        # Two views for features whose integration is still in flight. Exempted by the leader
+        # on 2026-08-30 so that a red gate means something again: both were known, tracked, and
+        # owned, and leaving them red teaches everyone to read past the failure — which is how
+        # the *next* unmounted view goes unnoticed.
+        #
+        # The checker still does its job while these sit here: a third unmounted view fails.
+        #
+        # ⚠ Each entry is a debt with a named owner, not a decision. Delete the entry the moment
+        # its view is mounted — an exemption that outlives its reason is how this list becomes
+        # the hand-maintained list this script was rewritten to get rid of. Both are tracked as
+        # open items in _workspace/CERTIFICATION.md and must be gone before BUILD_COMPLETE.
+        ProjectTabBarView) return 0 ;;          # REQ-012 탭 — frontend-senior, AppModel 탭 단위 개편 중
+        BlockedResourcePlaceholder) return 0 ;; # REQ-013 렌더 — frontend-junior, 전처리 단계 작업 중
         *) return 1 ;;
     esac
 }
@@ -100,13 +110,36 @@ self_test() {
     # A throwaway copy, cleaned up on every exit path including a kill. The shared tree is
     # never modified, so a self-test running during someone else's build cannot make their
     # sources momentarily wrong.
+    # A synthetic tree, not a copy of the real one. The question this self-test answers is
+    # "does the checker discriminate", and copying the real Sources ties that answer to
+    # whether the real tree currently passes — so the day someone lands an unmounted view,
+    # the checker reports itself broken. Worse, with a failing baseline a checker that
+    # ALWAYS failed would pass every case here, because failing is what each case expects.
+    # Building the tree by hand keeps the clean baseline true by construction.
     SELF_TEST_SANDBOX="$(mktemp -d)"
     local sandbox="$SELF_TEST_SANDBOX"
-    cp -R "$REPO_ROOT/Sources/." "$sandbox/"
+    mkdir -p "$sandbox/CodeNavigatorAppKit/View"
+    printf 'import SwiftUI\nstruct QaRootView: View { var body: some View { QaMountedView() } }\n' \
+        > "$sandbox/CodeNavigatorAppKit/View/QaRoot.swift"
+    # A non-view entry point, so the root view is mounted too. Without it the root is
+    # itself unmounted and the "clean tree" baseline is not clean.
+    printf 'import SwiftUI\nenum QaComposition { static func make() -> some View { QaRootView() } }\n' \
+        > "$sandbox/CodeNavigatorAppKit/View/QaComposition.swift"
+    printf 'import SwiftUI\nstruct QaMountedView: View { var body: some View { EmptyView() } }\n' \
+        > "$sandbox/CodeNavigatorAppKit/View/QaMounted.swift"
 
     local fixture="$sandbox/CodeNavigatorAppKit/View/_SelfTestProbe.swift"
 
     printf '=== check-view-mounts 자체 검사 ===\n'
+
+    # 깨끗한 트리를 통과시키는지부터 본다. 이걸 안 보면 "항상 실패하는 검사기"가 아래의
+    # 검출 케이스를 전부 통과한다 — 각 케이스가 기대하는 것이 실패이기 때문이다.
+    if VIEW_SOURCES_DIR="$sandbox" "$0" >/dev/null 2>&1; then
+        printf '  ok: 통과 — 마운트된 뷰만 있는 트리 (항상 실패하는 검사기가 아니다)\n'
+    else
+        printf '  FAIL: 깨끗한 트리를 통과 못 시킨다 — 검사기가 항상 실패한다\n'
+        status=1
+    fi
 
     # 잡아야 할 선언 형태들. 전부 "마운트되지 않은 뷰"이므로 검사기가 실패해야 한다.
     local -a probes=(
@@ -140,7 +173,7 @@ self_test() {
         printf '  ok: 검출 — #Preview 에서만 참조되는 뷰\n'
     fi
 
-    # 치우면 깨끗해야 한다.
+    # 치우면 다시 깨끗해야 한다.
     rm -f "$fixture"
     if VIEW_SOURCES_DIR="$sandbox" "$0" >/dev/null 2>&1; then
         printf '  ok: 픽스처 제거 후 깨끗하다 (오탐 없음)\n'
