@@ -156,12 +156,18 @@ struct AbandonedSessionTests {
         }
 
         let pid = try #require(identifier)
+        // 회수는 ARC 해제 → deinit → SIGTERM → 종료까지 걸리는 일이라 즉시가 아니다.
+        // 얼마나 걸렸는지 남긴다 — 마감을 늘려 플레이크를 덮는 대신 분포를 보고 정하기 위해.
+        let startedAt = ContinuousClock.now
         var alive = aliveCount([pid])
-        for _ in 0..<60 where alive > 0 {
-            try await Task.sleep(for: .milliseconds(50))
+        let deadline = startedAt + .seconds(10)
+        while alive > 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
             alive = aliveCount([pid])
         }
+        let elapsed = startedAt.duration(to: .now)
+        print("[회수] 버려진 세션의 자식이 사라지기까지 \(elapsed)")
         if alive > 0 { kill(pid, SIGKILL) }
-        #expect(alive == 0, "세션을 버렸는데 편집기 \(pid) 이 남았다")
+        #expect(alive == 0, "세션을 버렸는데 편집기 \(pid) 이 \(elapsed) 이 지나도 남았다")
     }
 }
