@@ -48,20 +48,23 @@ public final class CodeNavigatorEngine: Sendable {
             editingFailure = error
         }
 
-        // A half that succeeded while the other failed belongs to nobody: the caller sees a
-        // thrown error and reasonably assumes nothing was started. A Neovim left running that way
-        // is invisible to the application, survives its shutdown, and outlives the app itself.
-        // This attempt started it, so this attempt takes it back down.
-        if indexingFailure != nil || editingFailure != nil {
+        // Without an index this application can do nothing, so a failure there is a failure to
+        // open. The editor this attempt may have started belongs to nobody once the caller sees
+        // the error: invisible to the application, surviving its shutdown, outliving the app
+        // itself. This attempt started it, so this attempt takes it back down.
+        if let indexingFailure {
             if editingFailure == nil {
                 await editor.shutDown()
             }
-            if indexingFailure == nil {
-                await project.closeProject()
-            }
-            throw indexingFailure ?? editingFailure!
+            throw indexingFailure
         }
 
+        // An editor failure is deliberately **not** an open failure. W-8 promises the user that
+        // the tree, symbol search, references and full-text search keep working without Neovim,
+        // and that promise is only kept if the index survives. Throwing here made the application
+        // discard an index that had built perfectly well, and the user saw `인덱스 없음` on a
+        // project that had just been indexed. The failure is not swallowed — the editor carries it
+        // in `state()`, which is exactly what the overlay reads.
         await beginObservingSaves()
     }
 
@@ -78,7 +81,18 @@ public final class CodeNavigatorEngine: Sendable {
         try await project.openProject(at: projectRoot)
         if case .connected = await editor.state() {
             try await editor.changeProjectRoot(to: projectRoot)
+            return
         }
+
+        // The editor is not attached: a previous attempt failed, or it never ran. Reopening a
+        // project is where a user retries after fixing whatever was wrong, so it has to be a
+        // place the editor can come back. Without this, one failed start left the application
+        // permanently editor-less — every later open took this path, skipped Neovim entirely,
+        // and the app sat there with no child process at all no matter how often the user retried.
+        //
+        // A failure here stays out of the caller's way for the same reason as in `start`: the
+        // project did open, and the editor's own state reports that it did not.
+        try? await editor.startReusingAgreedGridSize(projectRoot: projectRoot)
     }
 
     public func shutDown() async {

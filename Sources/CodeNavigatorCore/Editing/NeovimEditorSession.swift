@@ -176,6 +176,17 @@ public actor NeovimEditorSession: EditorSession {
         await refreshStatus()
     }
 
+    /// Starts on `projectRoot` reusing the grid size the interface already agreed.
+    ///
+    /// A retry has no new size to offer — the window has not changed — and inventing a default
+    /// here would resize the user's editor as a side effect of reconnecting.
+    public func startReusingAgreedGridSize(projectRoot: URL) async throws {
+        if channel != nil {
+            await shutDown()
+        }
+        try await start(projectRoot: projectRoot, columns: gridSize.columns, rows: gridSize.rows)
+    }
+
     public func restart() async throws {
         guard let projectRoot else {
             throw NavigatorError.noProjectOpen

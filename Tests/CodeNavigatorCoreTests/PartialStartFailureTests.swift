@@ -74,20 +74,10 @@ struct PartialStartFailureTests {
         }
     }
 
-    @Test("편집기가 실패하면 이미 만든 인덱스를 남기지 않는다")
-    func failedEditorDoesNotLeaveAnIndex() async throws {
-        let fixture = TemporaryProjectFixture()
-        fixture.write("src/App.kt", contents: "class Application")
-        let engine = CodeNavigatorEngine(editorExecutableOverridePath: "/nonexistent/nvim")
-
-        await #expect(throws: (any Error).self) {
-            try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
-        }
-
-        // 인덱싱은 성공했겠지만, 열기가 실패했으므로 열린 프로젝트는 없어야 한다.
-        #expect(await engine.project.currentProject() == nil)
-        #expect(await engine.project.definitions(named: "Application").isEmpty)
-    }
+    // 편집기가 실패했을 때 인덱스가 살아남는다는 반대편 규칙은
+    // `EditorFailureKeepsIndexTests` 에 있다. 이 스위트가 지키는 것은 "이 시도가 띄운 것을
+    // 이 시도가 치운다"이지 "한쪽이 실패하면 둘 다 되돌린다"가 아니다 — 그 둘을 같은 규칙으로
+    // 묶었던 것이 W-8 의 약속을 깨뜨렸다.
 
     // MARK: - The silent failure
 

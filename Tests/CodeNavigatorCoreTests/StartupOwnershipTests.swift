@@ -1,0 +1,71 @@
+import Testing
+import Foundation
+import CodeNavigatorContract
+@testable import CodeNavigatorCore
+
+/// `deinit` terminates the Neovim process, so the question "who holds the channel while it is
+/// starting" stopped being bookkeeping and became load-bearing: a reference dropped for even a
+/// moment during start-up would kill the editor that was just spawned, and the symptom would be
+/// an application with no child process at all.
+///
+/// These pin the ownership that makes that impossible, so a later refactor that weakens a
+/// reference fails here instead of in the field.
+@Suite("기동 중 소유권 — 정리 코드가 정상 경로를 죽이지 않는다", .serialized)
+struct StartupOwnershipTests {
+
+    private func isAlive(_ processIdentifier: Int32) -> Bool {
+        kill(processIdentifier, 0) == 0
+    }
+
+    @Test("세션만 붙들고 있어도 편집기는 계속 산다 — 리더 태스크의 weak self 가 죽이지 않는다")
+    func theSessionAloneKeepsTheEditorAlive() async throws {
+        let fixture = TemporaryProjectFixture()
+        let session = NeovimEditorSession()
+        try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+
+        let identifier = try #require(await session.processIdentifierForTesting())
+        #expect(isAlive(identifier))
+
+        // 리더 태스크가 self 를 약하게 잡는다. 그 태스크가 유일한 소유자였다면 여기서
+        // 채널이 사라지고 deinit 이 프로세스를 죽인다. 세션이 붙들고 있으므로 살아야 한다.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(isAlive(identifier), "아무도 놓지 않았는데 nvim \(identifier) 이 죽었다")
+        #expect(await session.state() == .connected)
+
+        await session.shutDown()
+    }
+
+    @Test("앱과 같은 소유 구조에서도 편집기가 살아 있다 — 엔진만 붙들고 있는 경우")
+    func theEngineAloneKeepsTheEditorAlive() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application")
+        let engine = CodeNavigatorEngine()
+        try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+
+        let identifier = try #require(await engine.editor.processIdentifierForTesting())
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(isAlive(identifier), "엔진이 살아 있는데 nvim \(identifier) 이 죽었다")
+        #expect(await engine.editor.state() == .connected)
+
+        await engine.shutDown()
+    }
+
+    /// The positive control. If dropping every reference did *not* kill the process, the two
+    /// tests above would pass for a reason that has nothing to do with ownership.
+    @Test("모두가 놓으면 편집기는 죽는다 — 위 두 검사가 실제로 무언가를 재고 있다는 증거")
+    func droppingEveryReferenceDoesKillTheEditor() async throws {
+        let fixture = TemporaryProjectFixture()
+        var session: NeovimEditorSession? = NeovimEditorSession()
+        try await session!.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        let identifier = try #require(await session!.processIdentifierForTesting())
+
+        session = nil
+
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, isAlive(identifier) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(!isAlive(identifier), "아무도 안 붙들고 있는데 nvim \(identifier) 이 남았다")
+    }
+}
