@@ -58,14 +58,24 @@ struct NeovimMouseInputTests {
         try await session.sendMouse(
             EditorMouseEvent(button: .left, action: .press, row: probeStartRow, column: 0)
         )
-        try await Task.sleep(for: .milliseconds(80))
+        try await waitUntilQueuedInputIsConsumed(session)
         try await session.sendMouse(
             EditorMouseEvent(button: .left, action: .drag, row: probeEndRow, column: 3)
         )
-        try await Task.sleep(for: .milliseconds(80))
+        try await waitUntilQueuedInputIsConsumed(session)
         try await session.sendMouse(
             EditorMouseEvent(button: .left, action: .release, row: probeEndRow, column: 3)
         )
+    }
+
+    /// `nvim_input_mouse` 는 입력을 **큐에 넣고 곧바로 돌아온다**. 누름과 끌기를 연달아 보내면
+    /// 한가할 때는 순서대로 소화되지만 부하 중엔 둘이 클릭 하나로 뭉개진다(backend-senior 실측).
+    ///
+    /// 그래서 사이에 **왕복 요청**을 하나 넣는다. 응답이 돌아왔다는 것은 앞의 입력이 이미
+    /// 소화됐다는 뜻이라, 시간을 재는 것보다 확실하다 — 고정 대기는 부하가 얼마나 걸릴지
+    /// 아는 척하는 것이고, 그 짐작은 전체 스위트에서 틀린다.
+    private func waitUntilQueuedInputIsConsumed(_ session: NeovimEditorSession) async throws {
+        _ = try await session.currentLineForTesting()
     }
 
     private func waitUntilMouseDragCreatesSelection(_ session: NeovimEditorSession) async throws {
