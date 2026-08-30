@@ -341,6 +341,19 @@ else
     printf '%s\n' "$MOUNT_SELFTEST" | sed 's/^/    /'
 fi
 
+section "프론트엔드: 시스템 입력 소스 비침범 (REQ-014 AC-4)"
+# AC-4 를 기계로 말한 것. B 안이 "앱은 사용자의 입력 소스를 바꾼 채로 끝나지 않는다"로 성립하는
+# 근거는 **전환 호출이 존재하지 않는다**는 것 하나다 — 되돌리기를 잘해서가 아니라 되돌릴 것이
+# 없어서다. 폴백 경로에 하나만 남아도 그 근거가 무너지고, SIGKILL 시 사용자 머신에 흔적이
+# 남는다(백엔드 주니어 실측). 눈으로 "다 지웠다"가 아니라 이 숫자로 본다.
+SELECT_CALLS="$(grep -rn "TISSelectInputSource" "$REPO_ROOT/Sources" --include="*.swift" | wc -l | tr -d ' ')"
+if [ "$SELECT_CALLS" -eq 0 ]; then
+    pass "시스템 입력 소스를 선택하는 호출 0건 (읽기 전용)"
+else
+    fail "입력 소스 전환 호출이 ${SELECT_CALLS}건 남아 있다 — 전역을 바꾸면 되돌리지 못하는 경로가 생긴다"
+    grep -rn "TISSelectInputSource" "$REPO_ROOT/Sources" --include="*.swift" | sed 's/^/    /'
+fi
+
 section "프론트엔드: 포커스 표면 대칭"
 # D-11 이 두 번 살아남은 자리다. 처음엔 모달만 `.onAppear` 로 포커스를 잡고 검색 패널은
 # 안 잡았고, 코디네이터로 판단을 옮긴 뒤에도 모달만 여는 경로를 갖고 패널은 닫는 경로만
