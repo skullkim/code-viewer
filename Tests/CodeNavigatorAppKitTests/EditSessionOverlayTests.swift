@@ -10,6 +10,7 @@ struct EditSessionOverlayTests {
 
     private func failure(foundVersion: String? = nil) -> EditorStartupFailure {
         EditorStartupFailure(
+            kind: .notInstalled,
             reason: "Neovim을 찾을 수 없습니다",
             searchedPaths: ["/opt/homebrew/bin/nvim", "/usr/local/bin/nvim", "/usr/bin/nvim"],
             requiredVersion: "0.9.0",

@@ -88,6 +88,7 @@ struct StatusBarPresentationTests {
         // They look alike in a status bar but call for different responses: one is fixed by
         // installing Neovim, the other by restarting it.
         let failure = EditorStartupFailure(
+            kind: .notInstalled,
             reason: "Neovim을 찾을 수 없습니다",
             searchedPaths: ["/opt/homebrew/bin/nvim"],
             requiredVersion: "0.9.0"
@@ -103,7 +104,7 @@ struct StatusBarPresentationTests {
 
     @Test("기동 실패 안내도 일반 메시지보다 우선한다")
     func aStartupFailureOutranksTransientMessages() {
-        let failure = EditorStartupFailure(reason: "Neovim을 찾을 수 없습니다", searchedPaths: [], requiredVersion: "0.9.0")
+        let failure = EditorStartupFailure(kind: .notInstalled, reason: "Neovim을 찾을 수 없습니다", searchedPaths: [], requiredVersion: "0.9.0")
         let bar = make(session: .startupFailed(failure), message: StatusMessage(kind: .success, text: "✓ 저장됨"))
         #expect(bar.centerRole == .persistentError)
     }

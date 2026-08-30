@@ -15,6 +15,17 @@ EXPECTED_IDENTIFIER="${EXPECTED_IDENTIFIER:-dev.local.code-navigator-mac}"
 APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
 BINARY="$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 
+# The self-test moves the binary aside to prove it notices its absence. Interrupted between
+# the two moves, it would leave the bundle permanently broken — and every later run would
+# fail with "실행 파일이 없다", which reads like a build problem rather than a leftover.
+# Restoration has to hold on every exit path, not just the happy one.
+restore_binary() {
+    if [ -e "$BINARY.selftest-backup" ]; then
+        mv "$BINARY.selftest-backup" "$BINARY"
+    fi
+}
+trap restore_binary EXIT INT TERM
+
 # ---------------------------------------------------------------------------
 # 검사기 자체 검사 — 잡아야 할 것을 심어 보고, 치운 뒤 깨끗한지 본다.
 #
@@ -46,7 +57,7 @@ self_test() {
     else
         printf '  ok: 실행 파일 부재를 잡는다\n'
     fi
-    mv "$BINARY.selftest-backup" "$BINARY"
+    restore_binary
 
     # 3) 되돌린 뒤에는 깨끗하게 통과해야 한다 (오탐 없음).
     if "$0" >/dev/null 2>&1; then
@@ -54,6 +65,13 @@ self_test() {
     else
         printf '  FAIL: 정상인데 실패한다 — 오탐이다\n'
         status=1
+    fi
+
+    if [ -e "$BINARY.selftest-backup" ]; then
+        printf '  FAIL: 백업 파일이 남았다 — 번들이 깨진 채로 끝났다\n'
+        status=1
+    else
+        printf '  ok: 번들 원상 복구 확인\n'
     fi
 
     return $status

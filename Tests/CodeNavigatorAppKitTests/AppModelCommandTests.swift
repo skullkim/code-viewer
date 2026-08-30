@@ -58,6 +58,7 @@ struct AppModelCommandTests {
     }
 
     private let startupFailure = EditorStartupFailure(
+        kind: .notInstalled,
         reason: "Neovim을 찾을 수 없습니다",
         searchedPaths: ["/usr/local/bin"],
         requiredVersion: "0.9.0",

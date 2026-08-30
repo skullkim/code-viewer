@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W-14 렌더 보기 — 마크다운 정상 + 차단 2건</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles-2b.css">
+</head>
+<body>
+<div class="app has-tabs">
+  <header class="titlebar">
+    <div class="lights"><span class="light l-close"></span><span class="light l-min"></span><span class="light l-max"></span></div>
+    <div class="win-title">README.md</div>
+    <div class="tb-spacer"></div>
+    <div class="tb-group">
+      <div class="seg" role="group" aria-label="입력 모드">
+        <button class="on" aria-pressed="true">Vim</button>
+        <button class="" aria-pressed="false">표준</button>
+      </div>
+      <button class="tb-btn"><span class="ico">🔍</span><span class="lbl">심볼</span><kbd>⌘P</kbd></button>
+      <button class="tb-btn"><span class="ico">☰</span><span class="lbl">전문 검색</span><kbd>⇧⌘F</kbd></button>
+      <button class="tb-btn on" aria-pressed="true"><span class="ico">▣</span><span class="lbl">렌더</span><kbd>⇧⌘V</kbd></button>
+      <button class="tb-btn" aria-pressed="true"><span class="lbl">패널</span><kbd>⌥⌘0</kbd></button>
+    </div>
+  </header>
+  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+~/Documents/repo/code-navigator-mac"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+~/Documents/repo/Get-Off-Early"><span class="plabel">Get-Off-Early</span><span class="tslot"><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div>
+  <div class="body">
+    <nav class="tree" aria-label="파일 트리">
+      <div class="tree-title">code-navigator-mac</div>
+      <div class="tree-item "><span class="tw">▾</span><span class="ic">📂</span>Sources</div>
+      <div class="tree-item d1"><span class="tw">▾</span><span class="ic">📂</span>Index</div>
+      <div class="tree-item d2"><span class="tw"></span><span class="ic">📄</span>SymbolIndex.swift</div>
+      <div class="tree-item d2"><span class="tw"></span><span class="ic">📄</span>Parser.swift</div>
+      <div class="tree-item d2"><span class="tw"></span><span class="ic">📄</span>Symbol.swift</div>
+      <div class="tree-item d1"><span class="tw">▸</span><span class="ic">📂</span>Editor</div>
+      <div class="tree-item d1"><span class="tw">▸</span><span class="ic">📂</span>Search</div>
+      <div class="tree-item d1"><span class="tw"></span><span class="ic">📄</span>App.swift</div>
+      <div class="tree-item "><span class="tw">▸</span><span class="ic">📂</span>Tests</div>
+      <div class="tree-item "><span class="tw"></span><span class="ic">📄</span>Package.swift</div>
+      <div class="tree-item  active"><span class="tw"></span><span class="ic">📄</span>README.md</div>
+    </nav>
+    <main class="editor" aria-label="에디터 — Neovim 렌더 영역">
+      <!-- 이 영역의 텍스트·라인번호·구문강조·커서는 모두 Neovim이 그린다. 앱은 그리지 않는다. -->
+      <div class="nvim">
+        <div class="cl"><span class="ln">1</span><span class="lc"><span class="k">import</span> Foundation</span></div>
+        <div class="cl"><span class="ln">2</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">3</span><span class="lc"><span class="c">/// 정방향·역방향 인덱스 — 소스에서 전량 재생성 가능한 파생물</span></span></div>
+        <div class="cl"><span class="ln">4</span><span class="lc"><span class="k">final class</span> <span class="t">SymbolIndex</span> {</span></div>
+        <div class="cl"><span class="ln">5</span><span class="lc">    <span class="k">private var</span> byFile: [<span class="t">String</span>: [<span class="t">Symbol</span>]] = [:]</span></div>
+        <div class="cl"><span class="ln">6</span><span class="lc">    <span class="k">private var</span> byName: [<span class="t">String</span>: [<span class="t">Location</span>]] = [:]</span></div>
+        <div class="cl"><span class="ln">7</span><span class="lc"></span></div>
+        <div class="cl hl"><span class="ln">8</span><span class="lc">    <span class="k">func</span> <span class="f">buildIndex</span>(files: [<span class="t">URL</span>]) {</span></div>
+        <div class="cl"><span class="ln">9</span><span class="lc">        <span class="k">for</span> file <span class="k">in</span> files { <span class="f">indexFile</span>(file) }</span></div>
+        <div class="cl"><span class="ln">10</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">11</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">12</span><span class="lc">    <span class="k">func</span> <span class="f">indexFile</span>(<span class="k">_</span> url: <span class="t">URL</span>) {</span></div>
+        <div class="cl"><span class="ln">13</span><span class="lc">        <span class="f">removeFile</span>(url)  <span class="c">// 증분 갱신: 옛 심볼 제거 후 대체</span></span></div>
+        <div class="cl"><span class="ln">14</span><span class="lc">        <span class="k">let</span> symbols = <span class="t">Parser</span>.<span class="f">parse</span>(url)</span></div>
+        <div class="cl"><span class="ln">15</span><span class="lc">        byFile[url.path] = symbols</span></div>
+        <div class="cl"><span class="ln">16</span><span class="lc">        <span class="k">for</span> symbol <span class="k">in</span> symbols {</span></div>
+        <div class="cl"><span class="ln">17</span><span class="lc">            byName[symbol.name, <span class="k">default</span>: []].<span class="f">append</span>(symbol.location)</span></div>
+        <div class="cl"><span class="ln">18</span><span class="lc">        }</span></div>
+        <div class="cl"><span class="ln">19</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">20</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">21</span><span class="lc">    <span class="k">func</span> <span class="f">definitions</span>(of name: <span class="t">String</span>) -> [<span class="t">Location</span>] {</span></div>
+        <div class="cl"><span class="ln">22</span><span class="lc">        byName[name] ?? []</span></div>
+        <div class="cl"><span class="ln">23</span><span class="lc">    }</span></div>
+        <div class="cl"><span class="ln">24</span><span class="lc">}</span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
+      </div>
+      <!-- 아래 상태줄은 사용자의 ~/.config/nvim 설정이 그린 Neovim 상태줄이다(앱 상태바와 별개, INV-4) -->
+      <div class="nvim-status">
+        <span class="seg-mode">NORMAL</span>
+        <span class="seg-file">SymbolIndex.swift</span>
+        <span class="seg-meta">swift  utf-8  LF</span>
+        <span class="seg-pos">8:5  32%</span>
+      </div>
+      <div class="nvim-cmdline"></div>
+      <div class="render-surface">
+        <div class="render-head">
+          <span class="rname">README.md</span>
+          <span class="ro-badge">읽기 전용</span>
+          <button class="sandbox-chip has-blocked" aria-haspopup="dialog" title="원격 리소스와 스크립트를 차단하고 프로젝트 폴더 안의 파일만 표시합니다">🛡 차단됨 2</button>
+          
+          <span class="spacer"></span>
+          <button class="src-btn">&lt;/&gt; <span class="lbl">소스 보기</span> <kbd>⇧⌘V</kbd></button>
+        </div>
+        <div class="render-body">
+          <div class="doc" role="document">
+            <h1>code-navigator-mac</h1>
+            <p>맥 네이티브 코드 내비게이터. <b>Neovim</b>을 임베드해 편집하고, 심볼 인덱스로 정의·참조를 즉시 찾는다.</p>
+            <div class="blocked-box" role="img" aria-label="차단된 원격 이미지: 빌드 상태 배지">
+            <span class="bt">🛡 원격 이미지가 차단되었습니다</span>
+            <span class="bhost">raw.githubusercontent.com</span>
+            <span class="balt">alt: 빌드 상태 배지</span>
+          </div>
+            <h2>설치</h2>
+            <pre><code>brew install neovim
+swift build -c release</code></pre>
+            <p>필요 버전은 <code>nvim 0.9.0</code> 이상이다. 자세한 내용은 <a href="#설계-원칙">설계 원칙</a>과 <a href="./docs/adr/0106-project-workspace.md">ADR 0106</a>을 보라.</p>
+            <h2 id="설계-원칙">설계 원칙</h2>
+            <ul>
+              <li>인덱스는 <b>파생물</b>이다 — 소스에서 전량 재생성할 수 있다.</li>
+              <li>편집은 <b>Neovim 을 통해서만</b> 일어난다.</li>
+              <li>사용자의 <code>~/.config/nvim</code> 설정을 침범하지 않는다.</li>
+            </ul>
+            <blockquote>조회 결과가 소스와 일치할 때만 인덱스를 “최신”이라 부른다.</blockquote>
+            <h3>측정된 값</h3>
+            <table>
+              <tr><th>항목</th><th>값</th></tr>
+              <tr><td>앱 기준선</td><td>95 MB</td></tr>
+              <tr><td>인덱스 비용</td><td>19 MB / 25,000 심볼</td></tr>
+            </table>
+            <span class="doc-img"></span>
+            <span class="doc-cap">↑ 프로젝트 루트 안의 로컬 이미지는 그대로 표시된다 (docs/architecture.png)</span>
+            <div class="blocked-box" role="img" aria-label="차단된 파일: 프로젝트 폴더 밖">
+            <span class="bt">🛡 프로젝트 폴더 밖의 파일은 표시하지 않습니다</span>
+            <span class="bhost">../../design/diagram.png</span>
+          </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <aside class="panel" aria-label="참조 패널">
+      <div class="tabs" role="tablist"><button class="tab active" role="tab" aria-selected="true">참조</button><button class="tab" role="tab" aria-selected="false">검색</button></div>
+      <div class="panel-empty">심볼에 커서를 두고 <b>⇧⌘B</b>를 누르면<br>참조 목록이 여기에 표시됩니다</div>
+    </aside>
+  </div>
+  <footer class="statusbar" role="status">
+    <div class="sb-left">
+      <span class="mode-chip mode-read">읽기 전용</span><span class="mode-layer">렌더 보기</span>
+      <span class="sb-sep"></span>
+      <span class="sb-path"><b>README.md</b></span>
+    </div>
+    <div class="sb-center"><span class="sb-hint">⇧⌘V 소스 보기</span></div>
+    <div class="sb-right">
+      <span>—</span><span class="sb-sep"></span><span>Markdown</span>
+      <span class="chip" title="마지막 갱신 09:41:12 · 4,812 파일 · 38,204 심볼"><i class="dot dot-ok"></i>인덱스 최신</span>
+      <span class="chip"><i class="dot dot-ok"></i>편집 세션 연결됨</span>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

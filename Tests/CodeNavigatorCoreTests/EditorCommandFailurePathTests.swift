@@ -175,12 +175,14 @@ struct EditorCommandFailurePathTests {
 
         // 표준 모드의 약속은 "타이핑하면 글자가 들어간다"이다(REQ-010 AC-5). 잘라내기가
         // 노멀 모드에 남겨두면 `hello` 가 명령으로 해석돼 글자가 들어가지 않는다.
+        let modeAfterCut = await currentStatus(session)?.mode
         try await session.sendKeys("hello")
         try await Task.sleep(for: .milliseconds(250))
+        let lineAfterTyping = try await session.currentLineForTesting()
 
         #expect(
-            try await session.currentLineForTesting() == "hello",
-            "잘라낸 뒤 타이핑이 삽입되지 않는다 — 표준 모드인데 명령으로 해석됐다"
+            lineAfterTyping == "hello",
+            "잘라낸 뒤 타이핑이 삽입되지 않는다 — 모드=\(String(describing: modeAfterCut)), 줄=[\(lineAfterTyping ?? "nil")]"
         )
     }
 

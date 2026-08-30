@@ -34,6 +34,8 @@ public actor NeovimEditorSession: EditorSession {
     /// autocommands; without this the two never meet and the mode indicator lags or sticks.
     private var lastPublishedStatus: EditorStatus?
     private var lastKnownMode: EditorMode = .normal
+    private var startupTimeoutOverride: Duration?
+    private var effectiveStartupTimeout: Duration { startupTimeoutOverride ?? NeovimChannel.startupTimeout }
 
     private var stateBroadcaster = EventBroadcaster<EditorSessionState>(initialValue: .notStarted)
     private var gridBroadcaster = EventBroadcaster<EditorGridSnapshot>()
@@ -57,6 +59,15 @@ public actor NeovimEditorSession: EditorSession {
 
     // MARK: - Lifecycle
 
+    /// Lets a test use a short start-up budget instead of waiting out the real one.
+    func startForTesting(
+        projectRoot: URL, columns: Int, rows: Int, startupTimeout: Duration
+    ) async throws {
+        startupTimeoutOverride = startupTimeout
+        defer { startupTimeoutOverride = nil }
+        try await start(projectRoot: projectRoot, columns: columns, rows: rows)
+    }
+
     public func start(projectRoot: URL, columns: Int, rows: Int) async throws {
         self.projectRoot = projectRoot
         gridSize = (max(columns, 1), max(rows, 1))
@@ -67,7 +78,9 @@ public actor NeovimEditorSession: EditorSession {
             executableURL = try executableLocator.locate(overridePath: executableOverridePath)
         } catch {
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
-            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
+            updateState(.startupFailed(
+                makeStartupFailure(kind: .notInstalled, reason: reason, foundVersion: nil)
+            ))
             throw error
         }
 
@@ -77,7 +90,9 @@ public actor NeovimEditorSession: EditorSession {
         if let installedVersion, installedVersion < NeovimVersion.minimumSupported {
             let reason = "Neovim \(installedVersion)이 설치돼 있지만 \(NeovimVersion.minimumSupported) 이상이 필요합니다."
             updateState(.startupFailed(
-                makeStartupFailure(reason: reason, foundVersion: installedVersion.description)
+                makeStartupFailure(
+                    kind: .versionTooOld, reason: reason, foundVersion: installedVersion.description
+                )
             ))
             throw NavigatorError.editorUnavailable(reason: reason)
         }
@@ -92,7 +107,9 @@ public actor NeovimEditorSession: EditorSession {
             )
         } catch {
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
-            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
+            updateState(.startupFailed(
+                makeStartupFailure(kind: .launchFailed, reason: reason, foundVersion: nil)
+            ))
             throw error
         }
 
@@ -112,8 +129,16 @@ public actor NeovimEditorSession: EditorSession {
             await channel.terminate()
             self.channel = nil
             isUserInterfaceAttached = false
+            // The process is alive but never finished the handshake. Saying "not installed" here
+            // sends the user to reinstall an editor that is running in front of them.
             let reason = (error as? NavigatorError)?.errorDescription ?? "\(error)"
-            updateState(.startupFailed(makeStartupFailure(reason: reason, foundVersion: nil)))
+            updateState(.startupFailed(
+                makeStartupFailure(
+                    kind: .unresponsive,
+                    reason: "Neovim이 제한 시간 안에 응답하지 않았습니다: \(reason)",
+                    foundVersion: installedVersion?.description
+                )
+            ))
             throw error
         }
 
@@ -436,14 +461,18 @@ public actor NeovimEditorSession: EditorSession {
     private func attachUserInterface(to channel: NeovimChannel) async throws {
         // `--embed` holds Neovim's start-up until a UI attaches, so this call is what makes the
         // user's configuration run and what makes key input start being processed (ADR-0006).
-        try await channel.request("nvim_ui_attach", [
-            .integer(Int64(gridSize.columns)),
-            .integer(Int64(gridSize.rows)),
-            .map([
-                MessagePackKeyValuePair(key: .string("ext_linegrid"), value: .boolean(true)),
-                MessagePackKeyValuePair(key: .string("rgb"), value: .boolean(true)),
-            ]),
-        ])
+        try await channel.request(
+            "nvim_ui_attach",
+            [
+                .integer(Int64(gridSize.columns)),
+                .integer(Int64(gridSize.rows)),
+                .map([
+                    MessagePackKeyValuePair(key: .string("ext_linegrid"), value: .boolean(true)),
+                    MessagePackKeyValuePair(key: .string("rgb"), value: .boolean(true)),
+                ]),
+            ],
+            timeout: effectiveStartupTimeout
+        )
         isUserInterfaceAttached = true
     }
 
@@ -451,7 +480,9 @@ public actor NeovimEditorSession: EditorSession {
     /// polling. The save signal is what re-indexes an in-app edit without waiting for the file
     /// watcher (REQ-009 AC-5).
     private func installNotificationHooks(on channel: NeovimChannel) async throws {
-        let apiInfo = try await channel.request("nvim_get_api_info", [])
+        let apiInfo = try await channel.request(
+            "nvim_get_api_info", [], timeout: effectiveStartupTimeout
+        )
         guard let channelIdentifier = apiInfo.arrayValue?.first?.integerValue else {
             throw NavigatorError.editorUnavailable(reason: "채널 식별자를 얻지 못했습니다")
         }
@@ -752,8 +783,13 @@ public actor NeovimEditorSession: EditorSession {
 
     // MARK: - Helpers
 
-    private func makeStartupFailure(reason: String, foundVersion: String?) -> EditorStartupFailure {
+    private func makeStartupFailure(
+        kind: EditorStartupFailureKind,
+        reason: String,
+        foundVersion: String?
+    ) -> EditorStartupFailure {
         EditorStartupFailure(
+            kind: kind,
             reason: reason,
             searchedPaths: executableOverridePath.map { [$0] } ?? executableLocator.candidatePaths(),
             requiredVersion: NeovimVersion.minimumSupported.description,

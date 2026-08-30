@@ -49,6 +49,7 @@ public enum EditorSessionState: Sendable, Hashable {
         case .startupFailed:
             return .startupFailed(
                 EditorStartupFailure(
+                    kind: .notInstalled,
                     reason: "Neovim을 찾을 수 없습니다.",
                     searchedPaths: ["/opt/homebrew/bin/nvim", "/usr/local/bin/nvim"],
                     requiredVersion: "0.9.0",

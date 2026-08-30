@@ -1,0 +1,193 @@
+/* 2차 디자인(02b_design.md) 전용 스타일 — 프로젝트 탭 바(W-11~13) · 문서 렌더(W-14~15).
+   styles.css 를 대체하지 않고 뒤에 얹는다. 새 색 토큰 0개 — 기존 표면·텍스트 토큰만 쓴다(02b §5.1).
+   새 토큰은 렌더 문서 타이포 5개뿐(02b §5.2). */
+:root {
+  --tabbar-h: 32px;
+  --tab-min: 112px;
+  --tab-max: 220px;
+  --renderhead-h: 28px;
+  --doc-measure: 720px;
+}
+
+/* ===== W-11 프로젝트 탭 바 =====
+   툴바(48) 아래, 3영역 위. 창 전폭. 탭 아래의 모든 표면은 활성 탭 소유(INV-5). */
+.app.has-tabs {
+  grid-template-rows: var(--titlebar-h) var(--tabbar-h) minmax(0, 1fr) var(--status-h);
+}
+.tabbar {
+  display: flex; align-items: stretch; min-width: 0;
+  background: var(--bg-window); border-bottom: 1px solid var(--border);
+  position: relative; z-index: 3;
+}
+.tabstrip { display: flex; align-items: stretch; flex: 1; min-width: 0; overflow: hidden; }
+.ptab {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1 1 0; min-width: var(--tab-min); max-width: var(--tab-max);
+  padding: 0 10px; cursor: default; position: relative;
+  color: var(--text-2); font-size: 12.5px; font-weight: 500;
+  border-right: 1px solid var(--border);
+}
+.ptab:hover { background: var(--bg-hover); }
+.ptab.active {
+  background: var(--bg-content); color: var(--text-1); font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.ptab.active:hover { background: var(--bg-content); }
+.ptab .plabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 가운데 말줄임은 SwiftUI .truncationMode(.middle) — 프로토타입에서는 잘린 문자열로 모사 */
+.ptab .pdis { color: var(--text-2); font-weight: 400; }
+.ptab.active .pdis { color: var(--text-2); }
+.ptab .tab-spin {
+  width: 10px; height: 10px; border-radius: 50%; flex: none;
+  border: 2px solid var(--border-strong); border-top-color: var(--text-1);
+}
+/* 더티 ● 와 닫기 ✕ 는 같은 슬롯(22x22). 평소 ●, hover 시 ✕ */
+.ptab .tslot { width: 22px; height: 22px; flex: none; display: flex; align-items: center; justify-content: center; }
+.ptab .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning-solid); }
+.ptab .tclose { width: 100%; height: 100%; border-radius: 4px; font-size: 11px; line-height: 1; color: var(--text-2); display: none; align-items: center; justify-content: center; }
+.ptab:hover .tclose, .ptab.active .tclose, .ptab.show-close .tclose { display: flex; }
+.ptab:hover .tdot, .ptab.active .tdot, .ptab.show-close .tdot { display: none; }
+.ptab .tclose:hover { background: var(--bg-hover); color: var(--text-1); }
+.ptab.dragging { box-shadow: var(--shadow-pop); background: var(--bg-elevated); border-radius: var(--radius-s); z-index: 2; }
+.tab-drop { width: 2px; background: var(--accent); flex: none; }
+
+.tabbar-tail { display: flex; align-items: center; gap: 2px; padding: 0 6px; flex: none; }
+.tab-btn {
+  width: 28px; height: 28px; border-radius: var(--radius-s); color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.tab-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.tab-btn .ovf-n { font-size: 11px; margin-left: 1px; }
+.tab-btn.wide { width: auto; padding: 0 8px; gap: 2px; }
+
+/* 넘침 메뉴 */
+.ovf-menu {
+  position: absolute; top: calc(var(--tabbar-h) - 2px); right: 8px; width: 260px; z-index: 45;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-m); box-shadow: var(--shadow-pop); overflow: hidden; padding: 4px 0;
+}
+.ovf-title { padding: 5px 12px; font-size: 11.5px; color: var(--text-2); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.ovf-item { display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 12.5px; color: var(--text-1); }
+.ovf-item:hover { background: var(--bg-hover); }
+.ovf-item .chk { width: 12px; flex: none; color: var(--accent-text); }
+.ovf-item .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== W-14 렌더 보기 표면 =====
+   Neovim 그리드 위에 얹는 별도 표면 — 그리드는 크기가 바뀌지 않고 가려질 뿐이다. */
+.render-surface {
+  position: absolute; inset: 0; z-index: 15;
+  display: flex; flex-direction: column; background: var(--bg-content);
+}
+.render-head {
+  height: var(--renderhead-h); flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; background: var(--bg-window); border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-2);
+}
+.render-head .rname { font: 12.5px var(--font-code); color: var(--text-1); }
+.ro-badge {
+  font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 0 8px; height: 18px; display: inline-flex; align-items: center; flex: none;
+}
+.sandbox-chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 8px; flex: none;
+  border-radius: 999px; border: 1px solid var(--border-strong); background: var(--bg-elevated);
+  color: var(--text-2); font-size: 12px;
+}
+.sandbox-chip.has-blocked { border-color: var(--warning-solid); color: var(--warning); }
+.render-head .spacer { flex: 1; }
+.src-btn {
+  height: 20px; padding: 0 8px; border-radius: var(--radius-s); border: 1px solid var(--border);
+  background: var(--bg-elevated); color: var(--text-2); font-size: 12px;
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+}
+.src-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.src-btn kbd { font: 11px var(--font-code); color: var(--text-2); }
+
+.render-body { flex: 1; min-height: 0; overflow: auto; }
+
+/* ===== 렌더 문서 타이포 (새 토큰 5개 — 02b §5.2) ===== */
+.doc {
+  max-width: var(--doc-measure); margin: 0 auto; padding: 24px;
+  font: 14px/1.7 var(--font-ui); color: var(--text-1);
+}
+.doc h1 { font: 700 24px/1.3 var(--font-ui); margin: 0 0 8px; }
+.doc h2 { font: 700 19px/1.35 var(--font-ui); margin: 24px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.doc h3 { font: 600 16px/1.4 var(--font-ui); margin: 24px 0 8px; }
+.doc p { margin: 0 0 12px; }
+.doc ul, .doc ol { margin: 0 0 12px; padding-left: 24px; }
+.doc li { margin-bottom: 4px; }
+.doc a { color: var(--accent-text); text-decoration: underline; }  /* 색 단독 금지 → 밑줄 병기 */
+.doc blockquote { margin: 0 0 12px; padding: 2px 0 2px 12px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
+.doc hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.doc code { font: 12.5px var(--font-code); background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+.doc pre {
+  margin: 0 0 12px; padding: 12px; overflow-x: auto;
+  background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: var(--radius-m);
+}
+.doc pre code { font-size: 12.5px; background: none; border: none; padding: 0; }
+.doc table { border-collapse: collapse; width: 100%; margin: 0 0 12px; font-size: 13px; }
+.doc th, .doc td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.doc th { background: var(--bg-sidebar); font-weight: 600; }
+.doc .doc-img {
+  display: block; width: 100%; height: 132px; border-radius: var(--radius-m);
+  background: linear-gradient(135deg, var(--accent-dim), var(--purple-dim));
+  border: 1px solid var(--border); margin: 0 0 6px;
+}
+.doc .doc-cap { display: block; color: var(--text-2); font-size: 12.5px; margin: 0 0 12px; }
+
+/* ===== W-15 차단 고지 ===== */
+.blocked-box {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 88px; margin: 0 0 12px; padding: 12px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-m);
+  background: var(--bg-sidebar); color: var(--text-2); font-size: 12.5px; text-align: center;
+}
+.blocked-box .bt { display: flex; align-items: center; gap: 6px; }
+.blocked-box .bhost { font: 12.5px var(--font-code); color: var(--text-2); word-break: break-all; }
+.blocked-box .balt { color: var(--text-2); font-size: 12.5px; }
+.doc .script-banner {
+  display: flex; gap: 6px; align-items: flex-start; margin: 0 0 12px; padding: 8px 12px;
+  background: var(--warning-dim); border-radius: var(--radius-s);
+  color: var(--text-2); font-size: 12.5px; line-height: 1.5;
+}
+.blocked-pop {
+  width: 100%; max-width: 340px; background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: var(--radius-m); box-shadow: var(--shadow-pop); overflow: hidden;
+}
+.blocked-pop .bp-head { padding: 6px 12px; font-size: 12px; color: var(--text-2); border-bottom: 1px solid var(--border); }
+.blocked-pop .bp-row { display: flex; align-items: baseline; gap: 8px; padding: 5px 12px; font-size: 12.5px; color: var(--text-1); white-space: nowrap; }
+.blocked-pop .bp-row .n { color: var(--text-2); font: 12.5px var(--font-code); flex: none; min-width: 14px; text-align: right; }
+.blocked-pop .bp-row .src { margin-left: auto; color: var(--text-2); font: 12px var(--font-code); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.blocked-pop .bp-foot { padding: 8px 12px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; line-height: 1.5; }
+
+/* 렌더 상태 카드 (빈/실패 3종) — 02 .state-card 와 같은 형태를 문서 표면에 얹는다 */
+.render-state { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.render-state .state-card { width: min(400px, 100%); }
+.render-spin { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; }
+.render-spin .spinner { width: 12px; height: 12px; }
+
+/* 툴바 렌더 토글 — 눌린 상태(AC-3 표시 ①). styles.css 의 .seg button.on 과 같은 채움 */
+.tb-btn.on { background: var(--accent); color: var(--accent-on); font-weight: 600; }
+.tb-btn.on kbd, .tb-btn.on .ico { color: inherit; }
+
+/* 상태바 — 렌더 보기 모드 칩(C-6, 7번째 상태) */
+.mode-chip.mode-read { color: var(--text-1); background: var(--bg-hover); border: 1px solid var(--border-strong); }
+
+/* 갤러리 보조 */
+.gal-frame { border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; background: var(--bg-window); }
+.gal-frame .tabbar { border-bottom: none; }
+.doc-frame { border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; background: var(--bg-content); }
+.doc-frame .doc { padding: 16px; }
+.sheet-demo { position: relative; background: var(--bg-window); border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; padding-top: 0; }
+.sheet-demo .sheet { margin: 0 auto; border-radius: 0 0 var(--radius-l) var(--radius-l); box-shadow: none; text-align: left; }
+.sheet-demo .sheet .actions { justify-content: flex-end; }
+.sheet ul { text-align: left; margin: 12px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; line-height: 1.7; }
+.sheet ul .why { color: var(--text-2); font: 11.5px var(--font-code); word-break: break-all; }
+
+/* 좁은 창: 렌더 본문 여백 축소 · 소스 보기 라벨 숨김 (02b §5.3) */
+@media (max-width: 899px) {
+  .doc { max-width: min(var(--doc-measure), calc(100% - 48px)); }
+}
+@media (max-width: 719px) {
+  .src-btn .lbl { display: none; }
+}

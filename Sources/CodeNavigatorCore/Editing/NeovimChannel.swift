@@ -28,8 +28,24 @@ actor NeovimChannel {
     private var isRunning = false
     private var readerTask: Task<Void, Never>?
 
-    /// Requests time out rather than hanging the interface forever if Neovim stops answering.
+    /// Ordinary requests time out rather than hanging the interface forever if Neovim stops
+    /// answering. Measured: a request on a live session answers in well under 50ms even at load
+    /// 25 on 12 cores, so five seconds is far past "slow" and firmly in "wedged".
     static let defaultRequestTimeout: Duration = .seconds(5)
+
+    /// Start-up gets a longer budget than ordinary requests.
+    ///
+    /// Measured on an idle and a heavily loaded machine (load 25.7, 30 samples): spawn → attach →
+    /// handshake completes in 0.013–0.046s, so the ordinary five seconds is already ~100× the
+    /// observed worst case. A field failure at five seconds was reported and could not be
+    /// reproduced across 30 attempts, which means the real tail is longer than anything measurable
+    /// here — cold disk, a contended volume, a machine paging.
+    ///
+    /// Raising this costs nothing in the case people actually hit: **a missing editor is detected
+    /// before spawning** (the executable search is a file-existence check), so "not installed"
+    /// still fails instantly. The only case that waits longer is one that was going to fail
+    /// anyway, and waiting there is better than telling a user their working editor is missing.
+    static let startupTimeout: Duration = .seconds(20)
 
     init() {}
 

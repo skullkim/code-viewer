@@ -108,6 +108,9 @@ EditorGridSnapshot ──▶ GridRenderer(순수: 스냅샷 → 드로잉 명령
 - [ADR-0104 창 레이아웃](../docs/adr/0104-shell-layout.md) — 고정 크롬 먼저 배치, 가변 영역이 잔여를 갖는다(PD 실측 결함 재발 방지)
 - [ADR-0105 `.app` 번들·타깃 분리](../docs/adr/0105-app-bundle-and-target-split.md) — 맨 실행 파일은 key window가 안 된다(실측)
 - [ADR-0106 프로젝트 전환 묶기](../docs/adr/0106-project-workspace.md) — 계약이 말하지 않는 "인덱스와 편집기는 함께 움직인다"를 타입이 말하게
+- [ADR-0107 탭이 상태의 단위](../docs/adr/0107-tab-scoped-state.md) — INV-5를 소유 관계로. 0106의 불변식은 유지하되 탭 안에서 성립 (REQ-012)
+- [ADR-0108 탭 바를 고정 높이 행으로](../docs/adr/0108-tab-bar-in-the-shell.md) — 0104의 규칙을 행 하나 늘려 그대로 적용 (REQ-012 AC-1)
+- [ADR-0109 렌더 샌드박스](../docs/adr/0109-render-sandbox.md) — 전면 차단 + 앱이 인라인하는 `data:` 로컬 리소스. **JS 끄기는 네트워크를 안 막는다**(9건 실측) (REQ-013, INV-6)
 
 ---
 

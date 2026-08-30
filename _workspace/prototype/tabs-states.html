@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>W-11~13 상태 갤러리 — 탭 · 넘침 · 복원 실패 · 닫기 확인</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles-2b.css">
+</head>
+<body>
+<div class="gallery">
+  <h1>02b §3 — 프로젝트 탭 상태 갤러리 (W-11 · W-12 · W-13)</h1>
+  <p class="lead">프론트는 이 렌더를 구현 타깃으로, QA는 실제 앱을 이것과 대조한다. 새 색 토큰 0개 — 기존 표면·텍스트 토큰만 쓴다.</p>
+
+  <h2>1. 탭 하나의 상태 6종</h2>
+  <div class="grid">
+    <div class="spec"><div class="cap"><b>활성 · 클린</b> — bg-content 채움 + text-1 600 + 상단 2px accent</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+    <div class="spec"><div class="cap"><b>비활성 · 클린</b> — 투명 + text-2 500 (대비 6.25:1 / 5.43:1)</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+"><span class="plabel">Get-Off-Early</span><span class="tslot"><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+    <div class="spec"><div class="cap"><b>비활성 · 인덱싱 중</b> — 9px 스피너, 숫자는 툴팁으로만</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab" role="tab" aria-selected="false" title="message-platform
+"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-platform</span><span class="tslot"><button class="tclose" aria-label="'message-platform' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+    <div class="spec"><div class="cap"><b>비활성 · 더티</b> — ● warning-solid (hover 시 ✕ 로 교체)</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab" role="tab" aria-selected="false" title="knowledge-web
+"><span class="plabel">knowledge-web</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'knowledge-web' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+    <div class="spec"><div class="cap"><b>hover</b> — 닫기 ✕ 노출 (키보드 경로는 ⌘W)</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab show-close" role="tab" aria-selected="false" title="Get-Off-Early
+"><span class="plabel">Get-Off-Early</span><span class="tslot"><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+    <div class="spec"><div class="cap"><b>동명 구분</b> — 폴더 이름이 겹칠 때만 상위 1단계</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab" role="tab" aria-selected="false" title="app
+"><span class="plabel">app <span class="pdis">· frontend</span></span><span class="tslot"><button class="tclose" aria-label="'app' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="app
+"><span class="plabel">app <span class="pdis">· backend</span></span><span class="tslot"><button class="tclose" aria-label="'app' 탭 닫기">✕</button></span></div>
+      </div>
+      
+  </div></div></div>
+  </div>
+
+  <h2>2. 탭 개수별 — 1개 / 여러 개 / 넘침</h2>
+  <div class="grid">
+    <div class="spec wide"><div class="cap"><b>탭 1개</b> — 탭 바를 표시한다(AC-1 문면). ＋ 가 “여러 개 열 수 있음”을 상시 알린다 · 판정 요청 §10-1</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+    <div class="spec wide"><div class="cap"><b>탭 3개</b> — 남는 폭을 균등 분배하되 <b>220px 상한</b>. 넓은 창에서 남는 자리는 창 드래그 영역</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+~/Documents/repo/code-navigator-mac"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="message-platform
+~/repo/message-platform
+인덱싱 중 1,284/4,812"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-platform</span><span class="tslot"><button class="tclose" aria-label="'message-platform' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+~/Documents/repo/Get-Off-Early
+저장하지 않은 변경 2건"><span class="plabel">Get-Off-Early</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+    <div class="spec wide"><div class="cap"><b>넘침</b> — 가로 스크롤 + <code>≫3</code>. 활성 탭은 항상 스크롤되어 보인다</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+"><span class="plabel">Get-Off-Early</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="message-plat…
+"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-plat…</span><span class="tslot"><button class="tclose" aria-label="'message-plat…' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="knowledge-web
+"><span class="plabel">knowledge-web</span><span class="tslot"><button class="tclose" aria-label="'knowledge-web' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="app
+"><span class="plabel">app <span class="pdis">· frontend</span></span><span class="tslot"><button class="tclose" aria-label="'app' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="app
+"><span class="plabel">app <span class="pdis">· backend</span></span><span class="tslot"><button class="tclose" aria-label="'app' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        <button class="tab-btn wide" aria-haspopup="menu" aria-label="열린 프로젝트 모두 보기">≫<span class="ovf-n">3</span></button>
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+    <div class="spec wide"><div class="cap"><b>넘침 메뉴</b> — 가로 스크롤 제스처 없이 모든 탭에 도달(접근성). 활성 ✓ · 더티 ● · 인덱싱 스피너를 그대로 옮긴다</div>
+      <div class="gal-frame" style="height:300px;position:relative">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+"><span class="plabel">Get-Off-Early</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="message-plat…
+"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-plat…</span><span class="tslot"><button class="tclose" aria-label="'message-plat…' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        <button class="tab-btn wide" aria-haspopup="menu" aria-label="열린 프로젝트 모두 보기">≫<span class="ovf-n">3</span></button>
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+      <div class="ovf-menu" role="menu">
+        <div class="ovf-title">열린 프로젝트</div>
+        <div class="ovf-item" role="menuitemradio" aria-checked="true"><span class="chk">✓</span><span class="nm">code-navigator-mac</span></div>
+        <div class="ovf-item"><span class="chk"></span><span class="nm">Get-Off-Early</span><i class="tdot" style="width:7px;height:7px;border-radius:50%;background:var(--warning-solid)"></i></div>
+        <div class="ovf-item"><span class="chk"></span><span class="nm"><i class="tab-spin" style="display:inline-block;vertical-align:-1px;margin-right:6px"></i>message-platform</span></div>
+        <div class="ovf-item"><span class="chk"></span><span class="nm">knowledge-web</span></div>
+        <div class="ovf-item"><span class="chk"></span><span class="nm">app · frontend</span></div>
+        <div class="ovf-item"><span class="chk"></span><span class="nm">app · backend</span></div>
+      </div>
+  </div></div>
+    </div>
+    <div class="spec wide"><div class="cap"><b>드래그 재정렬</b> — 잡힌 탭이 떠오르고 드롭 위치에 2px accent 삽입 표시. 순서는 즉시 저장되어 재시작에 복원(AC-4)</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab dragging" role="tab" aria-selected="false" title="knowledge-web
+"><span class="plabel">knowledge-web</span><span class="tslot"><button class="tclose" aria-label="'knowledge-web' 탭 닫기">✕</button></span></div>
+        <div class="tab-drop"></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+"><span class="plabel">Get-Off-Early</span><span class="tslot"><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+    <div class="spec wide"><div class="cap"><b>탭 0개</b> — 탭 바 자체가 없다. 웰컴 화면(W-2)으로 돌아간다</div>
+      <div class="gal-frame" style="padding:16px;text-align:center;color:var(--text-2);font-size:12.5px">탭 바 없음 — W-2 웰컴 화면 (기존 <code>open-project.html</code>)</div>
+    </div>
+  </div>
+
+  <h2>3. 라이트 / 다크 병치 (새 색 토큰 0개)</h2>
+  <div class="theme-pair">
+    <div class="theme-box" data-theme="light"><div class="cap" style="font-size:11px;color:var(--text-3);margin-bottom:8px">라이트</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+~/Documents/repo/code-navigator-mac"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="message-platform
+~/repo/message-platform
+인덱싱 중 1,284/4,812"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-platform</span><span class="tslot"><button class="tclose" aria-label="'message-platform' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+~/Documents/repo/Get-Off-Early
+저장하지 않은 변경 2건"><span class="plabel">Get-Off-Early</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+    <div class="theme-box" data-theme="dark"><div class="cap" style="font-size:11px;color:var(--text-3);margin-bottom:8px">다크</div><div class="gal-frame">  <div class="tabbar" role="tablist" aria-label="프로젝트 탭">
+      <div class="tabstrip">
+        <div class="ptab active" role="tab" aria-selected="true" title="code-navigator-mac
+~/Documents/repo/code-navigator-mac"><span class="plabel">code-navigator-mac</span><span class="tslot"><button class="tclose" aria-label="'code-navigator-mac' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="message-platform
+~/repo/message-platform
+인덱싱 중 1,284/4,812"><i class="tab-spin" aria-hidden="true"></i><span class="plabel">message-platform</span><span class="tslot"><button class="tclose" aria-label="'message-platform' 탭 닫기">✕</button></span></div>
+        <div class="ptab" role="tab" aria-selected="false" title="Get-Off-Early
+~/Documents/repo/Get-Off-Early
+저장하지 않은 변경 2건"><span class="plabel">Get-Off-Early</span><span class="tslot"><i class="tdot" title="저장하지 않은 변경 2건"></i><button class="tclose" aria-label="'Get-Off-Early' 탭 닫기">✕</button></span></div>
+      </div>
+      <div class="tabbar-tail">
+        
+        <button class="tab-btn" aria-label="프로젝트 열기 (⌘O)" title="프로젝트 열기 (⌘O)">＋</button>
+      </div>
+  </div></div></div>
+  </div>
+
+  <h2>4. W-12 복원 실패 시트 — 사유를 마스킹하지 않고, 여러 건을 한 장에 묶는다</h2>
+  <div class="sheet-demo" style="height:310px">
+    <div class="sheet" style="width:min(460px,100%)">
+      <div style="text-align:center"><span class="glyph">⚠️</span></div>
+      <h2>일부 프로젝트를 복원하지 못했습니다</h2>
+      <p>다음 2개 프로젝트는 열 수 없어 탭 목록에서 제거했습니다.</p>
+      <ul>
+        <li>message-platform<br><span class="why">경로를 찾을 수 없습니다: ~/repo/message-platform</span></li>
+        <li>old-prototype<br><span class="why">폴더에 접근할 권한이 없습니다: /Volumes/ext/old-prototype</span></li>
+      </ul>
+      <div class="actions"><button class="btn-primary">확인</button></div>
+    </div>
+  </div>
+
+  <h2>5. W-13 탭 닫기 확인 시트 — 더티 버퍼가 있을 때만</h2>
+  <div class="sheet-demo" style="height:300px">
+    <div class="sheet" style="width:min(460px,100%)">
+      <div style="text-align:center"><span class="glyph">●</span></div>
+      <h2>'Get-Off-Early' 탭에 저장하지 않은 변경이 있습니다</h2>
+      <p>저장하지 않고 닫으면 다음 파일의 변경 사항이 사라집니다.</p>
+      <ul>
+        <li><span class="why">knowledge/index-core.mjs</span></li>
+        <li><span class="why">README.md</span></li>
+      </ul>
+      <div class="actions">
+        <button class="btn-ghost">취소</button>
+        <button class="btn-ghost">저장하지 않고 닫기</button>
+        <button class="btn-primary">저장 후 닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>6. 단축키 — 전부 ⌘ 조합(키 라우팅 계약 준수). ⌃Tab 은 Neovim 것이라 쓰지 않는다</h2>
+  <div class="menu-cards" style="padding:0">
+    <div class="menu-card">
+      <div class="mc-title">탭</div>
+      <div class="menu-row">다음 탭<span class="sc">⇧⌘]</span></div>
+      <div class="menu-row">이전 탭<span class="sc">⇧⌘[</span></div>
+      <div class="menu-row">N번째 탭<span class="sc">⌘1…⌘8</span></div>
+      <div class="menu-row">마지막 탭<span class="sc">⌘9</span></div>
+      <div class="menu-div"></div>
+      <div class="menu-row">탭 닫기<span class="sc">⌘W</span></div>
+      <div class="menu-row">창 닫기<span class="sc">⇧⌘W</span></div>
+      <div class="menu-row">프로젝트 열기…<span class="sc">⌘O</span></div>
+    </div>
+    <div class="menu-card">
+      <div class="mc-title">보기</div>
+      <div class="menu-row"><span class="check">✓</span>렌더 보기<span class="sc">⇧⌘V</span></div>
+      <div class="menu-row"><span class="check"></span>파일 트리 표시<span class="sc">⌥⌘1</span></div>
+      <div class="menu-row"><span class="check">✓</span>참조·검색 패널 표시<span class="sc">⌥⌘0</span></div>
+    </div>
+    <div class="menu-card">
+      <div class="mc-title">렌더 보기에서 비활성</div>
+      <div class="menu-row disabled">정의로 이동<span class="sc">⌘B</span></div>
+      <div class="menu-row disabled">참조 보기<span class="sc">⇧⌘B</span></div>
+      <div class="menu-div"></div>
+      <div class="menu-row">심볼 검색…<span class="sc">⌘P</span></div>
+      <div class="menu-row">전문 검색…<span class="sc">⇧⌘F</span></div>
+    </div>
+  </div>
+  <div class="chrome-note">
+    <h2>왜 이 배치인가</h2>
+    <ul>
+      <li><b>탭 바는 툴바 아래.</b> 탭 아래의 모든 것(트리·에디터·패널·상태바)이 그 탭 소유이고, 위의 툴바는 창 전역 동작이다. 트래픽 라이트와도 겹치지 않는다.</li>
+      <li><b>진행률 숫자는 탭에 넣지 않는다.</b> 탭 안에서는 10px대가 되는데, 이 빌드에서 비-Retina 디스플레이의 11px대 조밀 글리프가 뭉개진다는 실측이 나왔다. 숫자는 툴팁·상태바 칩·인덱스 팝오버가 소유한다.</li>
+      <li><b>더티 ● 는 뺄 수 없다.</b> 배경 탭의 저장 안 된 변경은 다른 어떤 표면에도 보이지 않는다(상태바는 활성 탭 것).</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

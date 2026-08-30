@@ -11,7 +11,10 @@ struct GlyphBatcherTests {
     private let blue = RGBColor(hex: "#82AAFF")!
 
     private func cell(_ character: Character, column: Int, row: Int = 0, colour: RGBColor? = nil, bold: Bool = false) -> PositionedCell {
-        PositionedCell(character: character, row: row, column: column, foreground: colour ?? white, isBold: bold)
+        PositionedCell(
+            character: character, row: row, column: column,
+            foreground: colour ?? white, style: GlyphStyle(isBold: bold)
+        )
     }
 
     @Test("같은 색·굵기의 셀이 한 배치로 묶인다")

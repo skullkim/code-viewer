@@ -28,7 +28,7 @@
 | REQ-001 AC-2 | backend | `ProjectSwitchingTests` (3) — 인덱스·검색·트리 교체 · **편집기도 새 루트를 따라감** · 실패 시 이전 프로젝트 유지 | backend-senior | PASS |
 | REQ-001 AC-3 | backend | `ProjectIndexerTests` "존재하지 않는 경로는 에러이고 이전 프로젝트가 유지된다" · `ProjectScannerTests` 누락/파일루트 에러 | backend-senior | PASS |
 | REQ-002 AC-1 · AC-2 | backend | `SymbolExtractorTests` (Kotlin 5 / Java 2 / TS·JS 5) — 7종 심볼 전량, 4언어 | backend-senior | PASS |
-| REQ-010 AC-2 (마우스) | backend | `NeovimMouseInputTests` (5) — 드래그 선택·휠 스크롤·수식키 전달·그리드 셀 좌표계(스크롤 상태)·기동 전 무시 | backend-junior | PASS |
+| REQ-010 AC-2 (마우스) | backend | `NeovimMouseInputTests` (5) — 드래그 선택·휠 스크롤·수식키 전달·그리드 셀 좌표계(스크롤 상태)·기동 전 무시 | backend-junior | PASS (합성 마우스 이벤트에 80ms 간격 필요 — 붙여 보내면 nvim이 드래그로 안 읽는다) |
 | REQ-004 AC-4 (저장 통지 값) | backend | `EditorSavedFileTests` (2) — 줄 수·바이트 수를 픽스처·디스크와 등호 대조(한글 픽스처로 바이트≠글자 확인) | backend-junior | PASS |
 | REQ-002 AC-4 (인덱스 통계) | backend | `ProjectEngineStatisticsTests` (2) — 읽지 못한 파일만 건너뜀으로 집계·열기 전 빈 통계 | backend-junior | PASS |
 | REQ-NF-001 (전문 검색 ≤2초) | backend | `SearchPerformanceTests` (5) — 리터럴·정규식 전체 스캔, 상한 도달, 측정기 자체 검사 | backend-junior | PASS (리터럴 305ms · 정규식 250ms · 상한 77ms) |
@@ -37,6 +37,8 @@
 | SC-8 (.app 유휴 메모리) | backend | `measure-app-runtime.sh --idle-only` | backend-junior | **미판정** — 프로젝트 미개방 기준선만 84.8MB 실측. 인덱싱 후 값은 수동 단계 필요 |
 | REQ-NF-002 · SC-8 (유휴 메모리) | backend | `SearchPerformanceTests` + `gate.sh` 격리 측정 스텝 | backend-junior | PASS (격리 실행 27.4MB / 인덱스 비용 19.1MB) |
 | 계약 §3.2 표면 | backend | `ContractSurfaceTests` (3) — `any ProjectSession`으로 전 메서드 호출 + 오프셋 불변식 | backend-junior | PASS |
+| REQ-001 AC-3 (열기 실패) | backend | `ProjectOpenFailureTests` (6) — 경로 없음·파일을 루트로·권한 없음 구분, 한국어 안내 문구, 실패 후 이전 프로젝트 유지 | backend-junior | PASS |
+| REQ-010 AC-2 (편집 명령 실패 경로) | backend | `EditorCommandFailurePathTests` (8) — 선택 없는 복사/잘라내기, 예전 선택 되살리기 회귀, 이름없음·읽기전용 저장 에러, undo/redo 경계, 전체선택→잘라내기 후 타이핑 | backend-junior | PASS |
 | REQ-002 AC-3 | backend | `SourceLanguageTests` (4) 미지원 확장자 nil · `SymbolExtractorTests` 미지원 확장자 빈 결과 · `ProjectScannerTests` 미지원 파일도 검색 대상 유지 | backend-senior | PASS |
 | REQ-004 AC-2 (셀 좌표) | backend | `NeovimGridStateWideCharacterTests` (5) — 한글 줄 문자7/셀10 · 한글 뒤 startColumn · run 타일링 · 커서 좌표계 일치 · ASCII 동치 | backend-senior | PASS |
 | REQ-NF-005 (버전) | backend | `NeovimVersionTests` (6) 파싱·나이틀리 접미사·숫자 비교 · `NeovimEditorSessionTests` 기동 실패 구조화·실설치 버전 판독 | backend-senior | PASS |
@@ -100,14 +102,22 @@
 | REQ-007·008 (강조 구간) | frontend | `MatchHighlighterTests` (13) — **UTF-16 오프셋**을 한글·이모지·서로게이트 쌍에서 정확히 분할 · 범위 밖·역전 구간 방어 | frontend-senior | PASS |
 | REQ-003 AC-3 (현재 파일 강조) | frontend | `PathDisplayTests` (12) — 절대↔프로젝트 상대 정합 · **`/private` 접두사 차이 흡수**(조용한 매칭 실패 방지) · 앞쪽 축약 | frontend-senior | PASS |
 | REQ-001 AC-2 · REQ-011 AC-3 (최근 프로젝트) | frontend | `RecentProjectStoreTests` (9) — 최신순·중복 없음·최대 5·경로 정규화·재시작 복원·**손상 데이터 생존** | frontend-senior | PASS |
+| REQ-001 AC-2 (**메뉴에서의 전환 경로**) | frontend | `MenuBarControllerTests` (4) — `파일 ▸ 최근 프로젝트 열기` 서브메뉴를 열 때마다 다시 채움 · 고른 행의 **경로**로 열기(이름 아님 — 같은 레포 두 체크아웃 구분) · 빈 목록은 비활성 안내 한 줄 · 재개방 시 누적 없음. 이전엔 `submenu: []` 하드코딩이라 항목이 눌려도 아무것도 없었다(D-5) | frontend-senior | PASS |
 | REQ-006 · 008 (파일별 그룹) | frontend | `FileGroupingTests` (4) — 첫 등장 순서 보존(엔진 정렬과 불일치 방지) | frontend-senior | PASS |
 | REQ-003 AC-1 · AC-3 (파일 트리) | frontend | `FileTreePresentationTests` (26) — 지연 로드·스켈레톤·펼침/접힘·↑↓←→/Enter 전수 · 현재 파일 강조(**/private 접두 흡수**) · 더티 표시 | frontend-junior (시니어 리뷰 완료) | PASS |
 | REQ-003 AC-1 (지연 로드 실측) · REQ-001 AC-2 | frontend | `FileTreeModelTests` (12) — 펼칠 때만 그 디렉토리를 읽는지 **엔진 호출 횟수로** 확인(다시 펼쳐도 재호출 0) · 한 디렉토리 읽기 실패가 트리를 지우지 않음 · 트리에서 연 파일도 점프 목록 기록 · 프로젝트 전환 시 이전 트리 소멸 | frontend-junior | PASS |
 | REQ-011 AC-4 (§4.1 rgba 토큰) | frontend | `TranslucentTokenTests` (6) — `accent-dim`·`match`의 밑색과 알파가 §4.1 문구와 일치(다크 `accent-dim`의 밑색은 `accent`가 아니라 `accent-text`다) | frontend-junior | PASS |
 | **REQ-002 AC-4 (스킵 건수 — 유일한 UI 표면)** · REQ-009 | frontend | `IndexDetailsPresentationTests` (13) — 스킵 건수 표시·0건에도 행 유지(누락과 구별)·사유 문구는 >0에서만 · 마지막 갱신 오늘/어제/올해/연도 · **통계 부재 시 숫자를 지어내지 않음** · 5상태 제목 · 비-최신 전 상태 낡음 고지 | frontend-junior | PASS |
-| REQ-009 (칩 표시) · §4.5 색만으로 구분 금지 | frontend | `IndexChipIndicatorTests` (4) — 5상태 → dot/펄스/스피너 매핑 · **같은 앰버인 `갱신 중`·`전체 재스캔 중`이 서로 다른 표시를 갖는지** · 스피너 상태는 항상 진행 바 동반 | frontend-junior | PASS |
+| REQ-009 (칩 표시) · §4.5 색만으로 구분 금지 | frontend | `IndexChipIndicatorTests` (4, **계약의 `allKnownCases`·`Kind.allCases` 순회 — 상태가 늘면 컴파일 실패**, 걸러낸 목록 비었을 때 조용히 통과하는 것 방지) — 5상태 → dot/펄스/스피너 매핑 · **같은 앰버인 `갱신 중`·`전체 재스캔 중`이 서로 다른 표시를 갖는지** · 스피너 상태는 항상 진행 바 동반 | frontend-junior | PASS |
 | **REQ-011 AC-3 (영역 표시/숨김 복원)** | frontend | `ShellVisibilityLayoutTests` (12) — 둘 다 보이면 기존 `resolve`와 동일(위임 확인) · **숨기면 눌려 있던 이웃이 선호 폭을 되찾음** · 에디터 최소 유지 · 오버레이는 숨겨도 에디터 폭 불변 · 8창×4조합 음수 폭 없음 · **어떤 조합에서도 모드 세그먼트·인덱스 칩 생존** · 숨김 상태에서도 드래그 왕복 성립. positive control로 순진한 구현(base 폭 상속)이 잡히는 것 실측 | frontend-junior | PASS |
 | **REQ-005 AC-2 (정의 후보 팝오버 배치)** | frontend | `DefinitionPopoverPlacementTests` (10) — 커서 셀 → 앵커 환산 · 아래 자리 있으면 아래, 없으면 **위로 플립** · **행 0~38 × 후보 2/5/12 전수에서 팝오버가 커서 줄을 덮지 않음** · 짧은 창에서는 위치가 아니라 **높이를 양보** · 목록 높이 음수 방지 · 한 줄 카드 하한. positive control로 축소 무력화 시 커서 가림 재현 실측 | frontend-junior | PASS |
+| **INV-6 (렌더 샌드박스 판정)** | frontend | `RenderSandboxPolicyTests` (23) — **`data:` 래스터 이미지 허용 / SVG·그 외 차단**(리더 판정, 이미지 자리에서만) · 원격 이미지/스타일시트/폰트 종류별 차단 · 스크립트·프레임은 **로컬이어도** 차단 · 루트 안 로컬은 허용(반대 방향 실측) · `..` 탈출·형제 폴더 접두 · **실제 심링크 루트 탈출 차단** · 탭별 루트(INV-5) · `data:`/`javascript:` 차단 · **루트 미설정 시 CWD 로 열리는 fail-open 차단** | frontend-junior | PASS |
+| **INV-6 (차단 고지 §3 W-15)** | frontend | `BlockedResourcePresentationTests` (11) — **0건에도 샌드박스 칩 상시** · 건수 천 단위 · 종류별 집계 6줄 상한 · 출처 여럿이면 `{첫 곳} 외 {n}곳` · 문서 순서 유지 · 정책 문구 상시 | frontend-junior | PASS |
+| **REQ-012 AC-4 · AC-6 (탭 복원)** | frontend | `TabRestorePlanTests` (12) — 첫 실행/전부 성공/일부 실패/전부 실패 · **사라진 탭을 조용히 버리지 않고 사유와 함께 남김**(AC-6) · `notFound`/`noPermission` 문구 비마스킹 · 활성 탭이 사라지면 생존 탭으로 폴백 · **활성 인덱스가 항상 복원 목록 안** · 복원+누락 합 = 저장 수 · **첫 실행과 전부 실패를 구별**(둘 다 웰컴이지만 시트 유무가 다르다) | frontend-junior | PASS |
+| **REQ-012 AC-5 (이미 열린 프로젝트)** | frontend | `ProjectIdentityTests` (10) — 표기 차이(끝 슬래시·`.`·`..`) · **실제 심링크를 만들어** 같은 폴더 판정 · `/tmp`↔`/private/tmp` · **대소문자는 볼륨이 정한다**(구분 볼륨에서는 다른 프로젝트) · 볼륨 질의 트랩 없음 | frontend-junior | PASS |
+| **REQ-012 AC-1 (탭 목록 표시)** | frontend | `ProjectTabBarTests` (22) — **활성 탭은 어떤 탭 수·폭·위치에서도 보이는 쪽**(시니어 리뷰 지적, 전수 불변식) · 보이는 탭은 연속 구간 · 탭 0개=바 없음 / **1개도 바 표시**(§12 판정 1) · 동명 시 상위 폴더 보조 라벨(안 겹치면 미부착) · 더티·인덱싱 글리프와 툴팁 · 폭 균등 분배와 112/220 경계 · **넘침 버튼 폭을 불필요하게 예약하지 않음** · 아무리 좁아도 탭 1개 생존 · 보이는 수+넘친 수=전체 불변식 | frontend-junior | PASS |
+| **REQ-012 AC-2 · AC-3 (탭 전환·닫기)** | frontend | `ProjectTabCommandTests` (18) — `⇧⌘]`/`⇧⌘[` 양끝 순환 · `⌘1~⌘8` 위치 / **`⌘9`=마지막 탭**(Safari 관례) · `⌘W`는 닫기 **요청**(W-13 시트 선행) · 활성 탭 닫으면 오른쪽→왼쪽 승계 · 배경 탭 닫아도 화면 불변 · **마지막 탭 닫기=웰컴 복귀**(§12 판정 3) · 어떤 조합에서도 활성 탭이 실재 | frontend-junior | PASS |
+| **REQ-011 AC-4 · REQ-004 AC-2 · §4.4 (시각 회귀 게이트)** | frontend | `DesignRegressionGateTests` (8) — 빈 캔버스 아님 · 사이드바가 라이트/**다크** 토큰 색 · 좁은 창이 툴바 단축키 라벨 제거 · **에디터에 한글이 실제로 그려짐**(빈 화면과 잉크량 비교) · 한글 잉크가 영문의 40% 이상 · 수식키 3덩어리(**실제 툴바 폰트로** 측정) · 덩어리 세기 교정 / `DesignRegressionSelfTests` (8) — 빈 캔버스·틀린 토큰 색·붙은 글리프를 **합성 비트맵에 심어** 검출 확인, 반대 방향(떨어진 것은 제 수대로)까지. `Sources/` 무변형 | frontend-junior | PASS |
 | **REQ-011 AC-3 (창 크기·위치 복원)** | frontend | `WindowFrameFitTests` (11) — **사라진 모니터 좌표 → 주 화면 중앙** · 타이틀바가 화면 위로 넘어가면 내려옴 · 걸쳐 둔 창은 유지 · 최소 720×480 · 화면보다 큰 창 캡 · 화면 목록 빈 경우 · 전 입력에서 「어느 화면에서든 잡을 수 있음」 불변식 / `ShellPreferencesWindowFrameTests` (6) — 첫 실행 nil · 재시작 왕복 · **저장은 화면에 안 맞춤**(모니터 재연결 시 복귀) · 손상 데이터 5종 → nil · 다른 복원 값 미훼손. positive control로 화면 맞춤 제거 시 검출 실측 | frontend-junior | PASS |
 | **REQ-011 AC-3 (분할 비율 드래그)** | frontend | `ShellSplitDragTests` (10) — 창 폭을 아는 클램프: 좁은 창에서 에디터 최소 보호 · 오버레이는 폭을 안 먹음 · **왕복 불변식(끌어낸 폭 == 레이아웃이 되돌려준 폭)**을 창 5종 × 제안 6종으로 · 어떤 드래그에도 에디터 최소 유지. positive control로 창 무시 클램프가 잡히는 것 실측 | frontend-junior | PASS |
 | REQ-007 (깜빡임 방지) | frontend | `SpinnerDelayTests` (7) — 199ms 침묵 / 200ms 표시 경계 · 검색 없음 · **시계 역행 시 오탐 없음** | frontend-junior | PASS |
@@ -128,9 +138,11 @@
 
 | REQ-011 AC-1·AC-2 (메뉴 막대·단축키) | frontend | `MenuBarControllerTests` (9) — 실제 `NSMenu` 빌드·설치 · **단축키 전부 ⌘ 포함**(⌃ 단독을 claim하면 Vim 키를 뺏는다) · **키 이퀴벌런트 소문자**(대문자는 Shift 이중 계산으로 매칭 실패 — spike 실측 버그) · Vim ⌃ 조합 미claim · 명령 디스패치. 게이트가 `menus=7`을 요구 | frontend-senior | PASS |
 | REQ-010 AC-5 (편집 메뉴 활성) | frontend | `MenuBarControllerTests` — Vim 모드에서 편집 6명령 비활성·표준 모드에서 활성·현재 모드 체크·세션 끊겨도 검색 활성. `MenuAvailability`(12)와 실제 `validateMenuItem` 양쪽 | frontend-senior | PASS |
+| REQ-010 AC-3 · AC-5 (**검증이 실제로 불리는가**) | frontend | `MenuBarControllerTests` "모든 메뉴가 자동 활성화를 켠 채 만들어진다" — `autoenablesItems=false`면 AppKit이 `validateMenuItem`을 **아무에게도 안 묻는다.** 위 두 행은 검증기를 직접 호출해 그린이었고 실제 앱에선 Vim 모드 편집 명령이 전부 활성·체크 없음이었다. 끄면 8건 Red 실측 | frontend-senior | PASS |
+| REQ-010 AC-1 (**타이핑이 Neovim에 닿는가**) | frontend | `EditorFocusTests` (5) — 실제 `NSWindow` + `window.sendEvent`. 클릭 시 포커스 획득(키보드를 먼저 다른 필드에 맡긴 상태에서) · 등장 시 미점유면 획득 · **점유 중이면 안 뺏음(검색창 캐럿 보호)** · 입력 차단 중에도 획득. `makeFirstResponder` 호출부가 0곳이라 `keyDown`이 한 번도 안 불렸다(D-6). 2방향 변이로 Red 실측 | frontend-senior | PASS (QA 라이브 확인 대기) |
 | REQ-011 AC-3 (분할 비율 복원) | frontend | `ShellLayoutPreferredWidthTests` (5) — 드래그 폭 반영 · 각 영역 최소 폭 우선 · **에디터 최소 폭이 드래그보다 우선** · 오버레이는 고정 폭 · `ShellSplitter` 2곳 마운트 + `ShellPreferences` 영속 | frontend-senior | PASS |
 
-| REQ-010 AC-2 (표준 모드 편집) | frontend | ⚠ **미충족 — 진행 중.** `MenuCommandModeSafetyTests` (3) 가 남은 손상을 명시한다: 메뉴 명령 8종(`save`·`undo`·`redo`·`cut`·`copy`·`paste`·`selectAll`·`navigateForward`)이 raw 노멀 키를 보내 **표준 모드에서 버퍼를 오염시킨다**(backend-senior 실측: ⌘Z가 `u` 타이핑, **⌘S는 저장 안 됨**). 엔진의 모드 무관 메서드 대기 중 | frontend-senior | **FAIL(알려진 갭)** |
+| REQ-010 AC-2 (표준 모드 편집) | frontend | **해소됨.** `MenuCommandModeSafetyTests` (3) — 편집 9종이 전부 엔진 메서드(`save`·`undo`·`redo`·`cutSelection`·`copySelection`·`paste`·`selectAll`·`jumpBack`·`jumpForward`)로 나가고 **raw 키를 하나도 보내지 않는다.** 모드 의존 명령 집합이 8→0. 저장을 raw 키로 되돌리는 변이로 red 확인 | frontend-senior | PASS |
 | REQ-005 AC-4 (뒤로 가기) | frontend | `MenuCommandModeSafetyTests` — `navigateBack`이 `jumpBack()`(모드 무관, `normal!` 래핑)을 쓰고 raw `<C-o>`를 보내지 않는다. 삽입 모드에서 `<C-o>`는 다음 타자를 먹는다 | frontend-senior | PASS |
 
 ## 게이트 상태

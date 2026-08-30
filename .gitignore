@@ -2,3 +2,9 @@
 .swiftpm/
 *.xcodeproj
 .DS_Store
+
+# 검사 스크립트가 심는 픽스처. 이제 샌드박스에서만 만들어지지만, 어떤 경로로든 실제
+# 트리에 나타나면 커밋되지 않게 막는다 — 미마운트 뷰가 커밋되면 이후 게이트가 원인
+# 불명으로 실패한다.
+_SelfTestProbe.swift
+*.selftest-backup
