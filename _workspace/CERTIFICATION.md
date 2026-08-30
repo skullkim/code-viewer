@@ -107,6 +107,8 @@
 | **부채-3** | 🔴 **엔진이 단일 프로젝트다** — `CodeNavigatorEngine` 이 `project`·`editor` 를 각 **하나씩** `let` 으로 들고, `openProject` 는 **반환값이 없다**. `ProjectSessionFactory`·`ProjectOpenOutcome` 은 `03c` 에서 **채택됐으나 소스에 없다**. → 두 번째 프로젝트를 열면 첫 번째를 **대체**한다 | **REQ-012 AC-1·AC-2 · INV-5** | 🔴 **사용자 요구 1순위의 임계 경로. backend-senior 최우선** |
 | **부채-5** | 🔴 **게이트가 60% 만 그린이다** — 풀런 13회 실측(backend-senior). 실패가 매번 **다른 검사**이고 전부 *실제 nvim + 시간/생존 가정*을 쓴다. 오늘 실제 nvim 스위트가 여럿 늘어난 것이 원인으로 추정 | **인증 도구 자체** | 🔴 **인증 차단 — 못 믿는 게이트 위에서는 무엇도 검증되지 않는다** |
 | **D-13?** | **삽입 모드에서 한글이 자모로 분해될 가능성** — 코드 경로상 강한 예측(리더 확인, **실측 대기**): `keyDown` 이 `interpretKeyEvents` 를 **부르지 않아** IME 조합이 시작되지 않고, `KeyNotation` 이 `stroke.characters`(조합 전 자모)를 `nvim_input` 으로 넘긴다 → `한글` 대신 `ㅎㅏㄴㄱㅡㄹ` | REQ-004 (REQ-014 보다 넓다) | 🔴 **실측 대기 — 사실이면 blocker** |
+| **D-14** | 🔴 **권한 차단을 Neovim 타임아웃으로 오진한다** — macOS TCC '문서 폴더 접근' 대화상자가 열기를 막는데 화면엔 `응답 없음 · Neovim이 제한 시간 안에 응답하지 않았습니다` 가 뜬다. **사용자는 nvim 을 재설치하러 간다.** D-7 의 정체이자 D-10 과 같은 뿌리(판정 근거가 계약에 없다) | **REQ-001 AC-3 · REQ-NF-005** | 🔴 **신규 blocker** |
+| **D-15** | **`NSDocumentsFolderUsageDescription` 이 없다** — TCC 대화상자가 이유를 설명하지 못한다. 또한 앱이 서명되지 않아 **재조립마다 TCC 가 다시 묻는다**(권한은 번들 ID + 코드 서명으로 매인다) | REQ-NF-005 (UX) | 🟠 신규 |
 | **부채-1** | **`ProjectTabBarView` 미마운트** — 게이트 면제 중(`is_exempt`, 사유 기재). 소유자 frontend-senior | REQ-012 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **부채-2** | **`BlockedResourcePlaceholder` 미마운트** — 게이트 면제 중. 소유자 frontend-junior | REQ-013 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **D-8** | **파일 트리가 키 포커스를 못 받고, 클릭으로 펼쳐지지도 않는다** — 행 클릭 후 화살표가 nvim 커서를 움직인다 | REQ-003 | 🔴 신규 |
