@@ -106,6 +106,7 @@
 | **부채-4** | **입력 소스 복원에 SIGTERM 경로가 없다** — `relinquish()` 는 비활성화·정상 종료에서만 불린다. backend-junior 실측: CLI 프로세스에서 `DispatchSourceSignal` 로 복원 성공, SIGKILL 은 불가. ⚠ **미검증 가정**: AppKit 앱에서 `applicationShouldTerminate` 가 SIGTERM 에 도는가(재보지 않음) | REQ-014 AC-4 | 🟡 **조건부 보류 — B안(키 번역) spike 결과 대기.** B 채택 시 전역 상태가 사라져 이 항목 자체가 소멸 |
 | **부채-3** | 🔴 **엔진이 단일 프로젝트다** — `CodeNavigatorEngine` 이 `project`·`editor` 를 각 **하나씩** `let` 으로 들고, `openProject` 는 **반환값이 없다**. `ProjectSessionFactory`·`ProjectOpenOutcome` 은 `03c` 에서 **채택됐으나 소스에 없다**. → 두 번째 프로젝트를 열면 첫 번째를 **대체**한다 | **REQ-012 AC-1·AC-2 · INV-5** | 🔴 **사용자 요구 1순위의 임계 경로. backend-senior 최우선** |
 | **부채-5** | 🔴 **게이트가 60% 만 그린이다** — 풀런 13회 실측(backend-senior). 실패가 매번 **다른 검사**이고 전부 *실제 nvim + 시간/생존 가정*을 쓴다. 오늘 실제 nvim 스위트가 여럿 늘어난 것이 원인으로 추정 | **인증 도구 자체** | 🔴 **인증 차단 — 못 믿는 게이트 위에서는 무엇도 검증되지 않는다** |
+| **D-13?** | **삽입 모드에서 한글이 자모로 분해될 가능성** — 코드 경로상 강한 예측(리더 확인, **실측 대기**): `keyDown` 이 `interpretKeyEvents` 를 **부르지 않아** IME 조합이 시작되지 않고, `KeyNotation` 이 `stroke.characters`(조합 전 자모)를 `nvim_input` 으로 넘긴다 → `한글` 대신 `ㅎㅏㄴㄱㅡㄹ` | REQ-004 (REQ-014 보다 넓다) | 🔴 **실측 대기 — 사실이면 blocker** |
 | **부채-1** | **`ProjectTabBarView` 미마운트** — 게이트 면제 중(`is_exempt`, 사유 기재). 소유자 frontend-senior | REQ-012 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **부채-2** | **`BlockedResourcePlaceholder` 미마운트** — 게이트 면제 중. 소유자 frontend-junior | REQ-013 | 🟠 **추적 중 · BUILD_COMPLETE 전 면제 제거 필수** |
 | **D-8** | **파일 트리가 키 포커스를 못 받고, 클릭으로 펼쳐지지도 않는다** — 행 클릭 후 화살표가 nvim 커서를 움직인다 | REQ-003 | 🔴 신규 |
