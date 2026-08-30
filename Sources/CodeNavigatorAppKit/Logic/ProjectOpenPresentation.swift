@@ -119,7 +119,7 @@ extension ProjectOpenPresentation {
                 RecentProjectRow(
                     name: project.name,
                     displayPath: abbreviatingHome(project.rootPath, homeDirectory: homeDirectory),
-                    relativeTime: relativeTime(of: project.lastOpenedAt, now: now, calendar: calendar),
+                    relativeTime: RelativeTimeText.string(for: project.lastOpenedAt, now: now, calendar: calendar),
                     rootPath: project.rootPath
                 )
             }
@@ -143,29 +143,6 @@ extension ProjectOpenPresentation {
     /// The day is decided by the calendar rather than by subtracting 24 hours: something
     /// opened at 00:10 this morning is "오늘" even though it was less than a day ago, and
     /// that is what a person means by the word.
-    private static func relativeTime(of date: Date, now: Date, calendar: Calendar) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-        guard let year = parts.year, let month = parts.month, let day = parts.day else {
-            return ""
-        }
-
-        if calendar.isDate(date, inSameDayAs: now) {
-            return String(format: "오늘 %02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(date, inSameDayAs: yesterday) {
-            return "어제"
-        }
-
-        let currentYear = calendar.component(.year, from: now)
-        // Design §3 W-2 names only three cases. Without the year, last August reads exactly
-        // like three days ago, and a list sorted newest-first then looks shuffled.
-        guard year == currentYear else {
-            return "\(year)년 \(month)월 \(day)일"
-        }
-        return "\(month)월 \(day)일"
-    }
-
     // MARK: 실패 시트 (AC-3)
 
     private static func sheet(for phase: ProjectOpenPhase, recentPaths: Set<String>) -> ProjectOpenFailureSheet? {

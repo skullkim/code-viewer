@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import CodeNavigatorContract
 
 /// The main window (design §3 W-1).
 ///
@@ -7,67 +9,298 @@ import SwiftUI
 /// bar off screen — the failure the designer hit in the prototype at 820x620 (ADR-0104).
 /// The status bar is the only permanent surface for the input mode (REQ-010 AC-3) and the
 /// index state (REQ-009), so losing it breaks two acceptance criteria at once.
+///
+/// Which panes go where is decided by `ShellComposition` rather than here, so that the
+/// wiring is something a test can state. Views that compile and pass their own tests can
+/// still fail to reach the user if nothing mounts them.
 public struct MainWindowView: View {
-    public init() {}
+    private let model: AppModel
+    private let search: SearchModel
+
+    public init(model: AppModel, search: SearchModel) {
+        self.model = model
+        self.search = search
+    }
 
     public var body: some View {
+        @Bindable var search = search
+
         GeometryReader { proxy in
-            let layout = ShellLayout.resolve(windowSize: proxy.size)
+            // Widths the user dragged to and panes they hid are both restored on launch
+            // (REQ-011 AC-3). Hiding gives the space back to the editor, and a neighbour
+            // that was squeezed by the hidden pane reclaims its preferred width.
+            let shell = ShellVisibilityLayout.resolve(
+                windowSize: proxy.size,
+                preferredTreeWidth: model.shell.treeWidth,
+                preferredPanelWidth: model.shell.panelWidth,
+                isTreeVisible: model.shell.isTreeVisible,
+                isPanelVisible: model.shell.isPanelVisible
+            )
+            let layout = shell.layout
+            let availability = model.menuAvailability
 
             VStack(spacing: 0) {
-                contentAreas(layout: layout)
+                ToolbarView(
+                    toolbar: ToolbarPresentation.make(
+                        projectName: model.fileTree.projectName,
+                        editorStatus: model.editorStatus,
+                        availability: availability,
+                        layout: layout
+                    ),
+                    inputMode: model.inputMode,
+                    isModeSwitchEnabled: availability.isEnabled(.toggleInputMode),
+                    onCommand: { command in Task { await perform(command) } },
+                    onSelectInputMode: { mode in Task { await model.setInputMode(mode) } }
+                )
+                .frame(height: layout.titleBarHeight)
+
+                Divider()
+
+                panes(shell: shell, windowWidth: proxy.size.width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 Divider()
 
-                StatusBarView(layout: layout)
-                    .frame(height: layout.statusBarHeight)
+                StatusBarView(
+                    layout: layout,
+                    presentation: model.statusBar(for: layout),
+                    indexState: model.indexState,
+                    indexDetails: IndexDetailsPresentation.make(
+                        indexState: model.indexState,
+                        statistics: model.indexStatistics,
+                        now: Date(),
+                        calendar: .current
+                    )
+                )
+                .frame(height: layout.statusBarHeight)
+            }
+            .background(DesignTokens.backgroundWindow.dynamicColor)
+            .overlay {
+                if search.isShowingSymbolSearch {
+                    SymbolSearchModalView(
+                        presentation: search.symbolPresentation(indexState: model.indexState, now: Date()),
+                        query: search.symbolSearchQuery,
+                        onAction: { action in Task { await perform(action) } }
+                    )
+                }
             }
         }
     }
+
+    // MARK: Panes
 
     @ViewBuilder
-    private func contentAreas(layout: ShellLayout) -> some View {
-        HStack(spacing: 0) {
-            if layout.treePlacement == .column {
-                PlaceholderPane(title: "파일 트리", token: DesignTokens.backgroundSidebar)
-                    .frame(width: layout.treeWidth)
-                Divider()
+    private func panes(shell: ShellVisibilityLayout, windowWidth: CGFloat) -> some View {
+        let layout = shell.layout
+        let mounted = ShellComposition.panes(
+            hasOpenProject: model.projectRootPath != nil,
+            layout: layout,
+            isTreeVisible: shell.isTreeMounted,
+            isPanelVisible: shell.isPanelMounted
+        )
+
+        if mounted == [.projectOpen] {
+            projectOpenPane
+        } else {
+            HStack(spacing: 0) {
+                if mounted.contains(.fileTree),
+                   ShellComposition.placement(of: .fileTree, layout: layout) == .column {
+                    fileTreePane
+                        .frame(width: layout.treeWidth)
+                    ShellSplitter(width: layout.treeWidth, direction: .trailing) { proposed in
+                        // Clamped against the window, not just the design limits: without
+                        // this the divider lags the pointer and stores a width that was
+                        // never rendered, which reopens at a split the user never chose.
+                        model.shell.setTreeWidth(ShellSplitDrag.treeWidth(
+                            draggedTo: proposed,
+                            windowWidth: windowWidth,
+                            panelWidth: layout.panelWidth,
+                            panelPlacement: layout.panelPlacement
+                        ))
+                    }
+                }
+
+                editorPane
+                    .frame(maxWidth: .infinity)
+
+                if mounted.contains(.referencePanel),
+                   ShellComposition.placement(of: .referencePanel, layout: layout) == .column {
+                    ShellSplitter(width: layout.panelWidth, direction: .leading) { proposed in
+                        model.shell.setPanelWidth(ShellSplitDrag.panelWidth(
+                            draggedTo: proposed,
+                            windowWidth: windowWidth,
+                            treeWidth: layout.treeWidth,
+                            treePlacement: layout.treePlacement
+                        ))
+                    }
+                    referencePane
+                        .frame(width: layout.panelWidth)
+                }
             }
-
-            PlaceholderPane(title: "Neovim 그리드", token: DesignTokens.backgroundContent)
-                .frame(maxWidth: .infinity)
-
-            if layout.panelPlacement == .column {
-                Divider()
-                PlaceholderPane(title: "참조 · 검색", token: DesignTokens.backgroundPanel)
-                    .frame(width: layout.panelWidth)
+            .overlay(alignment: .topTrailing) {
+                // Below 900pt the panel floats over the editor instead of taking a column
+                // (§4.4), so it costs the editor no width.
+                if mounted.contains(.referencePanel),
+                   ShellComposition.placement(of: .referencePanel, layout: layout) == .overlay {
+                    referencePane
+                        .frame(width: layout.panelWidth)
+                        .shadow(radius: 12)
+                }
             }
         }
     }
-}
 
-/// A stand-in until the real panes land, so the shell's layout can be seen and compared
-/// against the prototype screenshots before the panes exist.
-struct PlaceholderPane: View {
-    let title: String
-    let token: ColorToken
+    private var projectOpenPane: some View {
+        ProjectOpenView(
+            screen: ProjectOpenPresentation.make(
+                recentProjects: model.recentProjects.projects(),
+                phase: projectOpenPhase,
+                now: Date(),
+                calendar: .current,
+                homeDirectory: NSHomeDirectory()
+            ),
+            onAction: { action in Task { await perform(action) } }
+        )
+    }
 
-    @Environment(\.colorScheme) private var colorScheme
+    private var fileTreePane: some View {
+        FileTreeView(
+            tree: model.fileTree.presentation,
+            onAction: { action in Task { await model.fileTree.perform(action) } }
+        )
+    }
 
-    var body: some View {
+    private var editorPane: some View {
         ZStack {
-            token.color(for: colorScheme)
-            Text(title)
-                .font(.system(size: DesignTokens.Typography.secondarySize))
-                .foregroundStyle(DesignTokens.textTertiary.color(for: colorScheme))
+            EditorGridView(
+                frame: model.gridFrame,
+                isInputBlocked: model.isEditorInputBlocked,
+                onKey: { notation in Task { await model.sendKeys(notation) } },
+                onMouse: { event in Task { await model.sendMouse(event) } },
+                onGridSizeChange: { columns, rows in
+                    Task { await model.resizeGrid(columns: columns, rows: rows) }
+                }
+            )
+
+            // The overlay covers the editor and nothing else: the index outlives the edit
+            // session, so the tree and the panels stay usable and at full brightness
+            // (design §3 W-8).
+            if let overlay = model.editSessionOverlay {
+                EditSessionOverlayView(overlay: overlay) { action in
+                    Task { await perform(action) }
+                }
+            }
+
+            if let candidates = model.definitionCandidates, let name = candidates.first?.name {
+                DefinitionCandidatesView(
+                    presentation: DefinitionCandidatePresentation.make(symbolName: name, definitions: candidates),
+                    onSelect: { definition in Task { await model.openDefinition(definition) } },
+                    onShowReferences: { Task { await search.showReferences(to: name) } },
+                    onDismiss: { model.dismissDefinitionCandidates() }
+                )
+            }
         }
     }
-}
 
-extension ColorToken {
-    /// Resolves the token for SwiftUI's current appearance (REQ-011 AC-4).
-    func color(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? swiftUIDark : swiftUILight
+    private var referencePane: some View {
+        @Bindable var search = search
+
+        return SidePanelView(
+            selectedTab: $search.selectedTab,
+            referenceContent: {
+                ReferencePanelView(
+                    panel: search.referencePresentation(indexState: model.indexState),
+                    selectedReferenceID: search.selectedReferenceID,
+                    onSelect: { reference in
+                        search.selectReference(reference)
+                        Task { await model.openLocation(path: reference.path, line: reference.line) }
+                    }
+                )
+            },
+            searchContent: {
+                TextSearchPanelView(
+                    panel: search.textSearchPresentation(),
+                    query: search.textSearchQuery,
+                    mode: search.textSearchMode,
+                    selectedItemID: search.selectedTextSearchItemID,
+                    onAction: { action in Task { await perform(action) } }
+                )
+            }
+        )
+    }
+
+    // MARK: Commands
+
+    private var projectOpenPhase: ProjectOpenPhase {
+        if model.isOpeningProject {
+            return .opening
+        }
+        guard let error = model.projectOpenError else {
+            return .idle
+        }
+        return .failed(error as? NavigatorError ?? .invalidPath("\(error)"))
+    }
+
+    /// Routed through `MenuCommandRouter` so a toolbar button and its menu row cannot
+    /// come to mean different things.
+    private func perform(_ command: MenuCommand) async {
+        await MenuCommandRouter.perform(command, model: model, search: search)
+    }
+
+    private func perform(_ action: EditSessionOverlayAction) async {
+        switch action {
+        case .restart, .recheck:
+            await model.restartEditSession()
+        }
+    }
+
+    private func perform(_ action: ProjectOpenAction) async {
+        switch action {
+        case .openProject:
+            await MenuCommandRouter.perform(.openProject, model: model, search: search)
+        case .openRecentProject(let path):
+            await model.openProject(at: URL(fileURLWithPath: path))
+        case .dismissFailure:
+            model.dismissProjectOpenError()
+        }
+    }
+
+    private func perform(_ action: SymbolSearchAction) async {
+        switch action {
+        case .queryChanged(let query):
+            search.symbolSearchQuery = query
+            await search.runSymbolSearch()
+        case .moveSelection(let direction):
+            search.moveSymbolSelection(direction)
+        case .select(let index):
+            search.selectSymbol(at: index)
+        case .activate(let index):
+            search.selectSymbol(at: index)
+            guard let hit = search.symbolPresentation(indexState: model.indexState, now: Date()).selectedResult else {
+                return
+            }
+            search.dismissSymbolSearch()
+            await model.openLocation(path: hit.definition.path, line: hit.definition.line)
+        case .dismiss:
+            search.dismissSymbolSearch()
+        }
+    }
+
+    private func perform(_ action: TextSearchAction) async {
+        switch action {
+        case .submit:
+            await search.runTextSearch()
+        case .queryChanged(let query):
+            search.textSearchQuery = query
+        case .modeChanged(let mode):
+            search.textSearchMode = mode
+            // Switching between literal and regular expression re-runs the search, so the
+            // toggle shows its effect rather than waiting for another Enter.
+            await search.runTextSearch()
+        case .select(let itemID):
+            guard let item = search.textSearchItem(withID: itemID) else { return }
+            search.selectTextSearchItem(item)
+            await model.openLocation(path: item.path, line: item.line)
+        }
     }
 }

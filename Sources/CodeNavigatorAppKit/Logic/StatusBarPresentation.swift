@@ -1,3 +1,4 @@
+import Foundation
 import CodeNavigatorContract
 
 /// The colour role a status element carries. Design §4.1 names these; mapping to concrete
@@ -222,6 +223,17 @@ extension StatusBarPresentation {
         return "\(status.cursorLine):\(status.cursorColumn)"
     }
 
+    /// Groups thousands, as design §7's wireframe shows ("인덱싱 중 1,284/4,812").
+    ///
+    /// The index details popover already formats the same counts this way; leaving the chip
+    /// unformatted made one number look like two different numbers on one screen.
+    private static func grouped(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
     private static func chip(for state: IndexState) -> StatusChip {
         let tooltip = state == .ready ? nil : staleIndexTooltip
         switch state {
@@ -229,7 +241,7 @@ extension StatusBarPresentation {
             return StatusChip(label: "인덱스 없음", tone: .neutral, tooltip: tooltip, progress: nil)
         case .indexing(let progress):
             return StatusChip(
-                label: "인덱싱 중 \(progress.completed)/\(progress.total)",
+                label: "인덱싱 중 \(grouped(progress.completed))/\(grouped(progress.total))",
                 tone: .accent, tooltip: tooltip, progress: progress
             )
         case .ready:
@@ -238,7 +250,7 @@ extension StatusBarPresentation {
             return StatusChip(label: "갱신 중", tone: .warning, tooltip: tooltip, progress: nil)
         case .rescanning(let progress):
             return StatusChip(
-                label: "전체 재스캔 중 \(progress.completed)/\(progress.total)",
+                label: "전체 재스캔 중 \(grouped(progress.completed))/\(grouped(progress.total))",
                 tone: .warning, tooltip: tooltip, progress: progress
             )
         }

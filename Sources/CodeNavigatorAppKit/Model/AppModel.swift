@@ -35,6 +35,8 @@ public final class AppModel {
     public var projectRootPath: String?
 
     public let recentProjects: RecentProjectStore
+    /// Window chrome the application restores on launch (REQ-011 AC-3).
+    public let shell: ShellPreferences
 
     /// The file tree, which asks the engine on the user's rhythm rather than the engine's.
     public let fileTree: FileTreeModel
@@ -72,6 +74,7 @@ public final class AppModel {
         self.workspace = workspace
         self.storage = storage
         self.recentProjects = RecentProjectStore(storage: storage, now: now)
+        self.shell = ShellPreferences(storage: storage)
         self.fileTree = FileTreeModel(projectSession: projectSession, editorSession: editorSession)
         // REQ-010 AC-6: the chosen mode comes back after a restart. Vim is the default,
         // and unreadable stored data falls back to it rather than refusing to launch.
@@ -122,7 +125,15 @@ public final class AppModel {
     // MARK: Handlers
 
     public func handle(indexState state: IndexState) {
+        let wasWorking = indexState.isWorking
         indexState = state
+
+        // The statistics only change when a pass finishes, so that is when they are read.
+        // Without this the index details popover stays empty for ever, and `skippedCount`
+        // is the only place REQ-002 AC-4 becomes visible to a user.
+        if state == .ready, wasWorking || indexStatistics == nil {
+            Task { await refreshIndexStatistics() }
+        }
     }
 
     public func handle(sessionState state: EditorSessionState) {
@@ -267,6 +278,45 @@ public final class AppModel {
         definitionCandidates = nil
     }
 
+    /// Opens a project-relative location, recording the jump.
+    ///
+    /// Used by the definition picker and by both result panels, so that every way of
+    /// arriving somewhere leaves the same trail back (REQ-005 AC-4).
+    public func openLocation(path: String, line: Int?) async {
+        await open(path: path, line: line)
+    }
+
+    /// Returns to the previous jump-list position (REQ-005 AC-4).
+    ///
+    /// Goes through the engine rather than sending `<C-o>`, because the raw key means
+    /// different things in the two input modes: in standard mode Neovim is in insert, where
+    /// `<C-o>` waits for one normal command and silently eats the user's next keystroke.
+    /// The engine wraps it in `normal!`, which behaves the same in both.
+    public func jumpBack() async {
+        try? await editorSession.jumpBack()
+    }
+
+    /// The editing commands, each routed to the engine rather than sent as a key string.
+    ///
+    /// A raw normal-mode key means something else entirely in standard mode, where Neovim
+    /// is held in insert so the user can type `i`, `:` and `hjkl` as letters (REQ-010 AC-5).
+    /// Measured against a real Neovim: `u` typed the letter u into the buffer, and `:w<CR>`
+    /// did not save — a save that reports success and writes nothing. The engine wraps each
+    /// of these so they behave the same in both modes.
+    public func jumpForward() async { try? await editorSession.jumpForward() }
+    public func save() async { try? await editorSession.save() }
+    public func undo() async { try? await editorSession.undo() }
+    public func redo() async { try? await editorSession.redo() }
+    public func copySelection() async { try? await editorSession.copySelection() }
+    public func cutSelection() async { try? await editorSession.cutSelection() }
+    public func paste() async { try? await editorSession.paste() }
+    public func selectAll() async { try? await editorSession.selectAll() }
+
+    /// The identifier under the cursor, for the commands that start from it.
+    public func wordUnderCursor() async -> String? {
+        (try? await editorSession.wordUnderCursor()) ?? nil
+    }
+
     private func open(path: String, line: Int?) async {
         // The jump is recorded so ⌃O leads back to where it started (REQ-005 AC-4).
         try? await editorSession.openFile(atRelativePath: path, line: line, recordJump: true)
@@ -296,6 +346,18 @@ public final class AppModel {
         projectRootPath = projectRoot.path
         recentProjects.recordOpened(rootPath: projectRoot.path)
         await fileTree.loadProject(name: projectRoot.lastPathComponent, rootPath: projectRoot.path)
+    }
+
+    /// Closes the open project, returning the window to the welcome screen (§3 W-2).
+    ///
+    /// The edit session is left alone. Whether an unsaved buffer should be discarded is
+    /// Neovim's decision, not the application's (INV-3).
+    public func closeProject() async {
+        projectRootPath = nil
+        projectOpenError = nil
+        definitionCandidates = nil
+        indexStatistics = nil
+        await fileTree.loadProject(name: nil, rootPath: nil)
     }
 
     public func dismissProjectOpenError() {

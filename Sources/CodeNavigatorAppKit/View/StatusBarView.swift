@@ -10,12 +10,22 @@ import CodeNavigatorContract
 struct StatusBarView: View {
     let layout: ShellLayout
     var presentation: StatusBarPresentation?
+    /// The index chip is interactive — it opens the details popover that carries
+    /// `skippedCount`, the only place REQ-002 AC-4 becomes visible — so it needs the state
+    /// behind the chip, not just the chip's label.
+    var indexState: IndexState = .notIndexed
+    var indexDetails: IndexDetailsPresentation?
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    init(layout: ShellLayout, presentation: StatusBarPresentation? = nil) {
+    init(
+        layout: ShellLayout,
+        presentation: StatusBarPresentation? = nil,
+        indexState: IndexState = .notIndexed,
+        indexDetails: IndexDetailsPresentation? = nil
+    ) {
         self.layout = layout
         self.presentation = presentation
+        self.indexState = indexState
+        self.indexDetails = indexDetails
     }
 
     var body: some View {
@@ -49,15 +59,15 @@ struct StatusBarView: View {
             if let cursorText = bar.cursorText {
                 Text(cursorText)
                     .font(.system(size: DesignTokens.Typography.secondarySize, design: .monospaced))
-                    .foregroundStyle(DesignTokens.textTertiary.color(for: colorScheme))
+                    .foregroundStyle(DesignTokens.textTertiary.dynamicColor)
             }
 
-            chip(bar.indexChip)
+            indexChip(bar.indexChip)
             chip(bar.sessionChip)
         }
         .padding(.horizontal, DesignTokens.Spacing.medium)
         .frame(height: layout.statusBarHeight)
-        .background(DesignTokens.backgroundStatus.color(for: colorScheme))
+        .background(DesignTokens.backgroundStatus.dynamicColor)
         .accessibilityElement(children: .contain)
     }
 
@@ -68,7 +78,7 @@ struct StatusBarView: View {
                 .foregroundStyle(color(for: segment.tone))
             Text(segment.secondaryLabel)
                 .font(.system(size: DesignTokens.Typography.secondarySize))
-                .foregroundStyle(DesignTokens.textSecondary.color(for: colorScheme))
+                .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
         }
         .fixedSize()
         .accessibilityLabel("입력 모드: \(segment.primaryLabel) \(segment.secondaryLabel)")
@@ -78,17 +88,30 @@ struct StatusBarView: View {
         HStack(spacing: DesignTokens.Spacing.extraSmall) {
             Text(path)
                 .font(.system(size: DesignTokens.Typography.secondarySize))
-                .foregroundStyle(DesignTokens.textSecondary.color(for: colorScheme))
+                .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
                 .lineLimit(1)
                 .truncationMode(.head)
             if isDirty {
                 // The dirty marker appears in three places at once (title, tree, status
                 // bar); no single dot is load-bearing on its own.
                 Circle()
-                    .fill(DesignTokens.warningSolid.color(for: colorScheme))
+                    .fill(DesignTokens.warningSolid.dynamicColor)
                     .frame(width: 6, height: 6)
                     .help("더티 버퍼 — 저장되지 않은 변경")
             }
+        }
+    }
+
+    /// The index chip, with its spinner, pulse and progress bar (design §3 W-10).
+    ///
+    /// Falls back to the plain chip only when no details have been supplied, which happens
+    /// in previews and in the status bar's own tests.
+    @ViewBuilder
+    private func indexChip(_ statusChip: StatusChip) -> some View {
+        if let indexDetails {
+            IndexStatusChipView(chip: statusChip, indexState: indexState, details: indexDetails)
+        } else {
+            chip(statusChip)
         }
     }
 
@@ -99,7 +122,7 @@ struct StatusBarView: View {
                 .frame(width: 6, height: 6)
             Text(chip.label)
                 .font(.system(size: DesignTokens.Typography.secondarySize))
-                .foregroundStyle(DesignTokens.textSecondary.color(for: colorScheme))
+                .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
                 .lineLimit(1)
         }
         .fixedSize()
@@ -108,20 +131,20 @@ struct StatusBarView: View {
 
     private func color(for tone: StatusTone) -> Color {
         switch tone {
-        case .success: return DesignTokens.success.color(for: colorScheme)
-        case .accent: return DesignTokens.accentText.color(for: colorScheme)
-        case .purple: return DesignTokens.purple.color(for: colorScheme)
-        case .warning: return DesignTokens.warning.color(for: colorScheme)
-        case .danger: return DesignTokens.danger.color(for: colorScheme)
-        case .neutral: return DesignTokens.textSecondary.color(for: colorScheme)
+        case .success: return DesignTokens.success.dynamicColor
+        case .accent: return DesignTokens.accentText.dynamicColor
+        case .purple: return DesignTokens.purple.dynamicColor
+        case .warning: return DesignTokens.warning.dynamicColor
+        case .danger: return DesignTokens.danger.dynamicColor
+        case .neutral: return DesignTokens.textSecondary.dynamicColor
         }
     }
 
     private func centerColor(for role: StatusCenterRole) -> Color {
         switch role {
-        case .hint: return DesignTokens.textTertiary.color(for: colorScheme)
-        case .success: return DesignTokens.success.color(for: colorScheme)
-        case .error, .persistentError: return DesignTokens.danger.color(for: colorScheme)
+        case .hint: return DesignTokens.textTertiary.dynamicColor
+        case .success: return DesignTokens.success.dynamicColor
+        case .error, .persistentError: return DesignTokens.danger.dynamicColor
         }
     }
 }

@@ -49,6 +49,11 @@ extension ShellLayout {
         public static let panelOverlayWidth: CGFloat = 320
 
         public static let editorMinimumWidth: CGFloat = 420
+
+        /// How far a splitter may be dragged before the side area stops growing. Without a
+        /// ceiling a stored width from a wide monitor would swallow a narrow window whole.
+        public static let treeMaximumWidth: CGFloat = 480
+        public static let panelMaximumWidth: CGFloat = 600
     }
 
     /// Window widths at which the layout changes, from design §4.4.
@@ -62,7 +67,17 @@ extension ShellLayout {
         public static let treeOverlay: CGFloat = 720
     }
 
-    public static func resolve(windowSize: CGSize) -> ShellLayout {
+    /// Resolves the shell for a window size.
+    ///
+    /// `preferredTreeWidth` and `preferredPanelWidth` are the widths the user dragged the
+    /// splitters to, restored from the last run (REQ-011 AC-3). They are preferences, not
+    /// commands: the editor's minimum still outranks them, so a stored width from a wider
+    /// monitor cannot squeeze the editor out on a smaller one.
+    public static func resolve(
+        windowSize: CGSize,
+        preferredTreeWidth: CGFloat? = nil,
+        preferredPanelWidth: CGFloat? = nil
+    ) -> ShellLayout {
         let width = windowSize.width
         let contentHeight = max(0, windowSize.height - Metrics.titleBarHeight - Metrics.statusBarHeight)
 
@@ -72,7 +87,9 @@ extension ShellLayout {
         let widths = columnWidths(
             width: width,
             treePlacement: treePlacement,
-            panelPlacement: panelPlacement
+            panelPlacement: panelPlacement,
+            preferredTreeWidth: preferredTreeWidth,
+            preferredPanelWidth: preferredPanelWidth
         )
 
         return ShellLayout(
@@ -93,15 +110,31 @@ extension ShellLayout {
         )
     }
 
+    /// Clamps a dragged width to what the design allows for that area.
+    public static func clampTreeWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, Metrics.treeMinimumWidth), Metrics.treeMaximumWidth)
+    }
+
+    public static func clampPanelWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, Metrics.panelMinimumWidth), Metrics.panelMaximumWidth)
+    }
+
     private static func columnWidths(
         width: CGFloat,
         treePlacement: ShellAreaPlacement,
-        panelPlacement: ShellAreaPlacement
+        panelPlacement: ShellAreaPlacement,
+        preferredTreeWidth: CGFloat?,
+        preferredPanelWidth: CGFloat?
     ) -> (tree: CGFloat, editor: CGFloat, panel: CGFloat) {
         // An overlay costs the editor nothing, so only the areas still in a column are
-        // subtracted from the window width.
-        let treeWidth = treePlacement == .overlay ? Metrics.treeOverlayWidth : Metrics.treeDefaultWidth
-        let panelWidth = panelPlacement == .overlay ? Metrics.panelOverlayWidth : Metrics.panelDefaultWidth
+        // subtracted from the window width. An overlay also has a fixed width of its own,
+        // so a dragged column width does not carry into it.
+        let treeWidth = treePlacement == .overlay
+            ? Metrics.treeOverlayWidth
+            : clampTreeWidth(preferredTreeWidth ?? Metrics.treeDefaultWidth)
+        let panelWidth = panelPlacement == .overlay
+            ? Metrics.panelOverlayWidth
+            : clampPanelWidth(preferredPanelWidth ?? Metrics.panelDefaultWidth)
 
         guard treePlacement == .column, panelPlacement == .column else {
             let occupied = (treePlacement == .column ? treeWidth : 0)

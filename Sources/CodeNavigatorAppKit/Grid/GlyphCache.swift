@@ -1,34 +1,64 @@
 import AppKit
 import CoreText
 
-/// Caches character-to-glyph lookups per font weight.
+/// A glyph together with the font that can actually draw it.
+struct ResolvedGlyph {
+    let glyph: CGGlyph
+    let font: CTFont
+}
+
+/// Caches character-to-glyph lookups, falling back to a font that has the character.
 ///
-/// A full redraw asks for thousands of glyphs, almost all of them repeats of the same few
-/// dozen source characters. Looking each one up through CoreText every frame was the
-/// difference between the measured 3.02 ms and something far worse.
+/// The monospaced system font contains no Hangul at all — measured, for both the upright
+/// and the italic face. Without a fallback every Korean character resolves to glyph 0 and
+/// is silently skipped, so a Korean comment renders as blank space. In a tool for reading
+/// code, in a repository whose own comments are Korean, that is not an edge case.
+///
+/// A full redraw asks for thousands of glyphs, almost all repeats of a few dozen
+/// characters, so both the hit and the fallback are cached.
 @MainActor
 final class GlyphCache {
-    private var regular: [Character: CGGlyph] = [:]
-    private var bold: [Character: CGGlyph] = [:]
+    private struct Key: Hashable {
+        let character: Character
+        let style: GlyphStyle
+    }
 
-    func glyph(for character: Character, bold isBold: Bool, metrics: CellMetrics) -> CGGlyph? {
-        if let cached = isBold ? bold[character] : regular[character] {
-            return cached == 0 ? nil : cached
+    private var resolved: [Key: ResolvedGlyph?] = [:]
+
+    func resolve(_ character: Character, style: GlyphStyle, metrics: CellMetrics) -> ResolvedGlyph? {
+        let key = Key(character: character, style: style)
+        if let cached = resolved[key] {
+            return cached
+        }
+        let value = lookUp(character, style: style, metrics: metrics)
+        resolved[key] = value
+        return value
+    }
+
+    private func lookUp(_ character: Character, style: GlyphStyle, metrics: CellMetrics) -> ResolvedGlyph? {
+        let primary = metrics.font(for: style) as CTFont
+        let utf16 = Array(String(character).utf16)
+
+        if let glyph = glyph(for: utf16, in: primary) {
+            return ResolvedGlyph(glyph: glyph, font: primary)
         }
 
-        let font = (isBold ? metrics.boldFont : metrics.font) as CTFont
-        let utf16 = Array(String(character).utf16)
+        // The primary face cannot draw it. CoreText picks a font that can, preserving the
+        // point size so the character still sits on the same baseline in the same cell.
+        let text = String(character) as CFString
+        let fallback = CTFontCreateForString(primary, text, CFRange(location: 0, length: CFStringGetLength(text)))
+        guard let glyph = glyph(for: utf16, in: fallback) else {
+            return nil
+        }
+        return ResolvedGlyph(glyph: glyph, font: fallback)
+    }
+
+    private func glyph(for utf16: [UInt16], in font: CTFont) -> CGGlyph? {
         var glyphs = [CGGlyph](repeating: 0, count: utf16.count)
         let converted = CTFontGetGlyphsForCharacters(font, utf16, &glyphs, utf16.count)
-        let resolved = converted ? (glyphs.first ?? 0) : 0
-
-        // Misses are cached too: a character the font cannot draw would otherwise be looked
-        // up again on every single frame.
-        if isBold {
-            bold[character] = resolved
-        } else {
-            regular[character] = resolved
+        guard converted, let first = glyphs.first, first != 0 else {
+            return nil
         }
-        return resolved == 0 ? nil : resolved
+        return first
     }
 }

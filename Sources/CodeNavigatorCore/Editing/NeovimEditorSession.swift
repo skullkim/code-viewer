@@ -316,7 +316,10 @@ public actor NeovimEditorSession: EditorSession {
     /// insert with nothing selected (measured). Leaving normal mode first makes the selection
     /// stick, which is what "select all" has to mean in either input mode.
     public func selectAll() async throws {
-        try await runModeIndependently("stopinsert | normal! ggVG")
+        try await runModeIndependently(
+            "stopinsert | normal! ggVG",
+            resumingTypingInStandardMode: false
+        )
     }
 
     /// Applies a clipboard operator to the selection the user is holding right now.
@@ -340,10 +343,25 @@ public actor NeovimEditorSession: EditorSession {
     }
 
     /// Runs an ex command and refreshes the status, surfacing Neovim's own error message.
-    private func runModeIndependently(_ command: String) async throws {
+    ///
+    /// Standard mode promises one thing above all: typing inserts characters (REQ-010 AC-5).
+    /// `:normal!` returns to the mode it was called from, and these commands are called from
+    /// normal mode, so without this the editor is left in normal mode afterwards — the user cuts
+    /// a selection, types `hello`, and the letters are read as commands instead of appearing.
+    /// The promise has to be restored by whoever breaks it.
+    ///
+    /// `selectAll` is the one command that opts out: it exists to leave a selection standing, and
+    /// resuming insert would throw that selection away the moment it was made.
+    private func runModeIndependently(
+        _ command: String,
+        resumingTypingInStandardMode: Bool = true
+    ) async throws {
         let channel = try requireChannel()
         do {
             try await channel.request("nvim_command", [.string(command)])
+            if resumingTypingInStandardMode, currentInputMode == .standard {
+                try await channel.request("nvim_command", [.string("startinsert")])
+            }
         } catch {
             throw NavigatorError.editorRequestFailed(
                 method: command,

@@ -68,7 +68,16 @@ public enum GridFrameBuilder {
                         row: row,
                         column: column,
                         foreground: colours.foreground,
-                        isBold: run.style.isBold
+                        // Every trait the engine resolved, not just weight. Neovim already
+                        // parsed italic and underline out of `hl_attr_define`; dropping
+                        // them here flattens a user's italic comments and their diagnostic
+                        // underlines into plain text, which is the application overriding
+                        // the user's own colour scheme (REQ-004 AC-3).
+                        style: GlyphStyle(
+                            isBold: run.style.isBold,
+                            isItalic: run.style.isItalic,
+                            isUnderlined: run.style.isUnderlined
+                        )
                     ))
                 }
             }
