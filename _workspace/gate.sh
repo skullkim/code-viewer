@@ -300,6 +300,26 @@ check_test_count "$TEST_OUTPUT"
 # 여기서는 중복하지 않고, 백엔드가 검증하지 않는 것만 본다: .app 으로 조립되는지,
 # 그리고 조립된 것이 실제로 실행되는지. 디렉토리가 생겼다는 것은 동작의 증거가 아니다.
 
+section "프론트엔드: 시각 회귀"
+# 오늘 시각 결함이 둘 나왔는데(에디터에 한글이 아예 안 그려짐 · 수식키 기호 겹침)
+# 둘 다 전체 테스트가 초록인 채였다. 게이트에 화면을 보는 계기가 하나도 없었기 때문이다.
+# 이 스텝이 막는 것: 빈 캔버스 · 토큰 색 틀림 · 다크/라이트 미구분 · 한글 미렌더 ·
+# 좁은 창에서 단축키 라벨 미제거 · 수식키가 하나로 무너짐. 비용 약 21초.
+VISUAL_OUTPUT="$(swift test --no-parallel --filter DesignRegression 2>&1)"
+VISUAL_STATUS=$?
+VISUAL_COUNT="$(test_count_from "$VISUAL_OUTPUT")"
+if [ "$VISUAL_STATUS" -ne 0 ]; then
+    printf '  --- 실패한 시각 검사 ---\n'
+    printf '%s\n' "$VISUAL_OUTPUT" | grep -E '^✘ Test|recorded an issue' | sed 's/^/    /'
+    fail "시각 회귀"
+elif [ -z "$VISUAL_COUNT" ] || [ "$VISUAL_COUNT" -eq 0 ]; then
+    # 0매치 필터는 "0 tests passed" 로 초록을 낸다. 화면을 보는 유일한 스텝이
+    # 조용히 아무것도 안 보는 상태가 되면, 있으나 마나 한 것보다 나쁘다.
+    fail "시각 회귀 검사가 0건 실행됐다 — 필터가 아무것도 매칭하지 못했다"
+else
+    pass "시각 회귀 ${VISUAL_COUNT}건"
+fi
+
 section "프론트엔드: 화면 뷰 마운트"
 # 뷰가 컴파일되고 자기 테스트를 통과해도, 아무도 인스턴스화하지 않으면 사용자에게 도달하지
 # 못한다. 실제로 완성된 뷰 다섯이 전부 미연결인 채 스위트가 초록이었다. 컴파일과 단위
