@@ -35,6 +35,14 @@ public enum RenderPhase: Sendable, Hashable {
     /// A re-render after a save. The previous document stays on screen (AC-5).
     case rerendering
     case rendered(source: RenderSource.Origin)
+    /// 아직 아무 문서도 맡지 않았다 — 화면을 지운 직후이거나 처음 상태.
+    ///
+    /// `empty` 와 갈라 둔다. 둘은 **화면에서 구별되지 않았는데 뜻이 정반대다**:
+    /// `empty` 는 *"이 파일에는 내용이 없다"* 는 **파일에 대한 단언**이고, 이것은
+    /// *"우리가 아직 아무것도 안 읽었다"* 는 **우리에 대한 사실**이다. 하나로 두면
+    /// 모델이 아무것도 모르는 상태가 사용자에게 "빈 파일"로 보고된다 — 사용자는
+    /// 이상을 모른 채 넘어간다.
+    case idle
     case empty
     case failed(reason: String)
     case undecodable
@@ -133,6 +141,10 @@ extension RenderDocumentPresentation {
     private static func notice(for phase: RenderPhase) -> RenderNoticeCard? {
         switch phase {
         case .rendering, .rerendering, .rendered:
+            return nil
+
+        case .idle:
+            // 맡은 문서가 없다. 파일에 대해 할 말이 없으므로 아무 말도 하지 않는다.
             return nil
 
         case .empty:

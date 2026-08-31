@@ -39,6 +39,72 @@ struct RenderDocumentSyncTests {
         model.syncRenderDocument()
     }
 
+    // MARK: 지운 상태가 파일에 대한 단언이 되지 않는다
+
+    @Test("화면을 지운 뒤에는 파일에 대해 아무 말도 하지 않는다")
+    func aClearedSurfaceMakesNoClaimAboutTheFile() async {
+        // **이 테스트가 없어서 대조가 안 발화했다.** 나는 `.idle` 을 만들고 프레젠테이션만
+        // 검사했는데, 모델을 `.empty` 로 되돌려도 그 검사는 초록이었다 — 사용자가 본 것은
+        // **모델의 상태**가 프레젠테이션을 타고 나온 결과인데, 그 연결을 아무도 안 쟀다.
+        let (model, _) = makeModel()
+        await model.openProject(at: URL(fileURLWithPath: root))
+
+        model.render.clear()
+
+        let screen = RenderDocumentPresentation.make(
+            fileName: "README.md", phase: model.render.phase,
+            hasPreviousDocument: false, elapsedSeconds: nil
+        )
+        #expect(screen.notice == nil, "지운 상태가 '빈 문서입니다' 로 나온다: \(model.render.phase)")
+    }
+
+    @Test("처음 상태도 파일에 대한 단언이 아니다")
+    func theInitialStateIsNotAClaimEither() {
+        let model = RenderDocumentModel(workspace: FakeWorkspace(sharedSession: FakeProjectSession()))
+
+        let screen = RenderDocumentPresentation.make(
+            fileName: "README.md", phase: model.phase,
+            hasPreviousDocument: false, elapsedSeconds: nil
+        )
+        #expect(screen.notice == nil, "아무것도 안 읽은 모델이 파일이 비었다고 말한다")
+    }
+
+    // MARK: 파생 — 호출을 기억하지 않는다 (결함 B)
+
+    @Test("파일이 열리면 명시 호출 없이 렌더 모델이 그 문서를 안다")
+    func openingAFileReachesTheRenderModelWithoutBeingTold() async {
+        // **이것이 "빈 문서입니다" 의 진짜 원인이었다.** 모델에 알려 주는 호출이 토글과
+        // 한 곳뿐이라, 파일을 열어도 모델은 아무것도 모르는 초기 상태에 남았다. 그리고
+        // 그 초기 상태가 사용자에게는 **"이 파일에는 내용이 없습니다"** 로 보였다.
+        let (model, _) = makeModel()
+        await model.openProject(at: URL(fileURLWithPath: root))
+
+        // 앱이 하는 그대로 — 상태만 도착시키고 아무것도 더 안 부른다.
+        model.handle(editorStatus: EditorStatus(
+            filePath: "\(root)/docs/README.md", isDirty: false, cursorLine: 1, cursorColumn: 1,
+            mode: .normal, inputMode: .vim
+        ))
+
+        #expect(model.render.documentRelativePath == "docs/README.md", "아무도 모델에 알려 주지 않았다")
+    }
+
+    @Test("다른 파일로 옮기면 렌더도 따라간다")
+    func movingToAnotherFileMovesTheRender() async {
+        let (model, _) = makeModel()
+        await model.openProject(at: URL(fileURLWithPath: root))
+        model.handle(editorStatus: EditorStatus(
+            filePath: "\(root)/A.md", isDirty: false, cursorLine: 1, cursorColumn: 1,
+            mode: .normal, inputMode: .vim
+        ))
+        model.handle(editorStatus: EditorStatus(
+            filePath: "\(root)/B.md", isDirty: false, cursorLine: 1, cursorColumn: 1,
+            mode: .normal, inputMode: .vim
+        ))
+
+        // 헤더는 반응형이라 따라가는데 본문만 안 따라가면, 화면 둘이 서로 다른 파일을 말한다.
+        #expect(model.render.documentRelativePath == "B.md")
+    }
+
     @Test("렌더 가능 판정을 주입하지 않아도 진짜 판정이 쓰인다")
     func theDefaultPredicateIsTheRealOne() async {
         // 예전 기본값은 `{ _ in false }` 였다. 중립처럼 보이지만 **하나의 행동**이고,

@@ -14,7 +14,7 @@ import CodeNavigatorContract
 @Observable
 public final class RenderDocumentModel {
 
-    public private(set) var phase: RenderPhase = .empty
+    public private(set) var phase: RenderPhase = .idle
     public private(set) var html: String = ""
     public private(set) var blocked: [BlockedResource] = []
     public private(set) var unavailable: [UnavailableResource] = []
@@ -82,7 +82,8 @@ public final class RenderDocumentModel {
         html = ""
         blocked = []
         unavailable = []
-        phase = .empty
+        // `.empty` 가 아니다 — 지운 것은 우리 상태이고, 파일이 비었다는 말이 아니다.
+        phase = .idle
     }
 
     private func load(path: String, root: String, tab: ProjectTabIdentifier) async {

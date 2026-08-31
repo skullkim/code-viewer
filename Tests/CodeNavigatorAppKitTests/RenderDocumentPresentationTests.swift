@@ -148,3 +148,37 @@ struct RenderDocumentPresentationTests {
         #expect(RenderDocumentPresentation.maximumRenderableBytes == 2 * 1024 * 1024)
     }
 }
+
+/// 두 개의 0 — "읽었더니 비었다" 와 "아직 아무것도 안 읽었다" (D-렌더).
+@Suite("렌더 단계 — 빈 문서와 안 읽음은 다른 말이다")
+struct RenderIdlePhaseTests {
+
+    private func make(_ phase: RenderPhase) -> RenderDocumentPresentation {
+        RenderDocumentPresentation.make(
+            fileName: "README.md", phase: phase, hasPreviousDocument: false, elapsedSeconds: nil
+        )
+    }
+
+    @Test("아직 안 읽은 상태는 파일에 대해 아무 말도 하지 않는다")
+    func anIdleSurfaceMakesNoClaimAboutTheFile() {
+        // **이것이 QA 가 본 오분류다.** 모델이 아무것도 모르는 상태가 화면에는
+        // "이 파일에는 내용이 없습니다" 로 나왔다. 그건 **정상 상태를 단언**하는 문구라
+        // 사용자는 파일이 빈 줄 알고 넘어간다 — 이상을 아는 것보다 나쁘다.
+        #expect(make(.idle).notice == nil)
+    }
+
+    @Test("진짜 빈 파일은 여전히 빈 문서라고 말한다")
+    func aGenuinelyEmptyFileStillSaysSo() {
+        // 갈랐다고 해서 진짜 빈 파일까지 침묵하면 안 된다 — 그때는 그 문구가 참이다.
+        let notice = make(.empty).notice
+
+        #expect(notice != nil)
+        #expect(notice?.title.contains("빈 문서") == true)
+    }
+
+    @Test("두 상태가 서로 다른 화면을 낸다")
+    func theTwoStatesDoNotLookAlike() {
+        // 하나만 보면 둘 다 같은 화면인 상태를 통과시킨다.
+        #expect(make(.idle).notice != make(.empty).notice)
+    }
+}

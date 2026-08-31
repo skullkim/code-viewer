@@ -18,7 +18,16 @@ public final class AppModel {
     public private(set) var indexState: IndexState = .notIndexed
     public private(set) var indexStatistics: IndexStatistics?
     public private(set) var sessionState: EditorSessionState = .notStarted
-    public private(set) var editorStatus: EditorStatus?
+    /// 에디터가 말하는 현재 파일. **바뀌면 렌더가 따라간다** — 기억해서 부르는 게 아니라
+    /// 값이 바뀌는 자리에 붙여 둔다.
+    ///
+    /// 호출로 두면 잊힌다. 실제로 잊혀 있었다: 알려 주는 호출이 토글과 한 곳뿐이라 파일을
+    /// 열어도 렌더 모델은 아무것도 모르는 상태에 남았고, 그 상태가 화면에는
+    /// **"이 파일에는 내용이 없습니다"** 로 나왔다. 헤더는 이 값을 반응형으로 읽어 따라가고
+    /// 본문만 안 따라가니, **화면 둘이 서로 다른 파일을 말했다.**
+    public private(set) var editorStatus: EditorStatus? {
+        didSet { syncRenderDocument() }
+    }
     public private(set) var gridFrame: GridFrame?
     public private(set) var inputMode: InputMode
     public private(set) var statusMessage: StatusMessage?
@@ -32,7 +41,13 @@ public final class AppModel {
     public private(set) var projectOpenError: (any Error)?
 
     /// The open project's root, used to show paths relative to it.
-    public var projectRootPath: String?
+    /// 활성 탭의 루트. 탭이 바뀌면 여기가 바뀌고, **렌더도 같이 옮겨 간다.**
+    ///
+    /// 탭 전환 경로가 네 곳인데 그 전부에서 렌더 갱신을 기억해야 한다면 하나는 반드시
+    /// 빠진다 — 그리고 빠진 그 경로에서만 본문이 직전 탭의 문서를 말한다.
+    public var projectRootPath: String? {
+        didSet { syncRenderDocument() }
+    }
 
     public let recentProjects: RecentProjectStore
     /// Window chrome the application restores on launch (REQ-011 AC-3).
