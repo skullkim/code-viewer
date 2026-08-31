@@ -81,13 +81,6 @@ extension ToolbarPresentation {
                 isEnabled: availability.isEnabled(.textSearch)
             ),
             ToolbarButton(
-                command: .togglePanel,
-                title: "패널",
-                shortcutLabel: "⌥⌘0",
-                systemImage: "sidebar.right",
-                isEnabled: availability.isEnabled(.togglePanel)
-            ),
-            ToolbarButton(
                 command: .toggleRenderView,
                 title: "렌더",
                 shortcutLabel: "⇧⌘V",
@@ -96,6 +89,13 @@ extension ToolbarPresentation {
                 // 에러를 띄우는 것보다 누르기 전에 말해 주는 쪽이 낫다.
                 isEnabled: availability.isEnabled(.togglePanel) && renderView.isRenderable,
                 isOn: renderView.isShowingRender
+            ),
+            ToolbarButton(
+                command: .togglePanel,
+                title: "패널",
+                shortcutLabel: "⌥⌘0",
+                systemImage: "sidebar.right",
+                isEnabled: availability.isEnabled(.togglePanel)
             ),
         ]
     }

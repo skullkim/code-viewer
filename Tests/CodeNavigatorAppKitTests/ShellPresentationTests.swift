@@ -112,7 +112,8 @@ struct ToolbarPresentationTests {
         // 만든 구멍이다.
         #expect(!alwaysOn.isEmpty)
         #expect(alwaysOn.allSatisfy { $0.isEnabled })
-        #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .togglePanel, .toggleRenderView])
+        // 기준물 순서: 렌더는 편집 대상에 붙는 동작이라 검색 옆, 패널은 창 배치라 끝.
+        #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .toggleRenderView, .togglePanel])
     }
 
     @Test("창 제목은 편집 중인 파일 이름 + 더티 표시다")

@@ -97,7 +97,24 @@ struct ToolbarView: View {
             .fixedSize()
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
+        // 눌린 토글은 강조색으로 말한다. 기준물의 `[▣ 렌더]` 가 이것이고, 모드
+        // 세그먼트가 이미 같은 신호를 쓴다.
+        //
+        // **장식이 아니라 상태다** — 이게 없으면 툴바만 보고는 지금 화면이 렌더인지
+        // 소스인지 알 수 없다.
+        .foregroundStyle(
+            button.isOn
+                ? DesignTokens.accent.dynamicColor
+                : DesignTokens.textSecondary.dynamicColor
+        )
+        .background(
+            // 기존 강조색에서 파생한다 — 새 토큰을 여기서 만들면 디자인 결정을 뷰가
+            // 대신 내리는 것이고, 그건 PD 몫이다.
+            button.isOn
+                ? DesignTokens.accent.dynamicColor.opacity(Metrics.activeToggleFill)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
+        )
         .disabled(!button.isEnabled)
         // The label collapses to an icon on a narrow window, so the name has to survive
         // somewhere a screen reader and a tooltip can reach it.
@@ -106,6 +123,8 @@ struct ToolbarView: View {
     }
 
     private enum Metrics {
+        /// 눌린 토글의 배경 농도. 글자가 읽히는 선에서 가장 옅게.
+        static let activeToggleFill: Double = 0.15
         static let chevronSize: CGFloat = 8
         static let dirtyDotSize: CGFloat = 6
         /// The window buttons live in the top-left; design §4.3 keeps 78pt clear for them.

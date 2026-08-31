@@ -105,7 +105,7 @@ extension StatusBarPresentation {
             showsDirtyIndicator: editorStatus?.isDirty ?? false,
             centerText: center.text,
             centerRole: center.role,
-            cursorText: cursorText(for: editorStatus, layout: layout),
+            cursorText: cursorText(for: editorStatus, layout: layout, renderView: renderView),
             indexChip: chip(for: indexState),
             sessionChip: chip(for: sessionState),
             maximumPathCharacters: pathBudget
@@ -248,11 +248,31 @@ extension StatusBarPresentation {
         return PathDisplay.truncatedFromStart(relative, maximumCharacters: budget)
     }
 
-    private static func cursorText(for status: EditorStatus?, layout: ShellLayout) -> String? {
+    /// 편집 보기에서는 커서 위치, 렌더 보기에서는 문서 형식.
+    ///
+    /// **두 보기가 같은 자리를 다른 뜻으로 쓴다.** 읽기 전용 렌더에 `5:1` 을 띄우면
+    /// 없는 정보가 빠진 것이 아니라 **틀린 정보가 그 자리를 쓰는 것**이다 — 사용자는
+    /// 커서가 거기 있다고 읽는다. 반대로 편집 중에 형식 이름으로 덮으면 커서를 잃는다.
+    private static func cursorText(
+        for status: EditorStatus?,
+        layout: ShellLayout,
+        renderView: RenderViewState
+    ) -> String? {
         guard layout.showsCursorPosition, let status else {
             return nil
         }
+        if renderView.isShowingRender {
+            return documentFormatName(for: status.filePath)
+        }
         return "\(status.cursorLine):\(status.cursorColumn)"
+    }
+
+    /// 사람이 부르는 형식 이름. 확장자를 그대로 보이면 파일 이름과 같은 말을 두 번 한다.
+    private static func documentFormatName(for filePath: String?) -> String? {
+        guard let filePath else {
+            return nil
+        }
+        return (filePath as NSString).pathExtension.lowercased() == "html" ? "HTML" : "Markdown"
     }
 
     /// Groups thousands, as design §7's wireframe shows ("인덱싱 중 1,284/4,812").
