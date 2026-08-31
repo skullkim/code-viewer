@@ -65,7 +65,12 @@ self_test() {
     local status=0
     SELF_TEST_SANDBOX="$(mktemp -d)"
     local sandbox="$SELF_TEST_SANDBOX"
-    mkdir -p "$sandbox/View"
+    mkdir -p "$sandbox/View" "$sandbox/Model"
+
+    # 합성 트리에도 소유자 모델을 둔다. 없으면 도달성 검사가 거기서 실패해 **깨끗한
+    # 기준선이 깨끗하지 않게** 되고, 그러면 "통과해야 하는 경우"가 영영 통과 못 한다.
+    # 자기 검사의 기준선은 진짜로 깨끗해야 한다.
+    printf 'public enum KeyboardFocusOwner {\n    case paired\n}\n' > "$sandbox/Model/KeyboardFocus.swift"
 
     printf '=== check-focus-symmetry 자체 검사 ===\n'
 
@@ -96,6 +101,17 @@ self_test() {
         printf '  ok: 검출 — 열림만 있는 표면\n'
     fi
 
+    # 아무도 요청하지 않는 소유자 — D-8 이 이 모양이었다(대칭인데 도달 불가).
+    printf 'public enum KeyboardFocusOwner {\n    case paired\n    case unreachable\n}\n' > "$sandbox/Model/KeyboardFocus.swift"
+    printf 'focus.surfaceDidOpen(.paired)\nfocus.surfaceDidClose(.paired)\n' > "$sandbox/View/A.swift"
+    if FOCUS_SOURCES_DIR="$sandbox" "$0" >/dev/null 2>&1; then
+        printf '  FAIL: 아무도 요청 안 하는 소유자를 못 잡는다 (D-8 형태 — 침묵의 대칭)\n'
+        status=1
+    else
+        printf '  ok: 검출 — 요청되지 않는 소유자\n'
+    fi
+    printf 'public enum KeyboardFocusOwner {\n    case paired\n}\n' > "$sandbox/Model/KeyboardFocus.swift"
+
     # 아무것도 없는 트리는 통과가 아니다.
     printf 'let x = 1\n' > "$sandbox/View/A.swift"
     if FOCUS_SOURCES_DIR="$sandbox" "$0" >/dev/null 2>&1; then
@@ -113,9 +129,46 @@ if [ "${1:-}" = "--self-test" ]; then
     exit $?
 fi
 
+# 역방향 불변식 — **모든 포커스 소유자는 실제로 키보드를 받을 수 있어야 한다.**
+#
+# 대칭 검사만으로는 부족했다: `.fileTree` 는 `surfaceDidOpen`/`Close` 를 **양쪽 다 안 불러서**
+# 대칭이었다(0 == 0). 그래서 검사는 통과하는데 트리는 키보드를 **영원히 못 받았다** — 링은
+# 그려지고 화살표는 에디터로 갔다(D-8). **침묵의 대칭은 대칭이 아니다.**
+#
+# 소유자는 `userFocused` 로 받을 수도 있고(항상 떠 있는 표면: 트리·에디터) `surfaceDidOpen`
+# 으로 받을 수도 있다(뜨고 지는 표면: 모달·패널). 둘 중 하나는 있어야 한다.
+check_every_owner_is_reachable() {
+    # 경로를 박지 않고 찾는다 — 모듈 구조가 바뀌어도 검사가 조용히 대상을 잃지 않는다.
+    local model
+    model="$(find "$SOURCES" -name 'KeyboardFocus.swift' -print -quit 2>/dev/null)"
+    if [ -z "$model" ] || [ ! -f "$model" ]; then
+        printf '  FAIL: KeyboardFocus.swift 를 못 찾았다 — 검사가 대상을 못 보고 있다\n'
+        return 1
+    fi
+    local missing=0
+    local owners
+    owners="$(sed -n '/enum KeyboardFocusOwner/,/^}/p' "$model" | grep -oE 'case [a-zA-Z]+' | awk '{print $2}')"
+
+    if [ -z "$owners" ]; then
+        printf '  FAIL: 포커스 소유자를 하나도 못 찾았다 — 검사가 대상을 못 보고 있다\n'
+        return 1
+    fi
+
+    for owner in $owners; do
+        if ! grep -rqE "(userFocused|surfaceDidOpen)\(\.$owner\)" "$SOURCES" --include='*.swift'; then
+            printf '  FAIL: .%s 를 아무도 요청하지 않는다 — 그 표면은 키보드를 영원히 못 받는다\n' "$owner"
+            missing=$((missing + 1))
+        fi
+    done
+    return $((missing > 0 ? 1 : 0))
+}
+
 check_symmetry
-if [ "$FAILURES" -eq 0 ]; then
-    printf '  ok: 모든 포커스 표면이 열림·닫힘 짝을 갖는다\n'
+REACHABLE_STATUS=0
+check_every_owner_is_reachable || REACHABLE_STATUS=1
+
+if [ "$FAILURES" -eq 0 ] && [ "$REACHABLE_STATUS" -eq 0 ]; then
+    printf '  ok: 모든 포커스 표면이 열림·닫힘 짝을 갖고, 모든 소유자가 키보드를 받을 수 있다\n'
     exit 0
 fi
 exit 1

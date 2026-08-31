@@ -227,6 +227,8 @@ public struct MainWindowView: View {
     private var fileTreePane: some View {
         FileTreeView(
             tree: model.fileTree.presentation,
+            ownsKeyboard: focus.owner == .fileTree,
+            onClaimKeyboard: { focus.userFocused(.fileTree) },
             onAction: { action in Task { await model.fileTree.perform(action) } }
         )
     }

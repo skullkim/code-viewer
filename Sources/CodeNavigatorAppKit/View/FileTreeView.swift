@@ -14,11 +14,26 @@ public struct FileTreeView: View {
     private let tree: FileTreePresentation
     private let onAction: (FileTreeAction) -> Void
 
+    /// 트리가 지금 키보드를 갖고 있는가. **뷰가 스스로 판단하지 않고 받는다** — 누가
+    /// 키보드를 갖는지는 창 전체의 사실이고, 표면마다 자기 답을 가지면 둘이 동시에
+    /// "내가 갖고 있다"고 그린다.
+    private let ownsKeyboard: Bool
+
+    /// 사용자가 트리를 눌렀다. 코디네이터가 에디터에서 키보드를 거둬 온다.
+    private let onClaimKeyboard: () -> Void
+
     @State private var hoveredPath: String?
     @FocusState private var isFocused: Bool
 
-    public init(tree: FileTreePresentation, onAction: @escaping (FileTreeAction) -> Void) {
+    public init(
+        tree: FileTreePresentation,
+        ownsKeyboard: Bool = false,
+        onClaimKeyboard: @escaping () -> Void = {},
+        onAction: @escaping (FileTreeAction) -> Void
+    ) {
         self.tree = tree
+        self.ownsKeyboard = ownsKeyboard
+        self.onClaimKeyboard = onClaimKeyboard
         self.onAction = onAction
     }
 
@@ -44,6 +59,10 @@ public struct FileTreeView: View {
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
+        // 창의 소유권이 단일 소스다. SwiftUI 의 `@FocusState` 는 그것을 따라가는
+        // 사본이지 판정자가 아니다 — 둘이 각자 판단하면 어긋난다.
+        .onChange(of: ownsKeyboard) { _, owns in isFocused = owns }
+        .onAppear { isFocused = ownsKeyboard }
         .onKeyPress(.upArrow) { send(.up) }
         .onKeyPress(.downArrow) { send(.down) }
         .onKeyPress(.leftArrow) { send(.left) }
@@ -134,6 +153,10 @@ public struct FileTreeView: View {
             hoveredPath = isInside ? row.path : (hoveredPath == row.path ? nil : hoveredPath)
         }
         .onTapGesture {
+            // 링을 그리기 전에 키보드를 실제로 가져온다. 이 순서가 D-8 의 전부다 —
+            // 예전엔 선택만 하고 키보드는 에디터에 남아, 링은 떴는데 ↓ 가 nvim 커서를
+            // 움직였다.
+            onClaimKeyboard()
             onAction(.select(path: row.path))
             guard !row.isDirectory else {
                 return
@@ -192,7 +215,7 @@ public struct FileTreeView: View {
     /// where the arrow keys are.
     @ViewBuilder
     private func selectionRing(for row: FileTreeRow) -> some View {
-        if row.isSelected {
+        if FileTreeFocusMark.showsKeyboardCursor(isSelected: row.isSelected, treeOwnsKeyboard: ownsKeyboard) {
             RoundedRectangle(cornerRadius: DesignTokens.Radius.control)
                 .strokeBorder(DesignTokens.accent.dynamicColor, lineWidth: Metrics.focusRingWidth)
                 .padding(Metrics.focusRingInset)
