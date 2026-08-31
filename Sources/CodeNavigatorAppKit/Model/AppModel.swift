@@ -89,6 +89,15 @@ public final class AppModel {
     public private(set) var missingTabs: [MissingTab] = []
     private var statusMessageExpiryTask: Task<Void, Never>?
 
+    /// 마지막으로 시작한 더티 재집계. 테스트가 그 완료를 기다릴 수 있게 붙들어 둔다 —
+    /// `Task.yield()` 로 기다리면 스케줄링에 따라 통과가 갈린다.
+    private var dirtyRefreshTask: Task<Void, Never>?
+
+    /// 진행 중인 더티 재집계를 기다린다 (테스트 전용 이음매).
+    func awaitDirtyRefresh() async {
+        await dirtyRefreshTask?.value
+    }
+
     static let inputModeStorageKey = "inputMode"
 
     /// The grid size a project is opened with, before the editor view has been laid out and
@@ -248,10 +257,32 @@ public final class AppModel {
     }
 
     public func handle(editorStatus status: EditorStatus) {
+        let wasDirty = editorStatus?.isDirty
         editorStatus = status
         // The tree marks the file being edited (REQ-003 AC-3); it learns which one only
         // from here, because the editor is the side that knows.
         fileTree.updateCurrentFile(absolutePath: status.filePath, isDirty: status.isDirty)
+
+        // 탭 바의 ● 도 **여기서** 흐른다. 상태바·트리·탭 바가 같은 한 사건에서 갱신되므로
+        // 세 표면이 서로 다른 답을 낼 수 없다 — QA 가 본 것이 정확히 그 어긋남이었다
+        // (상태바는 ● 인데 탭 바는 아니었다).
+        //
+        // 더티 여부가 **바뀔 때만** 다시 센다. 이 핸들러는 커서가 움직일 때마다 불리고,
+        // 매번 세면 편집기에 왕복이 그만큼 는다.
+        if wasDirty != status.isDirty {
+            dirtyRefreshTask = Task { await refreshActiveTabDirtyCount() }
+        }
+    }
+
+    /// 활성 탭의 미저장 버퍼 수를 편집기에 다시 묻는다.
+    ///
+    /// 상태바는 *현재 파일*의 더티를 그리고 탭은 *그 프로젝트 전체*를 그린다 — 알갱이가
+    /// 다르지만 출처는 하나(편집기의 더티 버퍼)다. 탭이 현재 파일만 보면 다른 파일을
+    /// 고쳐 둔 채 깨끗한 파일로 옮긴 순간 점이 사라진다.
+    private func refreshActiveTabDirtyCount() async {
+        guard let tab = tabs.activeTab else { return }
+        let files = await dirtyFiles(in: tab)
+        tab.setDirtyBufferCount(files.count)
     }
 
     public func handle(snapshot: EditorGridSnapshot) {
@@ -268,6 +299,9 @@ public final class AppModel {
         let name = PathDisplay.fileName(file.path)
         let size = ByteSizeText.string(fromByteCount: file.byteSize)
         show(StatusMessage(kind: .success, text: "✓ 저장됨 · \(name) (\(file.lineCount)줄, \(size))"))
+        // 저장은 더티를 지우는 사건이다. 상태 갱신만 기다리면 점이 남아 있는 창이 생기고,
+        // 그 창에서 사용자는 저장이 안 된 줄 안다 — 반대 방향의 거짓말도 똑같이 나쁘다.
+        dirtyRefreshTask = Task { await refreshActiveTabDirtyCount() }
     }
 
     // MARK: Status messages
