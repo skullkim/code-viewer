@@ -56,6 +56,31 @@ count_orphaned_editors() {
 }
 
 # ---------------------------------------------------------------------------
+# 격리 측정의 전제 — 다른 테스트 프로세스가 없어야 한다
+# ---------------------------------------------------------------------------
+# 격리 스텝은 "따로 돌린다"가 아니라 "혼자 돈다"를 뜻한다. 머신에서 다른 swift test 가
+# 동시에 돌면 프로세스 전체 메모리 값이 그쪽 할당까지 담는다 — 실측: 단독 30.0MB 인 유휴
+# 메모리가 동시 실행 중에는 80.6MB 로 읽혔고, AC-3 도 같은 이유로 7.4배가 나왔다.
+#
+# 게이트는 순차 실행이므로 이 시점에 보이는 테스트 프로세스는 전부 외부의 것이다.
+count_foreign_test_processes() {
+    ps -eo pid,command \
+        | grep -E 'swift-test|swiftpm-testing-helper' \
+        | grep -v grep \
+        | grep -vc "^ *$$ " || true
+}
+
+require_isolation_for_measurement() {
+    local foreign
+    foreign="$(count_foreign_test_processes)"
+    if [ "${foreign:-0}" -gt 0 ]; then
+        fail "다른 테스트 프로세스 ${foreign}개가 돌고 있다 — 격리 측정이 성립하지 않는다. 끝난 뒤 다시 재라"
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # SC-8 유휴 메모리 — 격리 실행으로만 판정한다
 # ---------------------------------------------------------------------------
 # 같은 프로세스에서 다른 테스트가 먼저 돌면 할당자가 페이지를 재사용해 증가분이 0 에 가깝게
@@ -466,14 +491,18 @@ else
 fi
 
 section "백엔드: SC-8 유휴 메모리 (격리 측정)"
+if require_isolation_for_measurement; then
 MEMORY_OUTPUT="$(swift test --filter 'SearchPerformanceTests/idleMemoryAfterIndexingWithinBudget' 2>&1)"
 printf '%s\n' "$MEMORY_OUTPUT" | grep -F '[성능]' || true
 check_idle_memory "$MEMORY_OUTPUT"
+fi
 
 section "백엔드: AC-3 탭 여닫기 메모리 (격리 측정)"
+if require_isolation_for_measurement; then
 TAB_MEMORY_OUTPUT="$(swift test --filter 'WorkspaceMemoryReuseTests' 2>&1)"
 printf '%s\n' "$TAB_MEMORY_OUTPUT" | grep -F '[AC-3]' || true
 check_tab_memory_reuse "$TAB_MEMORY_OUTPUT"
+fi
 
 section "환경: 고아 Neovim 프로세스"
 ORPHAN_COUNT="$(count_orphaned_editors)"

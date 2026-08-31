@@ -9,15 +9,18 @@ import CodeNavigatorAppKit
 struct CodeNavigatorMain {
     static func main() {
         if CommandLine.arguments.contains("--self-check") {
-            // The graph now crosses an actor boundary to build, so the check has to wait
-            // for it. A semaphore rather than a `Task` alone: `main` must not return before
-            // the check has run, or the gate would see a clean exit and no output.
-            let finished = DispatchSemaphore(value: 0)
+            // The graph crosses an actor boundary to build, so the check is async — and a
+            // semaphore here would deadlock: waiting on the main thread starves the very
+            // main actor the task needs to run on. Measured, and it hung the gate for
+            // eighteen minutes.
+            //
+            // The run loop keeps the main thread serving instead of blocking it, and the
+            // check ends the process itself when it is done.
             Task { @MainActor in
                 await CodeNavigatorApplication.reportSelfCheck()
-                finished.signal()
+                exit(0)
             }
-            finished.wait()
+            RunLoop.main.run()
             return
         }
         CodeNavigatorApplication.run()
