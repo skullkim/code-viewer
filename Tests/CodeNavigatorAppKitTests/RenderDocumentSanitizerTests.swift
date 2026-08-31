@@ -20,7 +20,6 @@ struct RenderDocumentSanitizerTests {
         RenderDocumentSanitizer.sanitize(
             html: html,
             projectRoot: root,
-            isCaseSensitiveVolume: true,
             loadFile: loadFile
         )
     }
@@ -84,7 +83,6 @@ struct RenderDocumentSanitizerTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: #"<img src="images/logo.png">"#,
             projectRoot: fixture.root.path,
-            isCaseSensitiveVolume: true,
             loadFile: { _ in Data([0x89, 0x50]) }
         )
 
@@ -102,7 +100,6 @@ struct RenderDocumentSanitizerTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: #"<img src="images/logo.png">"#,
             projectRoot: fixture.root.path,
-            isCaseSensitiveVolume: true,
             loadFile: { _ in nil }
         )
 
@@ -244,7 +241,6 @@ struct RenderDocumentSanitizerTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: ##"<a href="OTHER.md">문서</a><a href="#anchor">앵커</a>"##,
             projectRoot: fixture.root.path,
-            isCaseSensitiveVolume: true,
             loadFile: { _ in Data("x".utf8) }
         )
 

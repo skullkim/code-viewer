@@ -21,7 +21,6 @@ struct RenderDocumentSanitizerLimitTests {
         RenderDocumentSanitizer.sanitize(
             html: html,
             projectRoot: "/Users/dev/repo",
-            isCaseSensitiveVolume: true,
             loadFile: { _ in nil }
         )
     }

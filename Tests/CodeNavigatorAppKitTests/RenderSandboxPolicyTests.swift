@@ -17,8 +17,7 @@ struct RenderSandboxPolicyTests {
     private func decide(_ element: RenderedElement, root: String? = nil) -> SandboxDecision {
         RenderSandboxPolicy.decide(
             element,
-            projectRoot: root ?? self.root,
-            isCaseSensitiveVolume: true
+            projectRoot: root ?? self.root
         )
     }
 
@@ -60,7 +59,7 @@ struct RenderSandboxPolicyTests {
         func cleanUp() { try? FileManager.default.removeItem(at: base) }
 
         func decide(_ element: RenderedElement) -> SandboxDecision {
-            RenderSandboxPolicy.decide(element, projectRoot: root.path, isCaseSensitiveVolume: true)
+            RenderSandboxPolicy.decide(element, projectRoot: root.path)
         }
     }
 
@@ -203,8 +202,7 @@ struct RenderSandboxPolicyTests {
 
         let decision = RenderSandboxPolicy.decide(
             .image(source: escape.path),
-            projectRoot: projectRoot.path,
-            isCaseSensitiveVolume: true
+            projectRoot: projectRoot.path
         )
         #expect(blockedKind(decision) == .outsideProjectRoot, "루트를 빠져나가는 심링크가 허용됐다")
     }
@@ -224,8 +222,7 @@ struct RenderSandboxPolicyTests {
 
         let decision = RenderSandboxPolicy.decide(
             .image(source: image.path),
-            projectRoot: projectRoot.path,
-            isCaseSensitiveVolume: true
+            projectRoot: projectRoot.path
         )
         #expect(isAllowed(decision), "루트 안의 실제 파일이 막혔다")
     }
@@ -235,8 +232,7 @@ struct RenderSandboxPolicyTests {
         // INV-5. A 탭 문서가 B 탭 파일을 읽으면 격리 위반이다.
         let decision = RenderSandboxPolicy.decide(
             .image(source: "/Users/dev/other-project/logo.png"),
-            projectRoot: "/Users/dev/repo",
-            isCaseSensitiveVolume: true
+            projectRoot: "/Users/dev/repo"
         )
         #expect(blockedKind(decision) == .outsideProjectRoot)
     }
@@ -389,7 +385,7 @@ struct RenderSandboxPolicyTests {
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
 
         let decision = RenderSandboxPolicy.decide(
-            .image(source: link.path), projectRoot: projectRoot.path, isCaseSensitiveVolume: true
+            .image(source: link.path), projectRoot: projectRoot.path
         )
         #expect(isAllowed(decision), "루트 안을 가리키는 심링크가 차단됐다")
     }
@@ -419,7 +415,7 @@ struct RenderSandboxPolicyTests {
 
         for reference in ["link/exists.md", "link/later.md", "link/a/b.md"] {
             let decision = RenderSandboxPolicy.decide(
-                .image(source: reference), projectRoot: root.path, isCaseSensitiveVolume: true)
+                .image(source: reference), projectRoot: root.path)
             #expect(decision.isBlocked, "\(reference) 가 루트를 빠져나갔다")
         }
     }
@@ -440,7 +436,7 @@ struct RenderSandboxPolicyTests {
             at: root.appendingPathComponent("assets"), withDestinationURL: real)
 
         let decision = RenderSandboxPolicy.decide(
-            .image(source: "assets/logo.png"), projectRoot: root.path, isCaseSensitiveVolume: true)
+            .image(source: "assets/logo.png"), projectRoot: root.path)
         #expect(!decision.isBlocked, "루트 안을 가리키는 중간 심링크가 차단됐다")
     }
 }

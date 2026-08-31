@@ -53,7 +53,6 @@ public enum RenderDocumentSanitizer {
     public static func sanitize(
         html: String,
         projectRoot: String,
-        isCaseSensitiveVolume: Bool,
         loadFile: FileLoader
     ) -> SanitizedDocument {
         var blocked: [BlockedResource] = []
@@ -80,7 +79,6 @@ public enum RenderDocumentSanitizer {
         output = rewritingAttributes(
             in: output,
             projectRoot: projectRoot,
-            isCaseSensitiveVolume: isCaseSensitiveVolume,
             loadFile: loadFile,
             blocked: &blocked
         )
@@ -88,7 +86,6 @@ public enum RenderDocumentSanitizer {
         output = rewritingCSSURLs(
             in: output,
             projectRoot: projectRoot,
-            isCaseSensitiveVolume: isCaseSensitiveVolume,
             loadFile: loadFile,
             blocked: &blocked
         )
@@ -179,7 +176,6 @@ public enum RenderDocumentSanitizer {
     private static func rewritingAttributes(
         in html: String,
         projectRoot: String,
-        isCaseSensitiveVolume: Bool,
         loadFile: FileLoader,
         blocked: inout [BlockedResource]
     ) -> String {
@@ -190,7 +186,6 @@ public enum RenderDocumentSanitizer {
                 named: attribute,
                 in: output,
                 projectRoot: projectRoot,
-                isCaseSensitiveVolume: isCaseSensitiveVolume,
                 loadFile: loadFile,
                 blocked: &blocked
             )
@@ -209,7 +204,6 @@ public enum RenderDocumentSanitizer {
         named attribute: String,
         in html: String,
         projectRoot: String,
-        isCaseSensitiveVolume: Bool,
         loadFile: FileLoader,
         blocked: inout [BlockedResource]
     ) -> String {
@@ -234,8 +228,7 @@ public enum RenderDocumentSanitizer {
 
             let decision = RenderSandboxPolicy.decide(
                 elementKind(for: element, attribute: attribute, value: value),
-                projectRoot: projectRoot,
-                isCaseSensitiveVolume: isCaseSensitiveVolume
+                projectRoot: projectRoot
             )
 
             switch decision {
@@ -288,7 +281,6 @@ public enum RenderDocumentSanitizer {
     private static func rewritingCSSURLs(
         in html: String,
         projectRoot: String,
-        isCaseSensitiveVolume: Bool,
         loadFile: FileLoader,
         blocked: inout [BlockedResource]
     ) -> String {
@@ -308,8 +300,7 @@ public enum RenderDocumentSanitizer {
             let value = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
             let decision = RenderSandboxPolicy.decide(
                 .image(source: value),
-                projectRoot: projectRoot,
-                isCaseSensitiveVolume: isCaseSensitiveVolume
+                projectRoot: projectRoot
             )
 
             switch decision {

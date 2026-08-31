@@ -113,8 +113,7 @@ public enum RenderSandboxPolicy {
 
     public static func decide(
         _ element: RenderedElement,
-        projectRoot: String,
-        isCaseSensitiveVolume: Bool
+        projectRoot: String
     ) -> SandboxDecision {
         switch element {
         case .script(let source):
@@ -128,13 +127,13 @@ public enum RenderSandboxPolicy {
             return .block(kind: .frame, detail: detail(for: source))
 
         case .image(let source):
-            return decideResource(source, remoteKind: .remoteImage, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume)
+            return decideResource(source, remoteKind: .remoteImage, projectRoot: projectRoot)
 
         case .stylesheet(let source):
-            return decideResource(source, remoteKind: .remoteStylesheet, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume)
+            return decideResource(source, remoteKind: .remoteStylesheet, projectRoot: projectRoot)
 
         case .font(let source):
-            return decideResource(source, remoteKind: .remoteFont, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume)
+            return decideResource(source, remoteKind: .remoteFont, projectRoot: projectRoot)
         }
     }
 
@@ -142,8 +141,7 @@ public enum RenderSandboxPolicy {
     private static func decideResource(
         _ source: String?,
         remoteKind: BlockedResourceKind,
-        projectRoot: String,
-        isCaseSensitiveVolume: Bool
+        projectRoot: String
     ) -> SandboxDecision {
         guard let source, !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // No source at all. Nothing to load and nothing to allow.
@@ -177,9 +175,7 @@ public enum RenderSandboxPolicy {
         }
 
         let path = filePath(from: source)
-        guard let resolved = resolvedPathInsideRoot(
-            path: path, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume
-        ) else {
+        guard let resolved = resolvedPathInsideRoot(path: path, projectRoot: projectRoot) else {
             return .block(kind: .outsideProjectRoot, detail: source)
         }
         return .allowFile(resolvedPath: resolved)
@@ -202,8 +198,7 @@ public enum RenderSandboxPolicy {
     /// are there, and "cannot resolve" collapsing to "blocked" is INV-6's default.
     public static func resolvedPathInsideRoot(
         path: String,
-        projectRoot: String,
-        isCaseSensitiveVolume: Bool
+        projectRoot: String
     ) -> String? {
         guard projectRoot.hasPrefix("/") else {
             return nil
@@ -220,8 +215,20 @@ public enum RenderSandboxPolicy {
             return nil
         }
 
-        let root = isCaseSensitiveVolume ? resolvedRoot : resolvedRoot.lowercased()
-        let file = isCaseSensitiveVolume ? resolvedPath : resolvedPath.lowercased()
+        // No case folding, and no flag asking whether to fold.
+        //
+        // `realpath` already converges on the spelling the volume holds: on a
+        // case-insensitive volume `assets/logo.png` comes back as `Assets/Logo.png`, so
+        // lowercasing changed nothing; on a case-sensitive one the fold was never applied.
+        // Measured on a real case-sensitive volume (QA, `hdiutil`) — the verdict is the
+        // same either way.
+        //
+        // The branch is gone rather than tested because it was **undefended**: a full
+        // sandbox escape injected into the `false` side left the whole suite green, and
+        // `false` is what every ordinary Mac volume produces. A branch that cannot be
+        // absent is better than one guarded by tests that do not discriminate.
+        let root = resolvedRoot
+        let file = resolvedPath
 
         // The root directory is not a file inside itself.
         guard file != root else {
