@@ -555,3 +555,74 @@ struct WorkspaceSaveRoutingTests {
         await workspace.shutDown()
     }
 }
+
+/// The last two scenarios that had no live-path equivalent.
+@Suite("전환·상대화 — 워크스페이스 경로", .serialized)
+struct WorkspaceRelativizationTests {
+
+    /// The front end highlights the tree by relativising the path the editor reports (REQ-003
+    /// AC-3). A normalisation difference — a symlink, a `/private` prefix — makes that match fail
+    /// silently, so the two are pinned against each other here rather than assumed to agree.
+    @Test("편집기가 보고한 경로를 탭 루트로 상대화하면 트리 경로와 일치한다")
+    func editorPathsRelativizeToTreePaths() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application\n")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+        let tab = try await workspace.openProject(at: fixture.rootURL)
+        let session = try #require(await workspace.session(for: tab.tab.id))
+
+        try await workspace.editorSession.openFile(
+            atRelativePath: "src/App.kt", line: 1, recordJump: false
+        )
+        var editorPath: String?
+        for await status in await workspace.editorSession.statusUpdates() {
+            if let path = status.filePath {
+                editorPath = path
+                break
+            }
+        }
+        let absolute = try #require(editorPath)
+
+        // 탭의 루트로 상대화한다 — 탭마다 루트가 다르므로 "그 탭의 것"이어야 한다.
+        let root = tab.tab.rootPath.path.hasSuffix("/")
+            ? tab.tab.rootPath.path : tab.tab.rootPath.path + "/"
+        #expect(absolute.hasPrefix(root), "편집기 경로가 탭 루트 밖이다: \(absolute)")
+        let relative = String(absolute.dropFirst(root.count))
+        #expect(relative == "src/App.kt")
+
+        let entries = try await session.directoryEntries(atRelativePath: "src")
+        #expect(entries.contains { $0.path == relative })
+        await workspace.shutDown()
+    }
+
+    /// The old scenario asserted that switching **replaced** the index — the previous project's
+    /// symbols had to disappear. That claim is now false by design: AC-2 keeps every open project
+    /// indexed so switching is immediate. What survives of the intent is that each tab's tree and
+    /// search answer for its own project, which is what this asserts.
+    @Test("탭마다 트리와 검색이 자기 프로젝트를 답한다")
+    func eachTabsTreeAndSearchAnswerForItsOwnProject() async throws {
+        let alpha = TemporaryProjectFixture()
+        alpha.write("src/Alpha.kt", contents: "class AlphaService")
+        let beta = TemporaryProjectFixture()
+        beta.write("lib/Beta.kt", contents: "class BetaService")
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+        let first = try await workspace.openProject(at: alpha.rootURL)
+        let second = try await workspace.openProject(at: beta.rootURL)
+        let alphaSession = try #require(await workspace.session(for: first.tab.id))
+        let betaSession = try #require(await workspace.session(for: second.tab.id))
+
+        // 트리: 각자 자기 디렉토리만 안다.
+        #expect(try await alphaSession.directoryEntries(atRelativePath: "").contains { $0.name == "src" })
+        #expect(try await betaSession.directoryEntries(atRelativePath: "").contains { $0.name == "lib" })
+        await #expect(throws: (any Error).self) {
+            try await alphaSession.directoryEntries(atRelativePath: "lib")
+        }
+
+        // 전문 검색도 자기 프로젝트 안에서만 답한다.
+        let alphaHits = try await alphaSession.searchText("BetaService", mode: .literal)
+        #expect(alphaHits.items.isEmpty, "다른 프로젝트의 내용이 검색됐다")
+        await workspace.shutDown()
+    }
+}
