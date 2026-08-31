@@ -301,19 +301,29 @@ public final class AppModel {
         // 더티 여부가 **바뀔 때만** 다시 센다. 이 핸들러는 커서가 움직일 때마다 불리고,
         // 매번 세면 편집기에 왕복이 그만큼 는다.
         if wasDirty != status.isDirty {
-            dirtyRefreshTask = Task { await refreshActiveTabDirtyCount() }
+            dirtyRefreshTask = Task { await refreshDirtyCounts() }
         }
     }
 
-    /// 활성 탭의 미저장 버퍼 수를 편집기에 다시 묻는다.
+    /// **모든 탭의** 미저장 버퍼 수를 편집기에 다시 묻는다.
+    ///
+    /// 활성 탭만 갱신하면 비활성 탭의 값은 그 탭이 마지막으로 활성이었을 때 그대로
+    /// 얼어붙는다 — QA 가 본 것이 그것이다(저장했는데 ● 이 안 꺼진다).
+    ///
+    /// **그리고 그게 이 기능이 존재하는 이유를 정면으로 깬다.** 탭의 ● 은 *다른 탭에
+    /// 있는 동안* 그 프로젝트에 저장 안 한 변경이 있는지 알려 주려고 있다. 활성 탭은
+    /// 상태바가 이미 말해 준다 — 활성만 갱신하는 것은 아는 것만 다시 아는 것이다.
+    ///
+    /// 탭 수만큼 왕복이 늘지만 더티가 **바뀔 때와 저장할 때만** 돈다. 프로젝트를 수십 개
+    /// 여는 도구가 아니다.
     ///
     /// 상태바는 *현재 파일*의 더티를 그리고 탭은 *그 프로젝트 전체*를 그린다 — 알갱이가
-    /// 다르지만 출처는 하나(편집기의 더티 버퍼)다. 탭이 현재 파일만 보면 다른 파일을
-    /// 고쳐 둔 채 깨끗한 파일로 옮긴 순간 점이 사라진다.
-    private func refreshActiveTabDirtyCount() async {
-        guard let tab = tabs.activeTab else { return }
-        let files = await dirtyFiles(in: tab)
-        tab.setDirtyBufferCount(files.count)
+    /// 다르지만 출처는 하나(편집기의 더티 버퍼)다.
+    private func refreshDirtyCounts() async {
+        for tab in tabs.tabs {
+            let files = await dirtyFiles(in: tab)
+            tab.setDirtyBufferCount(files.count)
+        }
     }
 
     public func handle(snapshot: EditorGridSnapshot) {
@@ -332,7 +342,7 @@ public final class AppModel {
         show(StatusMessage(kind: .success, text: "✓ 저장됨 · \(name) (\(file.lineCount)줄, \(size))"))
         // 저장은 더티를 지우는 사건이다. 상태 갱신만 기다리면 점이 남아 있는 창이 생기고,
         // 그 창에서 사용자는 저장이 안 된 줄 안다 — 반대 방향의 거짓말도 똑같이 나쁘다.
-        dirtyRefreshTask = Task { await refreshActiveTabDirtyCount() }
+        dirtyRefreshTask = Task { await refreshDirtyCounts() }
     }
 
     // MARK: Status messages
