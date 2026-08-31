@@ -202,7 +202,13 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
         }
     }
 
-    private func reindexSavedFile(atAbsolutePath path: String) async {
+    /// Routes one saved file to the project that contains it.
+    ///
+    /// Internal rather than private so a test can drive it directly. Going through a real save
+    /// cannot check this: the file watcher notices the same write and reindexes anyway, so an
+    /// end-to-end save passes whether or not this routing works at all — measured, removing the
+    /// save subscription entirely left every end-to-end test green.
+    func reindexSavedFile(atAbsolutePath path: String) async {
         for tab in orderedTabs {
             let prefix = tab.rootPath.path.hasSuffix("/") ? tab.rootPath.path : tab.rootPath.path + "/"
             if path.hasPrefix(prefix) {

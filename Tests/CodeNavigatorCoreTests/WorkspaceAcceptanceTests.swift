@@ -462,3 +462,96 @@ struct WorkspaceSaveAfterRestartTests {
         await workspace.shutDown()
     }
 }
+
+/// Save routing, measured directly.
+///
+/// 🔴 An end-to-end save cannot measure this. The file watcher sees the same write and reindexes
+/// on its own, so the index ends up correct whether or not the save path routes anything —
+/// measured by deleting the save subscription entirely, which left every end-to-end test green.
+/// The scenario suite this replaced knew that: it had a separate check that bypassed the watcher.
+@Suite("저장 라우팅 — 감시자와 무관하게", .serialized)
+struct WorkspaceSaveRoutingTests {
+
+    private func makeProject(_ symbol: String) -> TemporaryProjectFixture {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class \(symbol)")
+        return fixture
+    }
+
+    @Test("저장은 그 파일을 담은 프로젝트에만 간다")
+    func aSaveReachesOnlyTheProjectHoldingTheFile() async throws {
+        let alpha = makeProject("AlphaOriginal")
+        let beta = makeProject("BetaOriginal")
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+        let first = try await workspace.openProject(at: alpha.rootURL)
+        let second = try await workspace.openProject(at: beta.rootURL)
+        let alphaSession = try #require(await workspace.session(for: first.tab.id))
+        let betaSession = try #require(await workspace.session(for: second.tab.id))
+
+        // beta 의 파일만 바꾸고, 저장 통지를 직접 준다 — 감시자를 거치지 않는다.
+        let betaFile = beta.rootURL.appendingPathComponent("src/App.kt").path
+        try "class BetaRewritten".write(toFile: betaFile, atomically: true, encoding: .utf8)
+        await workspace.reindexSavedFile(atAbsolutePath: betaFile)
+
+        #expect(await betaSession.definitions(named: "BetaRewritten").isEmpty == false,
+                "저장 통지가 그 프로젝트에 안 닿았다")
+        #expect(await alphaSession.definitions(named: "BetaRewritten").isEmpty,
+                "다른 프로젝트의 인덱스에 들어갔다")
+        #expect(await alphaSession.definitions(named: "AlphaOriginal").isEmpty == false,
+                "관계없는 프로젝트의 인덱스가 흔들렸다")
+        await workspace.shutDown()
+    }
+
+    @Test("어느 프로젝트에도 없는 경로의 저장 통지는 아무 인덱스도 건드리지 않는다")
+    func aSaveOutsideEveryProjectTouchesNothing() async throws {
+        let alpha = makeProject("AlphaOriginal")
+        let outside = makeProject("StrayService")
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+        let tab = try await workspace.openProject(at: alpha.rootURL)
+        let session = try #require(await workspace.session(for: tab.tab.id))
+
+        await workspace.reindexSavedFile(
+            atAbsolutePath: outside.rootURL.appendingPathComponent("src/App.kt").path
+        )
+
+        #expect(await session.definitions(named: "StrayService").isEmpty)
+        #expect(await session.definitions(named: "AlphaOriginal").isEmpty == false)
+        await workspace.shutDown()
+    }
+
+    /// `/repo` must not swallow a save in `/repo-backup`. The separator is what stops a prefix
+    /// comparison from treating a sibling as a child — the same trap that produced an INV-6 hole
+    /// in the render policy today.
+    @Test("이름이 접두인 형제 디렉토리의 저장을 삼키지 않는다")
+    func aSiblingDirectoryIsNotTreatedAsAChild() async throws {
+        let container = TemporaryProjectFixture()
+        container.makeDirectory("repo/src")
+        container.makeDirectory("repo-backup/src")
+        let repo = container.rootURL.appendingPathComponent("repo")
+        let backup = container.rootURL.appendingPathComponent("repo-backup")
+        try "class RepoOriginal".write(
+            to: repo.appendingPathComponent("src/App.kt"), atomically: true, encoding: .utf8
+        )
+        try "class BackupOnly".write(
+            to: backup.appendingPathComponent("src/App.kt"), atomically: true, encoding: .utf8
+        )
+
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+        let tab = try await workspace.openProject(at: repo)
+        let session = try #require(await workspace.session(for: tab.tab.id))
+
+        await workspace.reindexSavedFile(
+            atAbsolutePath: backup.appendingPathComponent("src/App.kt").path
+        )
+
+        #expect(await session.definitions(named: "BackupOnly").isEmpty,
+                "형제 디렉토리의 파일이 이 프로젝트 인덱스에 들어갔다")
+        await workspace.shutDown()
+    }
+}
