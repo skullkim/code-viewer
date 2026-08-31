@@ -88,17 +88,20 @@ check_idle_memory() {
 # (실측: 단독 인덱스 5.3MB·회당 0.12MB, 전체 실행 1.9MB·회당 0.98MB — 양쪽이 다 움직여서
 # 비율까지 흔들린다). SC-8 과 같은 이유로 같은 방식을 쓴다.
 #
-# 경계는 실측으로 골랐다: 정상 회당 약 0.12MB, 닫기를 무력화한 변이 약 1.01MB. 새는 쪽이
-# 인덱스 크기만큼 늘지 않으므로(할당자가 페이지를 압축·공유) 인덱스에서 유도한 1/2·1/4 는
-# 변이를 놓쳤다. 1/10 이 정상에 5배, 누수에 2배 여유를 준다.
-TAB_MEMORY_GROWTH_DIVISOR=10
+# **총 증가로 판정한다. 회당이 아니다.** 회차를 늘려 각각 새 프로세스에서 재 보니 총 증가가
+# 회차와 무관하게 일정했다(10회 1312KB · 20회 704KB · 40회 848KB · 80회 768KB). 누수라면
+# 80회가 10MB 쪽이어야 한다. 일정하다는 건 한 번 치르는 정착 비용이라는 뜻이고, "회당"은
+# 회차를 늘리는 것만으로 작아지므로 판정에 쓰면 안 된다.
+#
+# 상한은 인덱스 하나: 열 번을 여닫고도 인덱스 하나보다 적게 늘었으면 재사용되는 것이다.
+TAB_MEMORY_GROWTH_DIVISOR=1
 
 tab_memory_index_kb_from() {
     printf '%s\n' "$1" | sed -nE 's/.*\[AC-3\] 인덱스 ([0-9]+) KB.*/\1/p' | tail -1
 }
 
 tab_memory_growth_kb_from() {
-    printf '%s\n' "$1" | sed -nE 's/.*회당 증가 ([0-9]+) KB.*/\1/p' | tail -1
+    printf '%s\n' "$1" | sed -nE 's/.*총 증가 ([0-9]+) KB.*/\1/p' | tail -1
 }
 
 check_tab_memory_reuse() {
@@ -112,10 +115,10 @@ check_tab_memory_reuse() {
     fi
     limit_kb=$(( index_kb / TAB_MEMORY_GROWTH_DIVISOR ))
     if [ "$growth_kb" -gt "$limit_kb" ]; then
-        fail "탭 여닫기 회당 ${growth_kb}KB 증가 > ${limit_kb}KB — 닫기가 인덱스를 놓지 않는다 (AC-3)"
+        fail "탭 여닫기 총 ${growth_kb}KB 증가 > 인덱스 하나 ${limit_kb}KB — 닫기가 인덱스를 놓지 않는다 (AC-3)"
         return
     fi
-    pass "탭 여닫기 회당 ${growth_kb}KB (인덱스 ${index_kb}KB, 상한 ${limit_kb}KB, 격리 측정)"
+    pass "탭 여닫기 총 ${growth_kb}KB (인덱스 하나 ${index_kb}KB, 격리 측정)"
 }
 
 test_count_from() {
@@ -256,18 +259,18 @@ self_test() {
     # 5) AC-3 메모리 판정기도 양방향으로. 이 검사는 격리에서만 유효하므로 파서가 죽으면
     #    누수가 조용히 통과한다 — 그게 이 항목을 만든 이유 자체다.
     FAILURES=0
-    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 회당 증가 1030 KB (10회)" >/dev/null 2>&1
+    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 총 증가 10300 KB (10회)" >/dev/null 2>&1
     if [ "$FAILURES" -gt 0 ]; then
-        printf '  ok: 탭 메모리 판정기가 누수(회당 1030KB)를 잡는다\n'
+        printf '  ok: 탭 메모리 판정기가 누수(총 10300KB)를 잡는다\n'
     else
         printf '  FAIL: 누수를 통과시켰다\n'
         status=1
     fi
 
     FAILURES=0
-    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 회당 증가 120 KB (10회)" >/dev/null 2>&1
+    check_tab_memory_reuse "[AC-3] 인덱스 5400 KB · 총 증가 1300 KB (10회)" >/dev/null 2>&1
     if [ "$FAILURES" -eq 0 ]; then
-        printf '  ok: 정상 재사용(회당 120KB)은 통과시킨다 (오탐 없음)\n'
+        printf '  ok: 정상 재사용(총 1300KB)은 통과시킨다 (오탐 없음)\n'
     else
         printf '  FAIL: 정상을 누수로 잡는다 — 오탐이다\n'
         status=1

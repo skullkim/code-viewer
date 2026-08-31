@@ -227,18 +227,26 @@ struct WorkspaceMemoryReuseTests {
         }
         let after = await workspace.memoryFootprint().processFootprintBytes
 
-        let growthPerCycle = (after - baseline) / cycles
+        // **총 증가로 판정한다. 회당이 아니다.** 회차를 늘려 가며 각각 새 프로세스에서 재 보니
+        // 총 증가가 회차와 **무관하게** 일정했다:
+        //
+        //     10회 → 1312 KB      40회 →  848 KB
+        //     20회 →  704 KB      80회 →  768 KB
+        //
+        // 누수라면 80회가 10MB 쪽이어야 한다. 일정하다는 것은 **한 번 치르는 정착 비용**이라는
+        // 뜻이고, 그래서 "회당"으로 나누면 회차가 늘수록 작아진다(131→9KB) — 줄어드는 게
+        // 좋아지는 것처럼 보이지만 실은 분모만 커진 것이다. 그 수를 판정에 쓰면 회차를 늘리는
+        // 것만으로 통과시킬 수 있다.
+        let totalGrowth = after - baseline
         // gate.sh 가 이 줄을 읽어 판정한다. 형식을 바꾸면 그쪽 파서와 자체 검사도 같이 고쳐라.
         print(String(
-            format: "[AC-3] 인덱스 %d KB · 회당 증가 %d KB (%d회)",
-            indexCostInBytes / 1024, growthPerCycle / 1024, cycles
+            format: "[AC-3] 인덱스 %d KB · 총 증가 %d KB (%d회)",
+            indexCostInBytes / 1024, totalGrowth / 1024, cycles
         ))
 
-        // 증가율 판정은 여기서 하지 않는다 — 위 주석 참조. gate.sh 격리 스텝이 한다.
-        // 경계는 직관이 아니라 두 실측값 사이에서 골랐다(격리 기준): 정상 회당 약 0.12MB,
-        // 닫기를 무력화한 변이 약 1.01MB. 새는 쪽이 인덱스 값(5MB)만큼 늘지 **않는다** —
-        // 할당자가 페이지를 압축하고 공유한다. 그래서 "인덱스 하나만큼 늘 것"이라는 직관으로
-        // 경계를 잡으면 변이를 놓친다. 1/2 과 1/4 로 두 번 놓쳤다.
+        // 판정은 여기서 하지 않는다 — 위 주석 참조. gate.sh 격리 스텝이 한다.
+        // 상한은 **인덱스 하나**다: 열 번을 여닫고도 인덱스 하나보다 적게 늘었다면 재사용되고
+        // 있다는 뜻이고, 인덱스 하나를 넘겼다면 최소 한 벌이 남은 것이다.
         //
         // 여기서는 부하와 무관한 사실만 단언한다.
         #expect(await workspace.session(for: warmUp.tab.id) == nil)
