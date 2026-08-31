@@ -424,3 +424,41 @@ struct RemainingAcceptanceTests {
         await workspace.shutDown()
     }
 }
+
+/// Saving still reaches the index after the editor is restarted.
+///
+/// The workspace subscribes to `savedFiles()` once, when the first project opens. A restart tears
+/// the session's channel down and builds a new one, so the question is whether that subscription
+/// survives it — if it does not, saves stop reindexing and nothing says so: the user edits, saves,
+/// and search quietly answers with yesterday's symbols.
+@Suite("재기동 후에도 저장이 인덱스에 닿는다 — 워크스페이스 경로", .serialized)
+struct WorkspaceSaveAfterRestartTests {
+
+    @Test("편집기를 재기동해도 저장이 인덱스에 반영된다")
+    func savingStillReindexesAfterAnEditorRestart() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/App.kt", contents: "class Application\n")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+        let tab = try await workspace.openProject(at: fixture.rootURL)
+        let session = try #require(await workspace.session(for: tab.tab.id))
+
+        try await workspace.editorSession.restart()
+        #expect(await workspace.editorSession.state() == .connected)
+
+        try await workspace.editorSession.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        try await workspace.editorSession.sendKeys("ofun addedAfterRestart() {}<Esc>")
+        try await Task.sleep(for: .milliseconds(200))
+        try await workspace.editorSession.sendKeys(":write<CR>")
+
+        let deadline = Date().addingTimeInterval(3)
+        var found: [SymbolDefinition] = []
+        while Date() < deadline {
+            found = await session.definitions(named: "addedAfterRestart")
+            if !found.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        #expect(found.count == 1, "재기동 뒤 저장이 인덱스에 닿지 않는다 — 구독이 끊겼다")
+        await workspace.shutDown()
+    }
+}
