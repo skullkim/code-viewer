@@ -17,6 +17,13 @@ public struct MainWindowView: View {
     private let model: AppModel
     private let search: SearchModel
 
+    /// Who holds the keyboard, for the whole window.
+    ///
+    /// Owned here rather than by any one surface, because the question only has a single
+    /// answer if a single thing answers it. While each view decided for itself they
+    /// disagreed, and closing the symbol-search modal left the editor unreachable.
+    @State private var focus = KeyboardFocusCoordinator()
+
     public init(model: AppModel, search: SearchModel) {
         self.model = model
         self.search = search
@@ -26,6 +33,11 @@ public struct MainWindowView: View {
         @Bindable var search = search
 
         GeometryReader { proxy in
+            let tabBar = ProjectTabBarPresentation.make(
+                tabs: model.tabs.descriptors(),
+                activeTabID: model.tabs.activeTabID,
+                barWidth: proxy.size.width
+            )
             // Widths the user dragged to and panes they hid are both restored on launch
             // (REQ-011 AC-3). Hiding gives the space back to the editor, and a neighbour
             // that was squeezed by the hidden pane reclaims its preferred width.
@@ -56,6 +68,24 @@ public struct MainWindowView: View {
 
                 Divider()
 
+                // A fixed chrome row, never a share of the remainder (ADR-0108). The editor
+                // once grew into the status bar and pushed it off screen; a third fixed row
+                // is a third chance to repeat that, so the height comes from the layout and
+                // the bar is never asked how tall it would like to be.
+                //
+                // Shown whenever a project is open, including with a single tab (§12 ruling
+                // 1): the toolbar's project popup was removed, so hiding the bar would
+                // leave the open project's name nowhere on screen.
+                if tabBar.isVisible {
+                    ProjectTabBarView(
+                        bar: tabBar,
+                        onAction: { action in Task { await performTabAction(action) } }
+                    )
+                    .frame(height: layout.tabBarHeight)
+
+                    Divider()
+                }
+
                 panes(shell: shell, windowWidth: proxy.size.width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -82,6 +112,11 @@ public struct MainWindowView: View {
                         query: search.symbolSearchQuery,
                         onAction: { action in Task { await perform(action) } }
                     )
+                    .onAppear { focus.surfaceDidOpen(.symbolSearchField) }
+                    // Returns the keyboard to whoever had it. Without this the modal
+                    // borrows and never gives back, and ⌘P — the core flow — ends the
+                    // session's ability to type.
+                    .onDisappear { focus.surfaceDidClose(.symbolSearchField) }
                 }
             }
         }
@@ -175,11 +210,15 @@ public struct MainWindowView: View {
             EditorGridView(
                 frame: model.gridFrame,
                 isInputBlocked: model.isEditorInputBlocked,
+                editorMode: model.editorStatus?.mode ?? .normal,
+                inputMode: model.inputMode,
+                ownsKeyboard: focus.owner == .editor,
                 onKey: { notation in Task { await model.sendKeys(notation) } },
                 onMouse: { event in Task { await model.sendMouse(event) } },
                 onGridSizeChange: { columns, rows in
                     Task { await model.resizeGrid(columns: columns, rows: rows) }
-                }
+                },
+                onClaimKeyboard: { focus.userFocused(.editor) }
             )
 
             // The overlay covers the editor and nothing else: the index outlives the edit
@@ -223,10 +262,39 @@ public struct MainWindowView: View {
                     query: search.textSearchQuery,
                     mode: search.textSearchMode,
                     selectedItemID: search.selectedTextSearchItemID,
-                    onAction: { action in Task { await perform(action) } }
+                    // The field bound `.focused` and nothing ever set it, so it never took
+                    // the keyboard and REQ-008 had no way in from the UI at all.
+                    hasKeyboard: focus.owner == .textSearchField,
+                    onAction: { action in Task { await perform(action) } },
+                    onClaimKeyboard: { focus.userFocused(.textSearchField) }
                 )
+                // The panel had no open path at all, so its field could never be told it
+                // had the keyboard: typing there went to the editor and REQ-008 had no
+                // route from the UI. The modal had `.onAppear` and the panel did not —
+                // twice over, once in the views and once in the coordinator.
+                .onAppear { focus.surfaceDidOpen(.textSearchField) }
+                .onDisappear { focus.surfaceDidClose(.textSearchField) }
             }
         )
+    }
+
+    // MARK: 탭
+
+    /// Routes what the tab bar asks for (REQ-012 AC-1·AC-3·AC-5).
+    ///
+    /// Closing is a request rather than an instruction: a tab with unsaved work has to go
+    /// through the confirmation sheet first (W-13). Until that sheet exists, a close is
+    /// carried out directly — and that is a gap worth seeing rather than hiding, because
+    /// the alternative is a close button that silently does nothing.
+    private func performTabAction(_ action: ProjectTabBarAction) async {
+        switch action {
+        case .activate(let tabID):
+            model.tabs.activate(id: tabID)
+        case .requestClose:
+            await model.closeProject()
+        case .openProject:
+            await MenuCommandRouter.perform(.openProject, model: model, search: search)
+        }
     }
 
     // MARK: Commands

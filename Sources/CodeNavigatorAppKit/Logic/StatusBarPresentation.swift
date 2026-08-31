@@ -113,6 +113,24 @@ extension StatusBarPresentation {
 
     // MARK: Left
 
+    /// Names the failure the chip is reporting.
+    ///
+    /// One label used to serve all four. QA measured the case that makes that a lie: Neovim
+    /// was installed, its process was running, and it had launched in 20ms moments before —
+    /// it had only missed the handshake deadline. "Neovim 없음" sent the user to install
+    /// something they already had.
+    ///
+    /// Every case is listed rather than defaulted, so a new failure kind has to be given
+    /// words instead of quietly inheriting the wrong ones.
+    private static func label(for kind: EditorStartupFailureKind) -> String {
+        switch kind {
+        case .notInstalled: return "Neovim 없음"
+        case .versionTooOld: return "버전 낮음"
+        case .unresponsive: return "응답 없음"
+        case .launchFailed: return "기동 실패"
+        }
+    }
+
     private static func segment(
         sessionState: EditorSessionState,
         editorStatus: EditorStatus?,
@@ -123,8 +141,12 @@ extension StatusBarPresentation {
         switch sessionState {
         case .disconnected:
             return InputModeSegment(primaryLabel: "편집 불가", secondaryLabel: "세션 끊김", tone: .danger)
-        case .startupFailed:
-            return InputModeSegment(primaryLabel: "편집 불가", secondaryLabel: "Neovim 없음", tone: .danger)
+        case .startupFailed(let failure):
+            return InputModeSegment(
+                primaryLabel: "편집 불가",
+                secondaryLabel: Self.label(for: failure.kind),
+                tone: .danger
+            )
         case .notStarted, .connecting, .connected:
             break
         }

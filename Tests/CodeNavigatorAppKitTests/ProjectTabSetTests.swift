@@ -13,8 +13,8 @@ import CodeNavigatorContract
 @Suite("ProjectTabSet — 탭이 상태의 단위 (REQ-012 AC-2·AC-3·AC-5, INV-5)")
 struct ProjectTabSetTests {
 
-    private func makeTab(_ name: String, dirtyBuffers: Int = 0) -> ProjectTab {
-        ProjectTab(
+    private func makeTab(_ name: String, dirtyBuffers: Int = 0) -> ProjectTabState {
+        ProjectTabState(
             id: "/tmp/\(name)",
             rootPath: "/tmp/\(name)",
             name: name,

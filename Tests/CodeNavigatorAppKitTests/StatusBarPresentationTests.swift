@@ -238,3 +238,69 @@ struct StatusBarPresentationTests {
         }
     }
 }
+
+/// The status-bar chip must name the failure it actually is (D-10).
+///
+/// One label read "Neovim 없음" for every startup failure. QA measured the case that makes
+/// it a lie: Neovim was installed, the process was running, and it had launched in 20ms
+/// moments earlier — it had simply not answered `nvim_get_api_info` in time. The chip sent
+/// the user to install something they already had.
+@Suite("상태바 편집 불가 칩 — 실패 종류를 구분한다 (D-10, REQ-004 AC-1)")
+struct EditorFailureChipTests {
+
+    /// Goes through the public entry point, so this measures what the status bar shows.
+    private func segment(for kind: EditorStartupFailureKind) -> InputModeSegment {
+        StatusBarPresentation.make(
+            sessionState: .startupFailed(EditorStartupFailure(
+                kind: kind,
+                reason: "테스트",
+                searchedPaths: ["/usr/bin"],
+                requiredVersion: "0.9.0",
+                foundVersion: kind == .versionTooOld ? "0.8.0" : nil
+            )),
+            editorStatus: nil,
+            indexState: .ready,
+            inputMode: .vim,
+            message: nil,
+            projectRoot: "/repo",
+            layout: ShellLayout.resolve(windowSize: CGSize(width: 1280, height: 800))
+        ).modeSegment
+    }
+
+    @Test("설치되지 않은 경우에만 없다고 말한다")
+    func onlyAMissingEditorIsCalledMissing() {
+        #expect(segment(for: .notInstalled).secondaryLabel == "Neovim 없음")
+    }
+
+    @Test("응답이 없는 것을 없다고 말하지 않는다")
+    func anUnresponsiveEditorIsNotCalledMissing() {
+        // The measured case. Saying "없음" here is not a wording preference — it is the
+        // interface asserting something the user can see is false.
+        let label = segment(for: .unresponsive).secondaryLabel
+        #expect(label != "Neovim 없음")
+        #expect(label == "응답 없음")
+    }
+
+    @Test("버전이 낮은 것과 기동 실패도 각각 다르게 말한다")
+    func eachFailureKindGetsItsOwnLabel() {
+        #expect(segment(for: .versionTooOld).secondaryLabel == "버전 낮음")
+        #expect(segment(for: .launchFailed).secondaryLabel == "기동 실패")
+    }
+
+    @Test("모든 실패 종류가 서로 다른 문구를 갖는다")
+    func noTwoFailureKindsShareALabel() {
+        // A `default:` arm would quietly give a new failure kind the wrong words, which is
+        // the shape of the defect being fixed.
+        let labels = EditorStartupFailureKind.allCases.map { segment(for: $0).secondaryLabel }
+        #expect(Set(labels).count == EditorStartupFailureKind.allCases.count)
+        #expect(labels.allSatisfy { !$0.isEmpty })
+    }
+
+    @Test("어떤 실패든 편집이 불가하다는 사실은 그대로 말한다")
+    func everyFailureStillSaysEditingIsUnavailable() {
+        for kind in EditorStartupFailureKind.allCases {
+            #expect(segment(for: kind).primaryLabel == "편집 불가")
+            #expect(segment(for: kind).tone == .danger)
+        }
+    }
+}

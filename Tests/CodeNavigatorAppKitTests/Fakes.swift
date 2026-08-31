@@ -1,5 +1,6 @@
 import Foundation
 import CodeNavigatorContract
+@testable import CodeNavigatorAppKit
 
 /// Fakes for the two engine protocols.
 ///
@@ -241,5 +242,44 @@ final class FakeEditorSession: EditorSession, @unchecked Sendable {
 
     func emitSaved(_ file: SavedFile) {
         locked { savedContinuation }?.yield(file)
+    }
+}
+
+
+/// Records what the application asked the workspace to open.
+///
+/// Lives here rather than in one suite's file because several suites build an `AppModel`
+/// and therefore need it — the visual regression gate among them. While it sat inside
+/// `AppModelCommandTests`, an edit to that one file could stop someone else's gate from
+/// compiling, which is a coupling nobody chose (frontend-junior raised it after it happened).
+/// Records what the shell asked the engine to open, so opening a project can be checked
+/// without an engine. The two contract protocols each own half of that operation and
+/// neither expresses that the halves move together.
+final class RecordingWorkspace: SingleProjectWorkspace, @unchecked Sendable {
+    private let lock = NSLock()
+    private var opened: [(root: URL, columns: Int, rows: Int)] = []
+    var openError: (any Error)?
+
+    /// A synchronous critical section. `NSLock.lock()` cannot be called from an async
+    /// context, and `openWorkspace` is reached from one.
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    var openedRoots: [URL] {
+        locked { opened.map(\.root) }
+    }
+
+    var lastGridSize: (columns: Int, rows: Int)? {
+        locked { opened.last.map { ($0.columns, $0.rows) } }
+    }
+
+    func openWorkspace(at projectRoot: URL, columns: Int, rows: Int) async throws {
+        if let openError {
+            throw openError
+        }
+        locked { opened.append((projectRoot, columns, rows)) }
     }
 }

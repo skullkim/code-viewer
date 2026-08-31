@@ -12,8 +12,13 @@ final class EditorGridNSView: NSView {
 
     var frameToDraw: GridFrame?
     var isInputBlocked = false
+    /// What Neovim is doing, so a press can be read as a command or as prose (REQ-014).
+    var editorMode: EditorMode = .normal
+    var inputMode: InputMode = .vim
 
     var onKey: ((String) -> Void)?
+    /// Tells the coordinator the user clicked here, so the rest of the window agrees.
+    var onClaimKeyboard: (() -> Void)?
     var onMouse: ((EditorMouseEvent) -> Void)?
     var onGridSizeChange: ((Int, Int) -> Void)?
 
@@ -64,8 +69,32 @@ final class EditorGridNSView: NSView {
         // While an overlay is up the session cannot accept input. Dropping keys is chosen
         // over queueing them, so nothing is replayed into a session that may never arrive.
         guard !isInputBlocked else { return }
-        guard let notation = KeyNotation.notation(for: KeyStroke(event)) else { return }
-        onKey?(notation)
+        // REQ-014 · D-13: the mode picks the path. Insert mode goes through the input
+        // context so the IME can combine jamo into syllables — without it the buffer gets
+        // `ㅎㅏㄴㄱㅡㄹ` where the user typed `한글` (QA measured 18 bytes on disk instead
+        // of 6). Normal and visual translate the physical key instead, because `ㅑ` is not
+        // `i` and Vim cannot read it.
+        switch EditorKeyInput.route(
+            for: KeyStroke(event),
+            editorMode: editorMode,
+            inputMode: inputMode,
+            hasMarkedText: hasMarkedText(),
+            latinCharacter: SystemKeyLayout.latinCharacter(forKeyCode:)
+        ) {
+        case .interpretForComposition:
+            interpretKeyEvents([event])
+
+        case .notation(let notation):
+            guard !notation.isEmpty else { return }
+            onKey?(notation)
+
+        case .commitThenNotation(let notation):
+            // Leaving insert mid-composition would throw the syllable away: the user typed
+            // `한`, pressed Escape believing it was written, and it never reached the
+            // buffer. Commit first, then transition.
+            commitMarkedText()
+            onKey?(notation)
+        }
     }
 
     /// Returning false hands Command combinations to the menu bar and lets everything else
@@ -73,6 +102,24 @@ final class EditorGridNSView: NSView {
     /// Control chord Vim needs reaches Neovim untouched.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         false
+    }
+
+    // MARK: 조합 (NSTextInputClient)
+
+    /// What the input method is still composing — not in Neovim's buffer yet.
+    private var markedText = ""
+
+    /// Sends whatever is being composed and clears it.
+    ///
+    /// Called before leaving insert mode. Composition holds text the buffer has never seen,
+    /// so a transition that does not commit first is a silent loss of exactly the kind this
+    /// change exists to remove.
+    private func commitMarkedText() {
+        guard !markedText.isEmpty else { return }
+        let pending = markedText
+        markedText = ""
+        inputContext?.discardMarkedText()
+        onKey?(pending)
     }
 
     // MARK: Mouse
@@ -86,26 +133,37 @@ final class EditorGridNSView: NSView {
         // This runs even when input is blocked: "Neovim is not listening" is not the same
         // as "this is not where you type", and dropping focus would leave the user with
         // nowhere to type once the session came back.
+        onClaimKeyboard?()
         window?.makeFirstResponder(self)
         forward(event, action: .press)
     }
 
-    /// Takes the keyboard on appearance, but only if nothing else has claimed it.
+    /// Takes the keyboard, because the coordinator says this is the editor's turn.
     ///
-    /// The editor is where typing goes by default, so requiring a click before the first
-    /// keystroke would be wrong. The condition is what keeps that from becoming a bug of
-    /// its own: SwiftUI updates this view on every frame, and an unconditional grab would
-    /// pull the caret out of the symbol-search field mid-query. A window that is its own
-    /// first responder is one where nobody has claimed the keyboard.
-    func takeFocusIfUnclaimed() {
-        guard let window, window.firstResponder === window else { return }
+    /// The claim is unconditional by design. An earlier version only claimed when nobody
+    /// else held the keyboard, which reads as safe and was the defect: once a modal's field
+    /// editor had taken it, "nobody holds it" was never true again, so closing the modal
+    /// left the editor unreachable and even clicking it did not recover. Measured live
+    /// after ⌘P.
+    ///
+    /// What keeps this from yanking the caret out of a search field is not a check on the
+    /// current responder — it is that the coordinator only says `.editor` when no other
+    /// surface owns the keyboard (`KeyboardFocusCoordinator`). The decision moved to where
+    /// the application state is, and this view just carries it out.
+    func claimKeyboard() {
+        guard let window, window.firstResponder !== self else { return }
         window.makeFirstResponder(self)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        takeFocusIfUnclaimed()
+        if shouldOwnKeyboard {
+            claimKeyboard()
+        }
     }
+
+    /// Whether the coordinator has given this view the keyboard.
+    var shouldOwnKeyboard = true
     override func mouseDragged(with event: NSEvent) { forward(event, action: .drag) }
     override func mouseUp(with event: NSEvent) { forward(event, action: .release) }
 
@@ -132,21 +190,115 @@ final class EditorGridNSView: NSView {
     }
 }
 
+/// Marked as `@preconcurrency` because `NSTextInputClient` is not actor-isolated in the SDK
+/// while every call arrives on the main thread — the input method talks to views, and views
+/// are main-actor. Declaring it this way keeps the isolation honest rather than scattering
+/// `assumeIsolated` through ten methods.
+extension EditorGridNSView: @preconcurrency NSTextInputClient {
+
+    /// The composed text, arriving when the input method commits it.
+    ///
+    /// This is where `한` shows up after `ㅎ`, `ㅏ` and `ㄴ` — one syllable rather than
+    /// three jamo. Whatever arrives is forwarded unchanged: the application does not decide
+    /// what Korean composes to, the input method does.
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        markedText = ""
+        guard !text.isEmpty else { return }
+        onKey?(text)
+    }
+
+    /// Text the input method is still working on.
+    ///
+    /// Deliberately not sent to Neovim: it is not committed, and putting it in the buffer
+    /// would leave characters there that the user may still replace or cancel. It is held
+    /// so that leaving insert mode can commit it (`commitMarkedText`).
+    ///
+    /// Nothing draws it yet, so a syllable is invisible while being composed. That is a
+    /// real gap and it is recorded as one — it makes typing awkward, not wrong.
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        markedText = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+    }
+
+    func unmarkText() {
+        markedText = ""
+    }
+
+    func selectedRange() -> NSRange {
+        NSRange(location: 0, length: 0)
+    }
+
+    func markedRange() -> NSRange {
+        markedText.isEmpty
+            ? NSRange(location: NSNotFound, length: 0)
+            : NSRange(location: 0, length: markedText.utf16.count)
+    }
+
+    func hasMarkedText() -> Bool {
+        !markedText.isEmpty
+    }
+
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        guard !markedText.isEmpty else { return nil }
+        let clamped = NSRange(location: 0, length: min(range.length, markedText.utf16.count))
+        actualRange?.pointee = clamped
+        return NSAttributedString(string: markedText)
+    }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        [.markedClauseSegment, .glyphInfo, .underlineStyle, .underlineColor]
+    }
+
+    /// Where the input method puts its candidate window.
+    ///
+    /// Anchored to the caret rather than the view's origin, so the candidate list does not
+    /// cover the line being typed.
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let metrics = CellMetrics()
+        let row = CGFloat(frameToDraw?.cursor.row ?? 0)
+        let column = CGFloat(frameToDraw?.cursor.column ?? 0)
+        let caret = NSRect(
+            x: column * metrics.size.width,
+            y: bounds.height - (row + 1) * metrics.size.height,
+            width: metrics.size.width,
+            height: metrics.size.height
+        )
+        return window?.convertToScreen(convert(caret, to: nil)) ?? .zero
+    }
+
+    func characterIndex(for point: NSPoint) -> Int {
+        0
+    }
+}
+
 /// SwiftUI's view of the editor area.
 struct EditorGridView: NSViewRepresentable {
     private let frame: GridFrame?
     private let isInputBlocked: Bool
+    private let editorMode: EditorMode
+    private let inputMode: InputMode
+    /// Whether the coordinator says the editor owns the keyboard right now.
+    private let ownsKeyboard: Bool
     private let onKey: (String) -> Void
     private let onMouse: (EditorMouseEvent) -> Void
     private let onGridSizeChange: (Int, Int) -> Void
+    private let onClaimKeyboard: () -> Void
 
     init(
         frame: GridFrame?,
         isInputBlocked: Bool,
+        editorMode: EditorMode = .normal,
+        inputMode: InputMode = .vim,
+        ownsKeyboard: Bool = true,
         onKey: @escaping (String) -> Void,
         onMouse: @escaping (EditorMouseEvent) -> Void,
-        onGridSizeChange: @escaping (Int, Int) -> Void
+        onGridSizeChange: @escaping (Int, Int) -> Void,
+        onClaimKeyboard: @escaping () -> Void = {}
     ) {
+        self.editorMode = editorMode
+        self.inputMode = inputMode
+        self.ownsKeyboard = ownsKeyboard
+        self.onClaimKeyboard = onClaimKeyboard
         self.frame = frame
         self.isInputBlocked = isInputBlocked
         self.onKey = onKey
@@ -156,6 +308,10 @@ struct EditorGridView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> EditorGridNSView {
         let view = EditorGridNSView()
+        view.shouldOwnKeyboard = ownsKeyboard
+        view.onClaimKeyboard = onClaimKeyboard
+        view.editorMode = editorMode
+        view.inputMode = inputMode
         view.onKey = onKey
         view.onMouse = onMouse
         view.onGridSizeChange = onGridSizeChange
@@ -163,6 +319,10 @@ struct EditorGridView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: EditorGridNSView, context: Context) {
+        view.onClaimKeyboard = onClaimKeyboard
+        view.shouldOwnKeyboard = ownsKeyboard
+        view.editorMode = editorMode
+        view.inputMode = inputMode
         view.onKey = onKey
         view.onMouse = onMouse
         view.onGridSizeChange = onGridSizeChange
@@ -175,9 +335,11 @@ struct EditorGridView: NSViewRepresentable {
             view.needsDisplay = true
         }
 
-        // The view is often added to its window after `viewDidMoveToWindow` would have
-        // been useful, so the claim is retried here. It is conditional, so retrying is
-        // harmless once someone holds the keyboard.
-        view.takeFocusIfUnclaimed()
+        // Retried on every update, which is what makes the keyboard come *back*. The
+        // modal closing is a SwiftUI update, so this is the moment the editor reclaims what
+        // the modal borrowed — the half that was missing before.
+        if ownsKeyboard {
+            view.claimKeyboard()
+        }
     }
 }

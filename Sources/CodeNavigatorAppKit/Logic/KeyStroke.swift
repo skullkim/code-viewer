@@ -134,3 +134,19 @@ extension KeyStroke {
         KeyStroke(keyCode: key.keyCode, characters: nil, charactersIgnoringModifiers: nil, modifiers: modifiers)
     }
 }
+
+extension KeyStroke {
+    /// The same press, reported as a different character.
+    ///
+    /// Used to hand the notation a Latin key recovered from the physical key code, so the
+    /// rest of the rules — chord prefixes, Shift, the `<lt>` escape — keep working on the
+    /// translated character rather than needing a second copy of themselves (REQ-014).
+    func replacingCharacters(with character: String) -> KeyStroke {
+        KeyStroke(
+            keyCode: keyCode,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            modifiers: modifiers
+        )
+    }
+}

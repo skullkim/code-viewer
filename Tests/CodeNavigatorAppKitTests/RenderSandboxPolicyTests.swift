@@ -27,6 +27,43 @@ struct RenderSandboxPolicyTests {
         return kind
     }
 
+    private func isAllowed(_ decision: SandboxDecision) -> Bool {
+        decision.isBlocked == false
+    }
+
+    /// A real project on disk.
+    ///
+    /// The allow cases need real files now: the boundary requires the path to resolve, and
+    /// a string fixture cannot resolve. That is the same property that makes the rule
+    /// enforceable — `realpath` fails on what does not exist.
+    private struct Fixture {
+        let base: URL
+        let root: URL
+
+        init() throws {
+            base = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("sandbox-\(UUID().uuidString)")
+            root = base.appendingPathComponent("project")
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("images"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("styles"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("fonts"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("docs"), withIntermediateDirectories: true)
+            for path in ["images/logo.png", "images/c:logo.png", "styles/site.css", "fonts/body.woff2"] {
+                try Data("x".utf8).write(to: root.appendingPathComponent(path))
+            }
+        }
+
+        func cleanUp() { try? FileManager.default.removeItem(at: base) }
+
+        func decide(_ element: RenderedElement) -> SandboxDecision {
+            RenderSandboxPolicy.decide(element, projectRoot: root.path, isCaseSensitiveVolume: true)
+        }
+    }
+
     // MARK: 원격은 전부 막는다
 
     @Test("원격 이미지·스타일시트·폰트는 종류별로 막힌다")
@@ -81,18 +118,49 @@ struct RenderSandboxPolicyTests {
     // MARK: 루트 안의 로컬은 허용한다
 
     @Test("프로젝트 루트 안의 로컬 이미지는 표시한다")
-    func localImagesInsideTheProjectAreAllowed() {
+    func localImagesInsideTheProjectAreAllowed() throws {
         // INV-6은 로컬 접근을 루트로 **제한**하는 것이지 금지가 아니다. README 이미지
         // 대부분이 여기 해당하고, 전부 막으면 렌더 보기가 쓸모를 잃는다.
-        #expect(decide(.image(source: "/Users/dev/repo/docs/diagram.png")) == .allow)
-        #expect(decide(.image(source: "docs/diagram.png")) == .allow)
-        #expect(decide(.image(source: "file:///Users/dev/repo/docs/diagram.png")) == .allow)
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        #expect(isAllowed(fixture.decide(.image(source: "images/logo.png"))))
+        #expect(isAllowed(fixture.decide(.image(source: fixture.root.appendingPathComponent("images/logo.png").path))))
+        #expect(isAllowed(fixture.decide(.image(source: "file://" + fixture.root.appendingPathComponent("images/logo.png").path))))
     }
 
     @Test("루트 안의 스타일시트·폰트도 허용한다")
-    func localStylesheetsAndFontsInsideTheProjectAreAllowed() {
-        #expect(decide(.stylesheet(source: "styles/site.css")) == .allow)
-        #expect(decide(.font(source: "fonts/body.woff2")) == .allow)
+    func localStylesheetsAndFontsInsideTheProjectAreAllowed() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        #expect(isAllowed(fixture.decide(.stylesheet(source: "styles/site.css"))))
+        #expect(isAllowed(fixture.decide(.font(source: "fonts/body.woff2"))))
+    }
+
+    @Test("허용된 결과가 해석된 절대경로를 싣고 온다")
+    func anAllowedDecisionCarriesTheResolvedPath() throws {
+        // 로더는 참조가 아니라 **이 경로**를 연다. 검사한 경로와 여는 경로가 다르면
+        // 그 사이에 파일이 생겨 판정이 무의미해진다(TOCTOU).
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        guard case .allowFile(let resolved) = fixture.decide(.image(source: "images/logo.png")) else {
+            Issue.record("허용되지 않았다")
+            return
+        }
+        #expect(resolved.hasSuffix("/images/logo.png"))
+        #expect(FileManager.default.fileExists(atPath: resolved))
+    }
+
+    @Test("존재하지 않는 파일은 차단된다 — 해석 실패는 차단이다")
+    func aMissingFileIsBlocked() throws {
+        // 렌더는 존재하는 파일만 로드하므로 잃는 것이 없고, "해석 못 함 = 차단"이
+        // INV-6의 기본값과 같은 방향이다.
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+
+        #expect(blockedKind(fixture.decide(.image(source: "images/absent.png"))) == .outsideProjectRoot)
     }
 
     // MARK: 루트 밖은 막는다
@@ -159,7 +227,7 @@ struct RenderSandboxPolicyTests {
             projectRoot: projectRoot.path,
             isCaseSensitiveVolume: true
         )
-        #expect(decision == .allow, "루트 안의 실제 파일이 막혔다")
+        #expect(isAllowed(decision), "루트 안의 실제 파일이 막혔다")
     }
 
     @Test("탭이 다르면 루트도 다르다 — 다른 탭의 파일은 밖이다")
@@ -181,7 +249,7 @@ struct RenderSandboxPolicyTests {
         // 마크다운에 다이어그램을 박아 넣는 실제 패턴이라 막으면 정당한 문서가 깨진다.
         for mediaType in ["image/png", "image/jpeg", "image/gif", "image/webp"] {
             #expect(
-                decide(.image(source: "data:\(mediaType);base64,iVBORw0K")) == .allow,
+                decide(.image(source: "data:\(mediaType);base64,iVBORw0K")) == .allowInlineData,
                 "\(mediaType)"
             )
         }
@@ -254,5 +322,125 @@ struct RenderSandboxPolicyTests {
         for kind in BlockedResourceKind.allCases {
             #expect(!kind.label.isEmpty, "\(kind.rawValue)")
         }
+    }
+
+    // MARK: `RenderResourcePolicyTests` 에서 옮겨 온 케이스 (중복 정리 시 커버리지 보존)
+
+    @Test("스킴 없는 프로토콜 상대 참조도 원격이다")
+    func protocolRelativeReferencesAreRemote() {
+        // `//evil.com/x.png` 는 페이지의 스킴을 물려받는 **원격** 참조인데 생김새는
+        // 경로다. 옮겨 오기 전 내 정책은 이걸 상대 경로로 읽어 루트 아래로 해석하고
+        // **허용**했다 — 시니어 테스트를 읽지 않고 지웠으면 그대로 남았을 구멍이다.
+        #expect(blockedKind(decide(.image(source: "//evil.com/x.png"))) == .remoteImage)
+
+        guard case .block(_, let detail) = decide(.image(source: "//evil.com/x.png")) else {
+            Issue.record("허용됐다")
+            return
+        }
+        #expect(detail == "evil.com")
+    }
+
+    @Test("루트 자신은 파일이 아니므로 허용하지 않는다")
+    func theRootItselfIsNotAResource() {
+        // `.` 은 루트 디렉토리로 해석된다. 허용하면 렌더러에 **디렉토리를** 인라인하라고
+        // 넘기게 된다. 이것도 옮겨 오기 전에는 허용됐다.
+        #expect(blockedKind(decide(.image(source: "."))) == .outsideProjectRoot)
+        #expect(blockedKind(decide(.image(source: "/Users/dev/repo"))) == .outsideProjectRoot)
+    }
+
+    @Test("경로 안의 콜론을 스킴으로 오해하지 않는다")
+    func aColonInsideAPathIsNotAScheme() throws {
+        // `images/c:logo.png` 는 콜론이 있지만 앞부분에 구분자가 있어 스킴이 아니다.
+        // 스킴으로 읽으면 정당한 파일을 거부한다.
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        #expect(isAllowed(fixture.decide(.image(source: "images/c:logo.png"))))
+    }
+
+    @Test("스킴처럼 생긴 단독 참조는 통과시키지 않는다")
+    func aSchemeShapedReferenceIsNotTreatedAsAPath() {
+        // `c:/x.png` 는 Foundation 도 스킴으로 읽는다(시니어 실측). macOS 경로는 그렇게
+        // 시작하지 않으므로 거부가 안전한 독해다.
+        #expect(blockedKind(decide(.image(source: "c:/x.png"))) == .remoteImage)
+    }
+
+    @Test("루트 안으로 되돌아오는 `..` 는 허용된다")
+    func traversalThatStaysInsideIsAllowed() throws {
+        // 금지된 것은 탈출이지 `..` 라는 글자가 아니다.
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        #expect(isAllowed(fixture.decide(.image(source: "docs/../images/logo.png"))))
+    }
+
+    @Test("루트 안을 가리키는 심링크는 허용된다")
+    func aSymlinkPointingInsideTheRootIsAllowed() throws {
+        // 탈출만 막고 정당한 링크는 통과해야 한다. 한 방향만 테스트하면 "전부 차단"
+        // 정책도 통과한다.
+        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sandbox-inside-\(UUID().uuidString)")
+        let projectRoot = base.appendingPathComponent("project")
+        let assets = projectRoot.appendingPathComponent("assets")
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let real = assets.appendingPathComponent("logo.png")
+        try Data("x".utf8).write(to: real)
+        let link = projectRoot.appendingPathComponent("logo.png")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        let decision = RenderSandboxPolicy.decide(
+            .image(source: link.path), projectRoot: projectRoot.path, isCaseSensitiveVolume: true
+        )
+        #expect(isAllowed(decision), "루트 안을 가리키는 심링크가 차단됐다")
+    }
+
+    // MARK: 회귀 — leaf 가 없어도 심링크 탈출은 막힌다 (리더 재현, 2026-08-30)
+
+    @Test("존재하지 않는 leaf 를 통한 심링크 탈출이 막힌다")
+    func aSymlinkEscapeIsBlockedEvenWhenTheLeafDoesNotExist() throws {
+        // 이 결함은 **문자열 픽스처로는 안 잡힌다** — 그래서 지금까지 안 잡혔다.
+        // `URL.resolvingSymlinksInPath()` 는 leaf 가 없으면 링크를 풀지 않아서,
+        // 미해석 경로가 접두 비교를 통과했다. 실측 결과:
+        //   link/exists.md → 차단 (leaf 존재 → 해석됨)
+        //   link/later.md  → **허용** ← 탈출
+        //   link/a/b.md    → **허용** ← 탈출
+        // 위협 모델이 "신뢰하지 않는 저장소"이고 문서 내용은 공격자가 정한다.
+        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("escape-\(UUID().uuidString)")
+        let root = base.appendingPathComponent("root")
+        let outside = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("link"), withDestinationURL: outside)
+        try Data("x".utf8).write(to: outside.appendingPathComponent("exists.md"))
+
+        for reference in ["link/exists.md", "link/later.md", "link/a/b.md"] {
+            let decision = RenderSandboxPolicy.decide(
+                .image(source: reference), projectRoot: root.path, isCaseSensitiveVolume: true)
+            #expect(decision.isBlocked, "\(reference) 가 루트를 빠져나갔다")
+        }
+    }
+
+    @Test("중간 경로가 심링크여도 루트 안이면 허용된다")
+    func anIntermediateSymlinkStayingInsideIsAllowed() throws {
+        // 반대 방향. 중간 링크를 전부 막아 버리는 구현이면 위 테스트는 통과하면서
+        // 정당한 프로젝트 구조를 깨뜨린다.
+        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("inside-link-\(UUID().uuidString)")
+        let root = base.appendingPathComponent("root")
+        let real = root.appendingPathComponent("real-assets")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        try Data("x".utf8).write(to: real.appendingPathComponent("logo.png"))
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("assets"), withDestinationURL: real)
+
+        let decision = RenderSandboxPolicy.decide(
+            .image(source: "assets/logo.png"), projectRoot: root.path, isCaseSensitiveVolume: true)
+        #expect(!decision.isBlocked, "루트 안을 가리키는 중간 심링크가 차단됐다")
     }
 }

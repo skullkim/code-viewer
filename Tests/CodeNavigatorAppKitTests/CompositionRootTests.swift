@@ -50,6 +50,22 @@ struct CompositionRootTests {
         #expect(!hosting.subviews.isEmpty, "호스팅 뷰가 아무것도 그리지 않았다")
     }
 
+    @Test("탭 바가 생겨도 최소 창에서 상태바가 살아 있다 (ADR-0108)")
+    func theStatusBarSurvivesTheTabBarAtTheSmallestWindow() async {
+        // The prototype lost its status bar to a view that grew instead (ADR-0104), and the
+        // tab bar is a third fixed row — a third chance to repeat it. Laid out at the
+        // window minimum with a project open, which is where the remainder is tightest.
+        let (model, search, _, _) = makeModels()
+        await model.openProject(at: URL(fileURLWithPath: "/tmp/alpha"))
+
+        let hosting = layOutWindow(model: model, search: search, size: CGSize(width: 720, height: 480))
+
+        #expect(!hosting.subviews.isEmpty)
+        let layout = ShellLayout.resolve(windowSize: CGSize(width: 720, height: 480))
+        #expect(layout.contentHeight > 0, "크롬이 잔여를 다 먹으면 3영역이 사라진다")
+        #expect(layout.statusBarHeight == CGFloat(26))
+    }
+
     @Test("프로젝트가 열린 창이 조립되고 레이아웃된다")
     func theProjectWindowLaysOut() {
         let (model, search, _, _) = makeModels()

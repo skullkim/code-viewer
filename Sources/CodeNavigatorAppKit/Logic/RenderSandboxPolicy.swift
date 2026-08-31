@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// What kind of thing the render view refused to load (design 02b §3 W-15).
 public enum BlockedResourceKind: String, Sendable, Hashable, CaseIterable {
@@ -48,8 +49,18 @@ public enum RenderedElement: Sendable, Hashable {
 
 /// Whether an element loads, and if not, under which heading it is reported.
 public enum SandboxDecision: Sendable, Hashable {
-    case allow
+    /// A local file proven inside the root. **The loader must open this exact path** and
+    /// not the reference it came from: checking one path and opening another leaves a
+    /// window in which a file appears between the two, which makes the check meaningless.
+    case allowFile(resolvedPath: String)
+    /// Already inline. There is nothing to fetch and nothing to confine.
+    case allowInlineData
     case block(kind: BlockedResourceKind, detail: String)
+
+    public var isBlocked: Bool {
+        if case .block = self { return true }
+        return false
+    }
 }
 
 /// INV-6, as a decision per element.
@@ -139,6 +150,14 @@ public enum RenderSandboxPolicy {
             return .block(kind: remoteKind, detail: inlineDetail)
         }
 
+        // `//evil.com/x.png` inherits the page's scheme, so it is a network reference that
+        // looks exactly like a path. Without this it falls through to the path branch,
+        // resolves under the project root and is *allowed* — measured, and the reason this
+        // check exists rather than being assumed unnecessary.
+        if source.hasPrefix("//") {
+            return .block(kind: remoteKind, detail: protocolRelativeHost(of: source))
+        }
+
         if let scheme = scheme(of: source) {
             if scheme == "data" {
                 // Leader ruling: raster `data:` images load, everything else does not.
@@ -148,7 +167,7 @@ public enum RenderSandboxPolicy {
                 guard remoteKind == .remoteImage, isAllowedRasterDataImage(source) else {
                     return .block(kind: remoteKind, detail: dataMediaType(of: source) ?? scheme)
                 }
-                return .allow
+                return .allowInlineData
             }
             guard scheme == "file" else {
                 // Every other non-file scheme is blocked, not only the ones that reach the
@@ -158,47 +177,72 @@ public enum RenderSandboxPolicy {
         }
 
         let path = filePath(from: source)
-        guard isInsideProjectRoot(path: path, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume) else {
+        guard let resolved = resolvedPathInsideRoot(
+            path: path, projectRoot: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume
+        ) else {
             return .block(kind: .outsideProjectRoot, detail: source)
         }
-        return .allow
+        return .allowFile(resolvedPath: resolved)
     }
 
-    /// Whether a path resolves to somewhere inside the project root.
+    /// The real path of a reference, if it is provably a file inside the project root.
     ///
-    /// Symlinks are resolved on both sides before comparing. A link *inside* the root that
-    /// points outside it is outside — checking the spelling instead of the destination is
-    /// how a document reads `~/.ssh/config` through a file that looks local. `..` segments
-    /// are collapsed by the same call.
-    public static func isInsideProjectRoot(
+    /// **This is the security boundary, and it is deliberately not `ProjectIdentity`.** That
+    /// function answers "are these two paths the same project" for tab identity (REQ-012
+    /// AC-5); this one answers "may this document read this file". Sharing one function made
+    /// a change for either question silently move the other, and it hid a real escape.
+    ///
+    /// Resolution uses `realpath`, which **fails when the path does not exist** and resolves
+    /// every symlink on the way, including intermediate ones.
+    /// `URL.resolvingSymlinksInPath()` does neither reliably: with a missing leaf it leaves
+    /// the link unresolved, so `root/link/later.md` — where `link` points outside — passed a
+    /// prefix check and was allowed. Measured, not assumed.
+    ///
+    /// Requiring existence costs the render surface nothing: it only ever loads files that
+    /// are there, and "cannot resolve" collapsing to "blocked" is INV-6's default.
+    public static func resolvedPathInsideRoot(
         path: String,
         projectRoot: String,
         isCaseSensitiveVolume: Bool
-    ) -> Bool {
-        // An absolute root, or nothing is inside it.
-        //
-        // `URL(fileURLWithPath: "")` resolves to the process's working directory, so an
-        // unset root would quietly become "wherever the app happens to be running" and
-        // allow every file beneath it. A root that is not an absolute path is not a root.
+    ) -> String? {
         guard projectRoot.hasPrefix("/") else {
-            return false
+            return nil
         }
-        let resolvedRoot = ProjectIdentity.canonical(for: projectRoot, isCaseSensitiveVolume: isCaseSensitiveVolume)
-        guard resolvedRoot.hasPrefix("/") else {
-            return false
+        guard let resolvedRoot = realPath(projectRoot) else {
+            return nil
         }
 
         let absolute = path.hasPrefix("/")
             ? path
             : (projectRoot as NSString).appendingPathComponent(path)
-        let resolvedPath = ProjectIdentity.canonical(for: absolute, isCaseSensitiveVolume: isCaseSensitiveVolume)
-
-        if resolvedPath == resolvedRoot {
-            return true
+        guard let resolvedPath = realPath(absolute) else {
+            // Missing, unreadable, or a broken link. Nothing to prove inside the root.
+            return nil
         }
-        // The separator has to be part of the check, or `/repo-secrets` would count as
-        // being inside `/repo`.
-        return resolvedPath.hasPrefix(resolvedRoot.hasSuffix("/") ? resolvedRoot : resolvedRoot + "/")
+
+        let root = isCaseSensitiveVolume ? resolvedRoot : resolvedRoot.lowercased()
+        let file = isCaseSensitiveVolume ? resolvedPath : resolvedPath.lowercased()
+
+        // The root directory is not a file inside itself.
+        guard file != root else {
+            return nil
+        }
+        // The separator is part of the check, or `/repo-secrets` counts as inside `/repo`.
+        guard file.hasPrefix(root.hasSuffix("/") ? root : root + "/") else {
+            return nil
+        }
+        // The resolved spelling is returned, not the requested one — that is what the
+        // loader opens.
+        return resolvedPath
+    }
+
+    /// `realpath(3)`: full symlink resolution, and nil when the path does not exist.
+    private static func realPath(_ path: String) -> String? {
+        guard let buffer = realpath(path, nil) else {
+            return nil
+        }
+        defer { free(buffer) }
+        return String(cString: buffer)
     }
 
     // MARK: URL 조각
@@ -222,6 +266,13 @@ public enum RenderSandboxPolicy {
             return String(source[source.startIndex..<colon]).lowercased()
         }
         return String(source[source.startIndex..<separator.lowerBound]).lowercased()
+    }
+
+    /// The host of a `//host/path` reference.
+    static func protocolRelativeHost(of source: String) -> String {
+        let withoutSlashes = source.dropFirst(2)
+        let host = withoutSlashes.prefix { $0 != "/" }
+        return host.isEmpty ? source : String(host)
     }
 
     static func host(of source: String) -> String? {

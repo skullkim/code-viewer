@@ -405,6 +405,153 @@ public actor NeovimEditorSession: EditorSession {
     // not write at all from insert mode. A save that silently does not save is the worst of them,
     // because it looks like it worked.
 
+    // MARK: - 저장과 더티 상태
+
+    /// The unsaved files of one project, as project-relative paths.
+    ///
+    /// Scope is decided by **where the file is**, not by which window or tabpage shows it: in the
+    /// one-process model a buffer is global, and a project's buffer may be hidden or live in
+    /// another tabpage. Path containment catches those; window enumeration does not.
+    ///
+    /// A dirty buffer that belongs to **no** project root (the user ran `:e ~/notes.md`) is not
+    /// listed. Closing this tab is not a reason to write a file the tab never owned.
+    public func dirtyFiles(inProjectRoot root: URL) async throws -> [String] {
+        try await dirtyBuffers(inProjectRoot: root).map(\.relativePath).sorted()
+    }
+
+    /// Writes every unsaved file of this project, and reports each one.
+    ///
+    /// `:wa` is not used: measured, it ignores tabpage boundaries and would write **another
+    /// project's** unsaved work when the user asked to close this one — worse than the loss the
+    /// confirmation sheet exists to prevent. Buffers are written individually instead, which is
+    /// also what makes per-file reporting possible.
+    ///
+    /// One refusal does not stop the rest. Stopping at the first failure would leave files
+    /// unsaved that could have been written.
+    public func saveAll(inProjectRoot root: URL) async throws -> SaveAllOutcome {
+        let channel = try requireChannel()
+        let buffers = try await dirtyBuffers(inProjectRoot: root)
+        guard !buffers.isEmpty else {
+            return SaveAllOutcome(savedPaths: [], failures: [])
+        }
+
+        let script = """
+        local handles = ...
+        local saved, failed = {}, {}
+        for _, handle in ipairs(handles) do
+          local ok, message = pcall(function()
+            vim.api.nvim_buf_call(handle, function() vim.cmd('write') end)
+          end)
+          if ok then
+            table.insert(saved, handle)
+          else
+            table.insert(failed, { buffer = handle, reason = tostring(message) })
+          end
+        end
+        return { saved = saved, failed = failed }
+        """
+        let response = try await channel.request("nvim_exec_lua", [
+            .string(script),
+            .array([.array(buffers.map { .integer(Int64($0.handle)) })]),
+        ])
+
+        let relativePathsByHandle = Dictionary(
+            uniqueKeysWithValues: buffers.map { ($0.handle, $0.relativePath) }
+        )
+        var savedPaths: [String] = []
+        var failures: [SaveFailure] = []
+
+        for field in response.mapValue ?? [] {
+            switch field.key.stringValue {
+            case "saved":
+                savedPaths = (field.value.arrayValue ?? []).compactMap {
+                    $0.integerValue.flatMap { relativePathsByHandle[$0] }
+                }
+            case "failed":
+                failures = (field.value.arrayValue ?? []).compactMap { entry in
+                    var handle: Int?
+                    var reason = ""
+                    for pair in entry.mapValue ?? [] {
+                        switch pair.key.stringValue {
+                        case "buffer": handle = pair.value.integerValue
+                        case "reason": reason = pair.value.stringValue ?? ""
+                        default: break
+                        }
+                    }
+                    guard let handle, let path = relativePathsByHandle[handle] else { return nil }
+                    return SaveFailure(path: path, reason: reason)
+                }
+            default:
+                break
+            }
+        }
+
+        return SaveAllOutcome(savedPaths: savedPaths.sorted(), failures: failures)
+    }
+
+    private struct DirtyBuffer {
+        let handle: Int
+        let relativePath: String
+    }
+
+    private func dirtyBuffers(inProjectRoot root: URL) async throws -> [DirtyBuffer] {
+        let channel = try requireChannel()
+        let script = """
+        local result = {}
+        for _, handle in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_loaded(handle) and vim.bo[handle].modified then
+            local name = vim.api.nvim_buf_get_name(handle)
+            if name ~= '' then
+              table.insert(result, { buffer = handle, path = name })
+            end
+          end
+        end
+        return result
+        """
+        let response = try await channel.request("nvim_exec_lua", [.string(script), .array([])])
+
+        return (response.arrayValue ?? []).compactMap { entry in
+            var handle: Int?
+            var absolutePath: String?
+            for pair in entry.mapValue ?? [] {
+                switch pair.key.stringValue {
+                case "buffer": handle = pair.value.integerValue
+                case "path": absolutePath = pair.value.stringValue
+                default: break
+                }
+            }
+            guard
+                let handle,
+                let absolutePath,
+                let relativePath = Self.projectRelativePath(of: absolutePath, inProjectRoot: root)
+            else {
+                return nil
+            }
+            return DirtyBuffer(handle: handle, relativePath: relativePath)
+        }
+    }
+
+    /// The path relative to the root, or nil when the file is not inside it.
+    ///
+    /// Both sides go through `realpath` first, because Neovim reports the name a buffer was
+    /// opened with and that can differ from the canonical path by a symlink. The root gets a
+    /// trailing separator before the prefix test so a sibling whose name merely starts the same
+    /// way (`/repo-backup` next to `/repo`) is not mistaken for a child — writing files from
+    /// another tree is exactly the failure this scope check exists to prevent.
+    private static func projectRelativePath(of absolutePath: String, inProjectRoot root: URL) -> String? {
+        guard
+            let file = canonicalPath(of: absolutePath),
+            let rootPath = canonicalPath(of: root.path)
+        else {
+            return nil
+        }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard file.hasPrefix(prefix) else {
+            return nil
+        }
+        return String(file.dropFirst(prefix.count))
+    }
+
     public func save() async throws {
         try await runModeIndependently("write")
     }

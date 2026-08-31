@@ -2,7 +2,17 @@ import Foundation
 import Observation
 import CodeNavigatorContract
 
-/// One open project, and everything that belongs to it (ADR-0107, INV-5).
+/// The application's state for one open tab (ADR-0107, INV-5).
+///
+/// Named for what it holds rather than for the tab itself, because the engine now has its
+/// own `ProjectTab` and the two are different things. The engine's is the *identity* of an
+/// open project — canonical root, display name, disambiguator — and it owns that, including
+/// the normalisation that decides when two paths are one project. This one holds what only
+/// the application knows: the tree the user expanded, the searches they ran, the index
+/// state as the tab bar draws it.
+///
+/// Keeping both under one name would have made "which project is this" answerable two ways,
+/// which is the shape of defect this build has closed repeatedly.
 ///
 /// The tab owns its tree and its index rather than reaching into a shared store keyed by
 /// project. That is what makes INV-5 ("한 탭에서의 조작은 다른 탭의 상태를 바꾸지 않는다") a
@@ -14,7 +24,7 @@ import CodeNavigatorContract
 /// would leave no answer to "which copy is the real one" when tabs disagree.
 @MainActor
 @Observable
-public final class ProjectTab: Identifiable {
+public final class ProjectTabState: Identifiable {
 
     /// The canonical identity from `ProjectIdentity.canonical(for:isCaseSensitiveVolume:)`.
     ///

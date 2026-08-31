@@ -14,12 +14,12 @@ import Observation
 @Observable
 public final class ProjectTabSet {
 
-    public private(set) var tabs: [ProjectTab] = []
+    public private(set) var tabs: [ProjectTabState] = []
     public private(set) var activeTabID: String?
 
     public init() {}
 
-    public var activeTab: ProjectTab? {
+    public var activeTab: ProjectTabState? {
         guard let activeTabID else { return nil }
         return tabs.first { $0.id == activeTabID }
     }
@@ -29,7 +29,7 @@ public final class ProjectTabSet {
     /// The existing tab is kept rather than replaced by the newcomer: replacing would
     /// discard the tree and index the user built up, which is the state AC-2 exists to
     /// preserve.
-    public func open(_ tab: ProjectTab) {
+    public func open(_ tab: ProjectTabState) {
         if tabs.contains(where: { $0.id == tab.id }) {
             activeTabID = tab.id
             return

@@ -3,37 +3,6 @@ import Foundation
 import CodeNavigatorContract
 @testable import CodeNavigatorAppKit
 
-/// Records what the shell asked the engine to open, so opening a project can be checked
-/// without an engine. The two contract protocols each own half of that operation and
-/// neither expresses that the halves move together.
-final class RecordingWorkspace: ProjectWorkspace, @unchecked Sendable {
-    private let lock = NSLock()
-    private var opened: [(root: URL, columns: Int, rows: Int)] = []
-    var openError: (any Error)?
-
-    /// A synchronous critical section. `NSLock.lock()` cannot be called from an async
-    /// context, and `openWorkspace` is reached from one.
-    private func locked<T>(_ body: () -> T) -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return body()
-    }
-
-    var openedRoots: [URL] {
-        locked { opened.map(\.root) }
-    }
-
-    var lastGridSize: (columns: Int, rows: Int)? {
-        locked { opened.last.map { ($0.columns, $0.rows) } }
-    }
-
-    func openWorkspace(at projectRoot: URL, columns: Int, rows: Int) async throws {
-        if let openError {
-            throw openError
-        }
-        locked { opened.append((projectRoot, columns, rows)) }
-    }
-}
 
 @MainActor
 @Suite("AppModel 명령 — 입력 배선·정의 이동·프로젝트 열기 (REQ-001·004·005·010)")

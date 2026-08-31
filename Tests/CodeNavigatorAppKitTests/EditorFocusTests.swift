@@ -104,33 +104,41 @@ struct EditorFocusTests {
         #expect(forwarded == ["i"], "창이 보낸 키가 에디터를 거쳐 나가지 않았다")
     }
 
-    @Test("등장 시 아무도 키보드를 안 잡고 있으면 에디터가 가져간다 (REQ-010 AC-1)")
-    func theEditorTakesTheKeyboardOnAppearanceWhenItIsFree() {
-        // Typing should work without clicking first — the editor is where typing goes.
+    @Test("코디네이터가 에디터 차례라고 하면 등장 시 키보드를 가져간다 (REQ-010 AC-1)")
+    func theEditorTakesTheKeyboardOnAppearanceWhenItIsItsTurn() {
         let view = EditorGridNSView()
+        view.shouldOwnKeyboard = true
         let window = makeWindow(view)
-
-        view.takeFocusIfUnclaimed()
 
         #expect(window.firstResponder === view)
     }
 
-    @Test("이미 다른 곳이 키보드를 잡고 있으면 뺏지 않는다")
-    func theEditorDoesNotStealTheKeyboardFromAnyoneElse() {
-        // This is the bug the fix could have introduced. SwiftUI updates the grid on every
-        // frame, so an unconditional grab would yank the caret out of the symbol-search
-        // field while the user is still typing the query.
+    @Test("다른 곳이 잡고 있어도 에디터 차례가 되면 되찾는다 (D-6 잔여)")
+    func theEditorReclaimsTheKeyboardFromWhoeverHasIt() {
+        // The defect this replaced a condition for. The old rule claimed the keyboard only
+        // when nobody held it, which could never become true again once a modal's field
+        // editor had taken it — so closing the modal left the editor unreachable and even
+        // clicking it did not recover. Measured live after ⌘P.
         let view = EditorGridNSView()
         let window = makeWindow(view)
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
-        window.contentView?.addSubview(field)
-        window.makeFirstResponder(field)
-        let claimant = window.firstResponder
+        giveTheKeyboardToSomethingElse(in: window)
+        #expect(window.firstResponder !== view, "사전 조건이 성립하지 않으면 되찾기를 잰 게 아니다")
 
-        view.takeFocusIfUnclaimed()
-        view.takeFocusIfUnclaimed()
+        view.claimKeyboard()
 
-        #expect(window.firstResponder === claimant, "검색어를 치는 도중 캐럿을 뺏으면 검색이 망가진다")
+        #expect(window.firstResponder === view, "모달이 놓은 키보드를 에디터가 되찾지 못한다")
+    }
+
+    @Test("에디터 차례가 아니면 등장해도 가져가지 않는다")
+    func theEditorDoesNotTakeTheKeyboardWhenItIsNotItsTurn() {
+        // The safety that used to live in a check on the current responder now lives in the
+        // coordinator, so this asserts the view honours that answer rather than second
+        // guessing it. Without it, the grid would pull the caret out of the search field on
+        // every SwiftUI update.
+        let view = EditorGridNSView()
+        view.shouldOwnKeyboard = false
+        let window = makeWindow(view)
+
         #expect(window.firstResponder !== view)
     }
 

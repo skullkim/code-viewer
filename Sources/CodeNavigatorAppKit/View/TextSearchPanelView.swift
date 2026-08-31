@@ -21,7 +21,10 @@ public struct TextSearchPanelView: View {
     private let query: String
     private let mode: TextSearchMode
     private let selectedItemID: String?
+    /// Whether the window's focus coordinator has given this panel the keyboard.
+    private let hasKeyboard: Bool
     private let onAction: (TextSearchAction) -> Void
+    private let onClaimKeyboard: () -> Void
 
     @State private var hoveredID: String?
     @FocusState private var isQueryFocused: Bool
@@ -31,13 +34,17 @@ public struct TextSearchPanelView: View {
         query: String,
         mode: TextSearchMode,
         selectedItemID: String? = nil,
-        onAction: @escaping (TextSearchAction) -> Void
+        hasKeyboard: Bool = false,
+        onAction: @escaping (TextSearchAction) -> Void,
+        onClaimKeyboard: @escaping () -> Void = {}
     ) {
         self.panel = panel
         self.query = query
         self.mode = mode
         self.selectedItemID = selectedItemID
+        self.hasKeyboard = hasKeyboard
         self.onAction = onAction
+        self.onClaimKeyboard = onClaimKeyboard
     }
 
     public var body: some View {
@@ -91,6 +98,18 @@ public struct TextSearchPanelView: View {
                     .strokeBorder(inputBorderColor, lineWidth: 1)
             }
             .focused($isQueryFocused)
+            // The field bound `.focused` and nothing ever set it, so it never took the
+            // keyboard: typing into the panel went nowhere and REQ-008 had no route from
+            // the UI at all, while every engine and presentation test passed. The binding
+            // now follows the window's one answer to "who has the keyboard".
+            .onChange(of: hasKeyboard, initial: true) { _, hasIt in
+                isQueryFocused = hasIt
+            }
+            .onChange(of: isQueryFocused) { _, focused in
+                // Clicking the field is the user claiming it — tell the rest of the window
+                // so the editor stops holding on.
+                if focused { onClaimKeyboard() }
+            }
             .onSubmit { onAction(.submit) }
             .accessibilityLabel("검색어")
 

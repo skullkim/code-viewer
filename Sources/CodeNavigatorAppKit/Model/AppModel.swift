@@ -41,6 +41,18 @@ public final class AppModel {
     /// The file tree, which asks the engine on the user's rhythm rather than the engine's.
     public let fileTree: FileTreeModel
 
+    /// The open projects, as tabs (REQ-012, ADR-0107).
+    ///
+    /// The tab bar is the only place the open project's name appears now that the toolbar's
+    /// project popup is gone (02b C-1, §12 ruling 1), so this is not decoration.
+    ///
+    /// **Currently holds at most one tab.** The engine still exposes a single
+    /// `ProjectSession` with no `ProjectOpenOutcome`, so a second project would replace the
+    /// first's index rather than sit beside it — AC-2's instant switching and INV-5's
+    /// isolation need the per-project sessions `03c` adopted but that are not built yet.
+    /// The shape is here so that arrival is a small change; the capability is not claimed.
+    public let tabs = ProjectTabSet()
+
     /// Distinguishes one shown message from the next, so a timer started for an earlier
     /// message cannot wipe a later one off the bar.
     private(set) var statusMessageToken = 0
@@ -49,7 +61,7 @@ public final class AppModel {
 
     private let projectSession: ProjectSession
     private let editorSession: EditorSession
-    private let workspace: ProjectWorkspace
+    private let workspace: SingleProjectWorkspace
     private let storage: KeyValueStore
     private var streamTasks: [Task<Void, Never>] = []
     private var statusMessageExpiryTask: Task<Void, Never>?
@@ -65,7 +77,7 @@ public final class AppModel {
     public init(
         projectSession: ProjectSession,
         editorSession: EditorSession,
-        workspace: ProjectWorkspace,
+        workspace: SingleProjectWorkspace,
         storage: KeyValueStore,
         now: @escaping @Sendable () -> Date
     ) {
@@ -134,6 +146,9 @@ public final class AppModel {
         if state == .ready, wasWorking || indexStatistics == nil {
             Task { await refreshIndexStatistics() }
         }
+        // The tab bar's spinner reads this. Kept in step here rather than derived in the
+        // view, so the bar and the status chip cannot disagree about whether indexing runs.
+        tabs.activeTab?.setIndexState(state)
     }
 
     public func handle(sessionState state: EditorSessionState) {
@@ -345,6 +360,7 @@ public final class AppModel {
 
         projectRootPath = projectRoot.path
         recentProjects.recordOpened(rootPath: projectRoot.path)
+        openTab(for: projectRoot)
         await fileTree.loadProject(name: projectRoot.lastPathComponent, rootPath: projectRoot.path)
     }
 
@@ -352,7 +368,31 @@ public final class AppModel {
     ///
     /// The edit session is left alone. Whether an unsaved buffer should be discarded is
     /// Neovim's decision, not the application's (INV-3).
+    /// Adds the tab for a project that opened, or activates the one already showing it.
+    ///
+    /// Identity comes from `ProjectIdentity`, not from the path as typed: two spellings of
+    /// one directory must share a tab (REQ-012 AC-5), and comparing the raw strings is how
+    /// the same project ends up open twice.
+    private func openTab(for projectRoot: URL) {
+        let path = projectRoot.path
+        let identity = ProjectIdentity.canonical(
+            for: path,
+            isCaseSensitiveVolume: ProjectIdentity.isCaseSensitiveVolume(at: path)
+        )
+        tabs.open(ProjectTabState(
+            id: identity,
+            rootPath: path,
+            name: projectRoot.lastPathComponent,
+            projectSession: projectSession,
+            editorSession: editorSession
+        ))
+        tabs.activeTab?.setIndexState(indexState)
+    }
+
     public func closeProject() async {
+        if let active = tabs.activeTabID {
+            tabs.close(id: active)
+        }
         projectRootPath = nil
         projectOpenError = nil
         definitionCandidates = nil
