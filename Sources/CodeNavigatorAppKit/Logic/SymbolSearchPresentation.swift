@@ -72,6 +72,10 @@ extension SymbolSearchPresentation {
         guard let progress = indexState.progress else {
             return "인덱싱 중 — 결과가 아직 부분적일 수 있습니다"
         }
-        return "인덱싱 중 — 결과가 아직 부분적일 수 있습니다 (\(progress.completed)/\(progress.total))"
+        // 상태바와 같은 형식으로 읽혀야 한다 — 이 모달은 상태바 위에 겹쳐 뜨므로
+        // 한 화면에 두 형식이 동시에 보인다.
+        let completed = GroupedNumberText.string(progress.completed)
+        let total = GroupedNumberText.string(progress.total)
+        return "인덱싱 중 — 결과가 아직 부분적일 수 있습니다 (\(completed)/\(total))"
     }
 }

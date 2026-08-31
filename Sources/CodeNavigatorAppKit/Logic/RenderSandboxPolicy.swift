@@ -246,6 +246,19 @@ public enum RenderSandboxPolicy {
     }
 
     /// `realpath(3)`: full symlink resolution, and nil when the path does not exist.
+    /// The project root as the file system spells it.
+    ///
+    /// Exposed so that navigation can turn an allowed absolute path back into the relative
+    /// one the engine takes, **using the same resolution this file uses everywhere else**. A
+    /// second way of resolving the root is a second answer to "where is the root", and the
+    /// two drift on exactly the inputs that matter (symlinked or `/private`-prefixed roots).
+    public static func resolvedRoot(_ projectRoot: String) -> String? {
+        guard projectRoot.hasPrefix("/") else {
+            return nil
+        }
+        return realPath(projectRoot)
+    }
+
     private static func realPath(_ path: String) -> String? {
         guard let buffer = realpath(path, nil) else {
             return nil

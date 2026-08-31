@@ -471,6 +471,35 @@ else
     grep -rn "TISSelectInputSource" "$REPO_ROOT/Sources" --include="*.swift" | sed 's/^/    /'
 fi
 
+section "프론트엔드: 숫자 형식 단일 소스"
+# 같은 수를 세 경로가 서로 다르게 그리고 있었다 — GroupedNumberText(공용·테스트됨) ·
+# NumberFormatter 사본 2개 · 형식 없는 원시 보간. 실측하면 갈린다: `groupingSeparator` 를
+# "," 로 못박아도 **묶음 크기**는 로케일이 정한다(hi_IN → 1,200,000 이 아니라 12,00,000).
+# 그래서 한국어 로케일 테스트는 이 어긋남을 영원히 못 본다 — 값이 아니라 구조로 잡는다.
+# 상태바와 심볼 검색 모달은 겹쳐 뜨므로 한 화면에 두 형식이 같이 보일 수 있었다.
+# `NumberFormatter(` 로 찾는다 — 낱말로 찾으면 GroupedNumberText 가 "NumberFormatter 를 쓰지
+# 않는 이유"를 적어 둔 주석에 검사가 걸린다(실측). 검사가 자기 근거를 고발하면 안 된다.
+formatter_copies() {
+    grep -rn "NumberFormatter(" "$1" --include="*.swift" 2>/dev/null | wc -l | tr -d ' '
+}
+FORMATTER_COPIES="$(formatter_copies "$REPO_ROOT/Sources")"
+
+# 자기 검사: 사본을 심은 트리에서 실제로 잡히는지. 0 을 반환하는 고장난 검사는 늘 통과한다.
+FORMATTER_PROBE="$(mktemp -d)"
+printf 'let f = NumberFormatter()\n' > "$FORMATTER_PROBE/Leak.swift"
+printf '/// NumberFormatter 를 쓰지 않는다\n' > "$FORMATTER_PROBE/Clean.swift"
+PROBE_HITS="$(formatter_copies "$FORMATTER_PROBE")"
+rm -rf "$FORMATTER_PROBE"
+
+if [ "$PROBE_HITS" -ne 1 ]; then
+    fail "숫자 형식 검사가 고장났다 — 심은 사본 1건을 ${PROBE_HITS}건으로 셌다 (주석만 있는 파일은 세면 안 된다)"
+elif [ "$FORMATTER_COPIES" -eq 0 ]; then
+    pass "사용자에게 보이는 숫자는 GroupedNumberText 한 곳에서만 그려진다 (검사 자기시험 통과)"
+else
+    fail "NumberFormatter 사본이 ${FORMATTER_COPIES}건 — 로케일에 따라 GroupedNumberText 와 다른 묶음이 나온다"
+    grep -rn "NumberFormatter(" "$REPO_ROOT/Sources" --include="*.swift" | sed 's/^/    /'
+fi
+
 section "프론트엔드: 포커스 표면 대칭"
 # D-11 이 두 번 살아남은 자리다. 처음엔 모달만 `.onAppear` 로 포커스를 잡고 검색 패널은
 # 안 잡았고, 코디네이터로 판단을 옮긴 뒤에도 모달만 여는 경로를 갖고 패널은 닫는 경로만

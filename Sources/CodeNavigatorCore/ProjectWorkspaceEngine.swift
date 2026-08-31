@@ -45,9 +45,6 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
 
         let identifier = ProjectTabIdentifier()
         let session = ProjectEngine()
-        // Indexing failure is an open failure: without an index there is nothing to show. Nothing
-        // has been added to the workspace yet, so there is nothing to roll back.
-        try await session.openProject(at: canonical)
 
         sessions[identifier] = session
         let tab = ProjectTab(
@@ -57,6 +54,7 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
         )
         orderedTabs.append(tab)
         activeIdentifier = identifier
+        try await session.openProject(at: canonical)  // MUTATION: 탭을 먼저 만든다
         refreshDisambiguators()
 
         // The editor is an enhancement over the index, never a precondition for it: a project that

@@ -44,13 +44,16 @@ struct MissingTabsSheetView: View {
             HStack {
                 Spacer()
                 Button(presentation.confirmLabel, action: onConfirm)
-                    // Both the default and the cancel action: there is only one way out, so
-                    // Escape has to work as well as Return (02b W-12 accessibility).
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(DesignTokens.Spacing.large)
         .frame(width: Metrics.width)
         .background(DesignTokens.backgroundWindow.dynamicColor)
+        // There is only one way out of this sheet, so Escape has to reach it too — a button
+        // carrying `.defaultAction` answers Return alone, and a dialog that ignores Escape
+        // traps anyone who drives by keyboard. The comment here used to claim both were
+        // wired when only Return was (02b W-12 accessibility).
+        .onExitCommand(perform: onConfirm)
     }
 }

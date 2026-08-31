@@ -166,7 +166,7 @@ public struct FileTreeView: View {
         Circle()
             .fill(row.isCurrentFile ? Color.white : DesignTokens.warningSolid.dynamicColor)
             .frame(width: Metrics.dirtyDotSize, height: Metrics.dirtyDotSize)
-            .help("더티 버퍼 — 저장되지 않은 변경")
+            .help("더티 버퍼 — 저장하지 않은 변경")
     }
 
     // MARK: 색
@@ -222,7 +222,7 @@ public struct FileTreeView: View {
             parts.append("편집 중")
         }
         if row.isDirty {
-            parts.append("저장되지 않은 변경")
+            parts.append("저장하지 않은 변경")
         }
         return parts.joined(separator: ", ")
     }

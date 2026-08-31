@@ -121,4 +121,21 @@ struct SymbolSearchPresentationTests {
         #expect(!SymbolSearchPresentation.make(query: "s", results: [], indexState: .ready, selectedIndex: 0, isLoading: false).showsSpinner)
         #expect(SymbolSearchPresentation.make(query: "s", results: [], indexState: .ready, selectedIndex: 0, isLoading: true).showsSpinner)
     }
+
+    /// 같은 숫자가 화면 두 곳에서 다르게 읽히면 안 된다.
+    ///
+    /// 상태바는 `인덱싱 중 1,200,000/…`, 이 모달은 `(1200000/…)` 이었다. 모달이 상태바 위에
+    /// 겹쳐 뜨므로 **한 화면에 두 형식이 동시에 보인다** — 사용자는 같은 수를 두 수로 읽는다.
+    @Test("진행 숫자는 상태바와 같은 자릿수 구분으로 읽힌다")
+    func theProgressCountIsGroupedLikeEverywhereElse() {
+        let modal = SymbolSearchPresentation.make(
+            query: "abc",
+            results: [],
+            indexState: .indexing(IndexProgress(completed: 1_200_000, total: 3_400_000)),
+            selectedIndex: 0,
+            isLoading: false
+        )
+        #expect(modal.partialResultsNotice?.contains("1,200,000/3,400,000") == true,
+                "자릿수 구분 없이 1200000 으로 나오면 상태바의 1,200,000 과 같은 수로 안 읽힌다")
+    }
 }

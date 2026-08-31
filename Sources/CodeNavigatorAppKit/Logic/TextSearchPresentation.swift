@@ -115,10 +115,11 @@ extension TextSearchPresentation {
         return "\(result.items.count)건 표시 · \(grouped(result.filesSearched)) 파일 검색 · \(duration)"
     }
 
+    /// 자릿수 구분은 한 곳에서만 정한다.
+    ///
+    /// `NumberFormatter` 사본이었다. `groupingSeparator` 를 "," 로 못박아도 **묶음 크기**는
+    /// 로케일이 정하므로(hi_IN 은 12,00,000 으로 끊는다) 같은 수가 화면 위치마다 달라졌다.
     private static func grouped(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        GroupedNumberText.string(value)
     }
 }

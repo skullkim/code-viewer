@@ -53,7 +53,14 @@ is_exempt() {
         # 렌더 파이프라인이 아직 없다. 이 뷰는 문서 몸통을 주입받는 제네릭 껍데기인데,
         # 그 몸통(WKWebView 호스트)이 존재하지 않아 마운트할 대상이 없다. 지금 꽂으면
         # 이 검사기는 초록이 되고 렌더는 안 되는 — 이 검사기가 막으려는 바로 그 상태가 된다.
-        RenderDocumentView) return 0 ;;         # REQ-013 — frontend-junior, 웹뷰 호스트 부재 (2026-08-31)
+        RenderDocumentView) return 0 ;;         # REQ-013 — frontend-junior, 파이프라인 미완 (2026-08-31)
+        # 같은 부채의 다른 절반. 이 뷰가 문서를 그리는 웹뷰인데, `renderResource` 가
+        # `ProjectWorkspace` 프로토콜에 없어 앱 층에서 리소스를 읽을 수 없다. 읽지 못하면
+        # 인라인할 수 없고, 인라인 못 한 문서를 띄우는 것은 그릴 것이 없는 화면이다.
+        # ⚠ 이 줄은 이 검사기가 **오늘 처음으로** 볼 수 있게 된 뷰다 — 그 전까지
+        # `NSViewRepresentable` 은 발견 자체가 안 됐다. 면제는 새로 생긴 부채가 아니라
+        # 원래 있던 사각이 드러난 것이다.
+        RenderWebView) return 0 ;;             # REQ-013 — frontend-junior, 파이프라인 미완 (2026-08-31)
         *) return 1 ;;
     esac
 }
@@ -72,6 +79,12 @@ FORBIDDEN_VIEWS=(PlaceholderPane)
 # checked, so the gate reported "23 views, all mounted" while an unmounted 24th sat beside
 # them. Undiscovered is worse than unmounted — an unmounted view fails loudly, an
 # undiscovered one is counted as absent. The report even reads as reassurance.
+#
+# And a sixth: a view that wraps AppKit conforms to `NSViewRepresentable`, not to `View`.
+# `\bView\b` does not match inside `NSViewRepresentable` — that `View` has no word boundary in
+# front of it — so every such view was invisible here. `EditorGridView`, the surface the whole
+# editor is drawn on, had never once been checked by this script. It happened to be mounted;
+# the point is that nothing here knew that.
 discover_views() {
     # No `^` anchor: a nested declaration can sit anywhere on its line, including after
     # an enclosing `enum Foo {` on the same line. The word boundary keeps `// struct` in a
@@ -84,7 +97,7 @@ discover_views() {
     # over a view, not a view — from being counted: the `View` inside the brackets never
     # reaches the conformance test. Nested generics (`<A<B>>`) would defeat `[^>]*`; no such
     # view exists here, and the self-test below fails loudly if one ever stops being found.
-    grep -rhoE "(^|[^A-Za-z0-9_])struct [A-Za-z0-9_]+(<[^>]*>)?[[:space:]]*:[^{]*\bView\b" "$SOURCES" --include="*.swift" \
+    grep -rhoE "(^|[^A-Za-z0-9_])struct [A-Za-z0-9_]+(<[^>]*>)?[[:space:]]*:[^{]*(\bView\b|\bNSViewRepresentable\b|\bNSViewControllerRepresentable\b)" "$SOURCES" --include="*.swift" \
         | sed -E 's/.*struct ([A-Za-z0-9_]+).*/\1/' \
         | sort -u
 }
@@ -172,6 +185,9 @@ self_test() {
         # 제네릭 뷰. 실제로 놓쳤던 형태다 — 이름 뒤가 `:` 가 아니라 `<` 라서 발견 자체가 안 됐고,
         # 그래서 "전부 마운트됨"이 미마운트 뷰 옆에서 출력됐다.
         'struct QaGenericView<Content: View>: View { var body: some View { EmptyView() } }|제네릭 선언'
+        # AppKit 을 감싸는 뷰. `NSViewRepresentable` 안의 `View` 는 단어 경계가 아니라
+        # `\bView\b` 로는 안 걸렸고, 그래서 **에디터 그리드가 한 번도 검사된 적이 없었다.**
+        'struct QaRepresentableView: NSViewRepresentable { func makeNSView(context: Context) -> NSView { NSView() } }|NSViewRepresentable'
     )
 
     local probe declaration label

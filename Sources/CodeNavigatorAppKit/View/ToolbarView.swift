@@ -57,7 +57,7 @@ struct ToolbarView: View {
                 Circle()
                     .fill(DesignTokens.warningSolid.dynamicColor)
                     .frame(width: Metrics.dirtyDotSize, height: Metrics.dirtyDotSize)
-                    .help("더티 버퍼 — 저장되지 않은 변경")
+                    .help("더티 버퍼 — 저장하지 않은 변경")
             }
         }
         .fixedSize()

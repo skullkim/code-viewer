@@ -45,14 +45,18 @@ struct TabCloseConfirmationTests {
         #expect(sheet(files: files)?.overflowNote == nil)
     }
 
-    @Test("5건을 넘으면 5줄 + 외 n건")
+    @Test("5개를 넘으면 5줄 + 외 n개")
     func moreThanFiveFilesAreSummarised() {
-        // The count has to be the *remainder*, not the total — "외 8건" when three are
+        // The count has to be the *remainder*, not the total — "외 8개" when three are
         // listed above would tell the user there are eleven.
+        //
+        // 단위는 `개`다. 같은 시트의 저장 실패 문구가 파일을 `2개 중 1개`로 세는데 여기만
+        // `외 3건`이면 한 시트 안에서 같은 것이 두 단위로 세어진다 — 사용자는 `건`과 `개`가
+        // 같은 것을 가리키는지 확인할 방법이 없다.
         let files = (1...8).map { "src/file\($0).rs" }
         let sheet = sheet(files: files)
         #expect(sheet?.fileRows.count == 5)
-        #expect(sheet?.overflowNote == "외 3건")
+        #expect(sheet?.overflowNote == "외 3개")
     }
 
     @Test("버튼 셋이 있고 기본은 저장 후 닫기")

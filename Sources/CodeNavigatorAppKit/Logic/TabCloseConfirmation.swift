@@ -95,7 +95,7 @@ extension TabCloseConfirmation {
             title: "'\(projectName)' 탭에 저장하지 않은 변경이 있습니다",
             body: "저장하지 않고 닫으면 다음 파일의 변경 사항이 사라집니다.",
             fileRows: listed,
-            overflowNote: remainder > 0 ? "외 \(remainder)건" : nil,
+            overflowNote: remainder > 0 ? "외 \(remainder)개" : nil,
             buttons: [
                 Button(label: "취소", action: .cancel, isEnabled: !isBusy),
                 Button(label: "저장하지 않고 닫기", action: .closeWithoutSaving, isEnabled: !isBusy),
