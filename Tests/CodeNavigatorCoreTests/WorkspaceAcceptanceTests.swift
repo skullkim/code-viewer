@@ -360,3 +360,67 @@ struct WorkspaceTabSwitchTests {
         await workspace.shutDown()
     }
 }
+
+/// The two remaining scenarios from the retiring suite, on live components.
+@Suite("남은 수용 시나리오 — 살아 있는 부품", .serialized)
+struct RemainingAcceptanceTests {
+
+    /// The save-notification path on its own, with no editor and no watcher involved. Reached
+    /// through `ProjectEngine` directly: the behaviour was always that component's, and the
+    /// retiring engine was only the handle someone happened to grab it by.
+    @Test("저장 통지 경로만으로도 재인덱싱된다 — 파일 감시와 독립적으로")
+    func savedFileSignalReindexesOnItsOwn() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("src/SymbolIndexHolder.kt", contents: "class SymbolIndexHolder")
+        let project = ProjectEngine()
+        try await project.openProject(at: fixture.rootURL)
+
+        let absolutePath = fixture.rootURL.appendingPathComponent("src/SymbolIndexHolder.kt").path
+        try "package com.example\n\nfun savedSignalOnly() {}\n"
+            .write(toFile: absolutePath, atomically: true, encoding: .utf8)
+
+        await project.reindexSavedFile(atAbsolutePath: absolutePath)
+
+        #expect(await project.definitions(named: "savedSignalOnly").count == 1)
+        // 옛 심볼이 남아 있으면 갱신이 아니라 덧붙이기다 — 인덱스가 디스크와 어긋난다(INV-1).
+        #expect(await project.definitions(named: "SymbolIndexHolder").isEmpty)
+        await project.closeProject()
+    }
+
+    /// Reopening after the editor failed has to bring it back. In the workspace this happens on the
+    /// next open, so a user who fixes their install and opens another project gets an editor again
+    /// rather than staying editor-less for the life of the app.
+    @Test("편집기 실패 후 다른 프로젝트를 열면 편집기가 돌아온다")
+    func openingAgainAfterAnEditorFailureRestoresIt() async throws {
+        let alpha = TemporaryProjectFixture()
+        alpha.write("src/Alpha.kt", contents: "class AlphaService")
+        let beta = TemporaryProjectFixture()
+        beta.write("src/Beta.kt", contents: "class BetaService")
+
+        let absentEditor = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("nvim-absent-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: absentEditor) }
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: absentEditor
+        )
+
+        _ = try await workspace.openProject(at: alpha.rootURL)
+        guard case .startupFailed = await workspace.editorSession.state() else {
+            Issue.record("전제가 성립하지 않았다 — 첫 기동이 실패했어야 한다")
+            return
+        }
+
+        // 사용자가 문제를 고쳤다.
+        let realEditor = try NeovimExecutableLocator().locate()
+        try """
+        #!/bin/sh
+        exec \(realEditor.path) "$@"
+        """.write(toFile: absentEditor, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: absentEditor)
+
+        _ = try await workspace.openProject(at: beta.rootURL)
+        #expect(await workspace.editorSession.state() == .connected,
+                "편집기를 고쳤는데도 앱이 사는 동안 돌아오지 않는다")
+        await workspace.shutDown()
+    }
+}
