@@ -39,7 +39,17 @@ public final class AppModel {
     public let shell: ShellPreferences
 
     /// The file tree, which asks the engine on the user's rhythm rather than the engine's.
-    public let fileTree: FileTreeModel
+    /// The active tab's tree, or an empty one when no project is open.
+    ///
+    /// Forwarded rather than owned: the tree belongs to the tab (ADR-0107), and every view
+    /// that reads `model.fileTree` keeps working because the name did not move — only what
+    /// stands behind it.
+    public var fileTree: FileTreeModel {
+        tabs.activeTab?.fileTree ?? emptyFileTree
+    }
+
+    /// Shown while the welcome screen is up. Never loads a project.
+    private let emptyFileTree: FileTreeModel
 
     /// The open projects, as tabs (REQ-012, ADR-0107).
     ///
@@ -59,11 +69,17 @@ public final class AppModel {
 
     // MARK: Collaborators
 
-    private let projectSession: ProjectSession
     private let editorSession: EditorSession
-    private let workspace: SingleProjectWorkspace
+    /// The open projects, owned by the engine (REQ-012).
+    ///
+    /// One session per project lives behind this, which is what lets two projects be open
+    /// at once with both indexes in memory — the thing AC-2's "즉시 전환" needs and the
+    /// single-project seam could not give.
+    private let workspace: any ProjectWorkspace
     private let storage: KeyValueStore
     private var streamTasks: [Task<Void, Never>] = []
+    /// One index subscription per open tab.
+    private var indexWatchers: [ProjectTabIdentifier: Task<Void, Never>] = [:]
     private var statusMessageExpiryTask: Task<Void, Never>?
 
     static let inputModeStorageKey = "inputMode"
@@ -75,19 +91,20 @@ public final class AppModel {
     static let initialGridRows = 24
 
     public init(
-        projectSession: ProjectSession,
         editorSession: EditorSession,
-        workspace: SingleProjectWorkspace,
+        workspace: any ProjectWorkspace,
         storage: KeyValueStore,
         now: @escaping @Sendable () -> Date
     ) {
-        self.projectSession = projectSession
         self.editorSession = editorSession
         self.workspace = workspace
         self.storage = storage
+        self.emptyFileTree = FileTreeModel(
+            projectSession: NoProjectSession(),
+            editorSession: editorSession
+        )
         self.recentProjects = RecentProjectStore(storage: storage, now: now)
         self.shell = ShellPreferences(storage: storage)
-        self.fileTree = FileTreeModel(projectSession: projectSession, editorSession: editorSession)
         // REQ-010 AC-6: the chosen mode comes back after a restart. Vim is the default,
         // and unreadable stored data falls back to it rather than refusing to launch.
         self.inputMode = Self.storedInputMode(in: storage) ?? .vim
@@ -97,12 +114,6 @@ public final class AppModel {
 
     /// Subscribes to every engine stream. Each update lands on the main actor.
     public func start() {
-        streamTasks.append(Task { [weak self] in
-            guard let self else { return }
-            for await state in await projectSession.indexStateUpdates() {
-                self.handle(indexState: state)
-            }
-        })
         streamTasks.append(Task { [weak self] in
             guard let self else { return }
             for await state in await editorSession.stateUpdates() {
@@ -227,7 +238,8 @@ public final class AppModel {
     }
 
     public func refreshIndexStatistics() async {
-        indexStatistics = await projectSession.indexStatistics()
+        guard let session = tabs.activeTab?.projectSession else { return }
+        indexStatistics = await session.indexStatistics()
     }
 
     // MARK: Editor input (REQ-004 AC-2, REQ-010 AC-1)
@@ -270,7 +282,8 @@ public final class AppModel {
         let name = (word ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // A blank query is not a question worth asking the index; the routing rule already
         // knows what to say about it.
-        let definitions = name.isEmpty ? [] : await projectSession.definitions(named: name)
+        let session = tabs.activeTab?.projectSession
+        let definitions = name.isEmpty ? [] : await (session?.definitions(named: name) ?? [])
 
         switch DefinitionRouting.route(symbolName: name, definitions: definitions) {
         case .navigate(let path, let line):
@@ -344,12 +357,9 @@ public final class AppModel {
         projectOpenError = nil
         defer { isOpeningProject = false }
 
+        let outcome: ProjectOpenOutcome
         do {
-            try await workspace.openWorkspace(
-                at: projectRoot,
-                columns: Self.initialGridColumns,
-                rows: Self.initialGridRows
-            )
+            outcome = try await workspace.openProject(at: projectRoot)
         } catch {
             // REQ-001 AC-3: nothing about the open project changes. The tree, the root and
             // the edit session are all left exactly as they were.
@@ -358,37 +368,83 @@ public final class AppModel {
             return
         }
 
-        projectRootPath = projectRoot.path
-        recentProjects.recordOpened(rootPath: projectRoot.path)
-        openTab(for: projectRoot)
-        await fileTree.loadProject(name: projectRoot.lastPathComponent, rootPath: projectRoot.path)
+        // Whether this opened a tab or brought one forward is the engine's answer, not
+        // ours. Deciding it here would mean normalising paths a second way, and two
+        // normalisations disagreeing is how one project ends up open twice (AC-5).
+        let tab = outcome.tab
+        recentProjects.recordOpened(rootPath: tab.rootPath.path)
+
+        // Correctness lives in `ProjectTabSet.open`, which refuses a tab it already holds.
+        // This branch exists to avoid the work: without it, reopening an open project would
+        // fetch a session and reload the whole tree before the set discarded the result.
+        if let existing = tabs.tabs.first(where: { $0.id == tab.id }) {
+            tabs.activate(id: existing.id)
+        } else {
+            guard let session = await workspace.session(for: tab.id) else {
+                projectOpenError = NavigatorError.projectNotFound(path: tab.rootPath.path)
+                return
+            }
+            let state = ProjectTabState(
+                id: tab.id,
+                rootPath: tab.rootPath.path,
+                name: tab.displayName,
+                projectSession: session,
+                editorSession: editorSession
+            )
+            tabs.open(state)
+            watchIndexState(of: state)
+            await state.fileTree.loadProject(name: tab.displayName, rootPath: tab.rootPath.path)
+        }
+
+        projectRootPath = tabs.activeTab?.rootPath
+    }
+
+    /// Brings a tab forward (REQ-012 AC-2).
+    ///
+    /// The engine is told first: it owns which project is active, and the tab bar is a
+    /// display of that rather than a second opinion. No index is rebuilt — every open
+    /// project keeps its own, which is what makes switching immediate.
+    public func activateTab(_ identifier: ProjectTabIdentifier) async {
+        try? await workspace.activate(identifier)
+        tabs.activate(id: identifier)
+        projectRootPath = tabs.activeTab?.rootPath
+    }
+
+    /// Closes a tab, in the engine as well as on screen (REQ-012 AC-3).
+    public func closeTab(_ identifier: ProjectTabIdentifier) async {
+        try? await workspace.closeTab(identifier)
+        indexWatchers[identifier]?.cancel()
+        indexWatchers[identifier] = nil
+        tabs.close(id: identifier)
+        projectRootPath = tabs.activeTab?.rootPath
+        if tabs.tabs.isEmpty {
+            definitionCandidates = nil
+            indexStatistics = nil
+        }
+    }
+
+    /// Follows one tab's index, so a background project's progress is real.
+    ///
+    /// Every open tab is watched at once rather than only the active one: the tab bar draws
+    /// a spinner per tab (W-11), and a tab that only reports while it is in front would
+    /// finish indexing invisibly.
+    private func watchIndexState(of tab: ProjectTabState) {
+        indexWatchers[tab.id] = Task { [weak self, weak tab] in
+            guard let session = tab?.projectSession else { return }
+            for await state in await session.indexStateUpdates() {
+                guard let self, let tab else { return }
+                tab.setIndexState(state)
+                if tab.id == self.tabs.activeTabID {
+                    self.handle(indexState: state)
+                }
+            }
+        }
     }
 
     /// Closes the open project, returning the window to the welcome screen (§3 W-2).
     ///
     /// The edit session is left alone. Whether an unsaved buffer should be discarded is
     /// Neovim's decision, not the application's (INV-3).
-    /// Adds the tab for a project that opened, or activates the one already showing it.
-    ///
-    /// Identity comes from `ProjectIdentity`, not from the path as typed: two spellings of
-    /// one directory must share a tab (REQ-012 AC-5), and comparing the raw strings is how
-    /// the same project ends up open twice.
-    private func openTab(for projectRoot: URL) {
-        let path = projectRoot.path
-        let identity = ProjectIdentity.canonical(
-            for: path,
-            isCaseSensitiveVolume: ProjectIdentity.isCaseSensitiveVolume(at: path)
-        )
-        tabs.open(ProjectTabState(
-            id: identity,
-            rootPath: path,
-            name: projectRoot.lastPathComponent,
-            projectSession: projectSession,
-            editorSession: editorSession
-        ))
-        tabs.activeTab?.setIndexState(indexState)
-    }
-
     public func closeProject() async {
         if let active = tabs.activeTabID {
             tabs.close(id: active)

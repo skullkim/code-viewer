@@ -15,7 +15,7 @@ struct ProjectTabSetTests {
 
     private func makeTab(_ name: String, dirtyBuffers: Int = 0) -> ProjectTabState {
         ProjectTabState(
-            id: "/tmp/\(name)",
+            id: ProjectTabIdentifier(),
             rootPath: "/tmp/\(name)",
             name: name,
             projectSession: FakeProjectSession(),
@@ -68,7 +68,15 @@ struct ProjectTabSetTests {
         set.open(beta)
         #expect(set.activeTabID == beta.id)
 
-        let again = makeTab("alpha")
+        // Same project means the same engine identity — the engine decides sameness now,
+        // and the set only has to not add a tab it already holds.
+        let again = ProjectTabState(
+            id: alpha.id,
+            rootPath: alpha.rootPath,
+            name: alpha.name,
+            projectSession: FakeProjectSession(),
+            editorSession: FakeEditorSession()
+        )
         set.open(again)
 
         #expect(set.tabs.count == 2, "같은 프로젝트로 탭이 하나 더 생겼다")
@@ -100,7 +108,7 @@ struct ProjectTabSetTests {
         let alpha = makeTab("alpha")
         set.open(alpha)
 
-        set.activate(id: "/tmp/없는프로젝트")
+        set.activate(id: ProjectTabIdentifier())
 
         #expect(set.activeTabID == alpha.id, "활성 탭이 실재하지 않는 id를 가리키면 화면이 빈다")
     }
@@ -163,7 +171,7 @@ struct ProjectTabSetTests {
 
         let descriptors = set.descriptors()
 
-        #expect(descriptors.map(\.id) == [alpha.id, beta.id], "서술자 순서가 탭 순서와 달라지면 화면 순서가 어긋난다")
+        #expect(descriptors.map(\.id) == [alpha.id.rawValue.uuidString, beta.id.rawValue.uuidString], "서술자 순서가 탭 순서와 달라지면 화면 순서가 어긋난다")
         #expect(descriptors[0].indexState != .ready)
         #expect(descriptors[0].isDirty == false)
         #expect(descriptors[1].indexState == .ready)

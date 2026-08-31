@@ -34,13 +34,12 @@ struct DesignFidelitySnapshotTests {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
-            workspace: RecordingWorkspace(),
+            workspace: FakeWorkspace(sharedSession: project),
             storage: InMemoryKeyValueStore(),
             now: { Date(timeIntervalSince1970: 1_000_000) }
         )
-        return (model, SearchModel(projectSession: project), project, editor)
+        return (model, SearchModel(sessionProvider: { project }), project, editor)
     }
 
     /// Fills the window with the same content the prototype shows, so the two can be

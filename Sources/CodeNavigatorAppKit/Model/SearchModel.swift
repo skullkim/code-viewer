@@ -26,11 +26,22 @@ public final class SearchModel {
     /// enums for one concept drift.
     public var selectedTab: SidePanelTab = .references
 
-    private let projectSession: ProjectSession
+    /// The session to search, asked for each time rather than held.
+    ///
+    /// Search results belong to a tab (02b §1.1), so the session has to follow whichever
+    /// project is in front. Capturing one at construction would search the first project
+    /// opened for the rest of the run — and the results would look plausible, which is the
+    /// worst way to be wrong.
+    private let sessionProvider: () -> (any ProjectSession)?
     private let clock: @Sendable () -> Date
 
-    public init(projectSession: ProjectSession, clock: @escaping @Sendable () -> Date = { Date() }) {
-        self.projectSession = projectSession
+    private var projectSession: any ProjectSession { sessionProvider() ?? NoProjectSession() }
+
+    public init(
+        sessionProvider: @escaping () -> (any ProjectSession)?,
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.sessionProvider = sessionProvider
         self.clock = clock
     }
 

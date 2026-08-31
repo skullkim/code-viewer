@@ -1,3 +1,4 @@
+import CodeNavigatorContract
 import Foundation
 import Observation
 
@@ -15,7 +16,7 @@ import Observation
 public final class ProjectTabSet {
 
     public private(set) var tabs: [ProjectTabState] = []
-    public private(set) var activeTabID: String?
+    public private(set) var activeTabID: ProjectTabIdentifier?
 
     public init() {}
 
@@ -43,22 +44,27 @@ public final class ProjectTabSet {
     /// Ignoring is the point: pointing `activeTabID` at nothing empties the screen while
     /// the bar still shows tabs, which reads as the application breaking rather than a
     /// stale request being dropped.
-    public func activate(id: String) {
+    public func activate(id: ProjectTabIdentifier) {
         guard tabs.contains(where: { $0.id == id }) else { return }
         activeTabID = id
     }
 
     /// Closes a tab and returns whether the welcome screen takes over (§12 ruling 3).
     @discardableResult
-    public func close(id: String) -> Bool {
+    public func close(id: ProjectTabIdentifier) -> Bool {
+        // Succession is decided by the pure command layer, which speaks in the presentation
+        // layer's string identities — so the identity is converted at the call and back
+        // again, rather than the tab carrying two of them.
         let closure = ProjectTabCommand.closing(
-            tabID: id,
+            tabID: id.rawValue.uuidString,
             tabs: descriptors(),
-            activeTabID: activeTabID
+            activeTabID: activeTabID?.rawValue.uuidString
         )
         let remaining = Set(closure.remaining.map(\.id))
-        tabs.removeAll { !remaining.contains($0.id) }
-        activeTabID = closure.activeTabID
+        tabs.removeAll { !remaining.contains($0.id.rawValue.uuidString) }
+        activeTabID = closure.activeTabID.flatMap { successor in
+            tabs.first { $0.id.rawValue.uuidString == successor }?.id
+        }
         return closure.showsWelcome
     }
 

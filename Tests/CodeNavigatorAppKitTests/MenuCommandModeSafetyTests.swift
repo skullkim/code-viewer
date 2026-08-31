@@ -21,13 +21,12 @@ struct MenuCommandModeSafetyTests {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
-            workspace: RecordingWorkspace(),
+            workspace: FakeWorkspace(sharedSession: project),
             storage: InMemoryKeyValueStore(),
             now: { Date(timeIntervalSince1970: 1_000_000) }
         )
-        return (model, SearchModel(projectSession: project), editor)
+        return (model, SearchModel(sessionProvider: { project }), editor)
     }
 
     /// Commands that still reach the editor as a raw key string, and would therefore mean

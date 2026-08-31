@@ -246,40 +246,112 @@ final class FakeEditorSession: EditorSession, @unchecked Sendable {
 }
 
 
-/// Records what the application asked the workspace to open.
-///
-/// Lives here rather than in one suite's file because several suites build an `AppModel`
-/// and therefore need it — the visual regression gate among them. While it sat inside
-/// `AppModelCommandTests`, an edit to that one file could stop someone else's gate from
-/// compiling, which is a coupling nobody chose (frontend-junior raised it after it happened).
-/// Records what the shell asked the engine to open, so opening a project can be checked
-/// without an engine. The two contract protocols each own half of that operation and
-/// neither expresses that the halves move together.
-final class RecordingWorkspace: SingleProjectWorkspace, @unchecked Sendable {
-    private let lock = NSLock()
-    private var opened: [(root: URL, columns: Int, rows: Int)] = []
-    var openError: (any Error)?
 
-    /// A synchronous critical section. `NSLock.lock()` cannot be called from an async
-    /// context, and `openWorkspace` is reached from one.
+/// A workspace that opens projects without an engine behind it.
+///
+/// Mirrors the engine's own rule for sameness — the canonical root decides, and reopening
+/// activates rather than adds (REQ-012 AC-5) — so the application is exercised against the
+/// behaviour the contract promises rather than a simplification of it.
+final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
+    private let lock = NSLock()
+    private var openTabs: [ProjectTab] = []
+    private var active: ProjectTabIdentifier?
+    private var sessions: [ProjectTabIdentifier: FakeProjectSession] = [:]
+
+    /// When set, every tab is handed this session.
+    ///
+    /// Lets a test configure one session and see it through whichever tab is active, which
+    /// is what most suites want. Leaving it nil gives each tab its own — the shape the
+    /// isolation tests need.
+    private let sharedSession: FakeProjectSession?
+
+    init(sharedSession: FakeProjectSession? = nil) {
+        self.sharedSession = sharedSession
+    }
+
+    var openError: (any Error)?
+    private(set) var openCallCount = 0
+    /// Every root the application asked to open, in order.
+    private(set) var openedRoots: [URL] = []
+    private(set) var closedTabs: [ProjectTabIdentifier] = []
+    /// Every tab the application asked the engine to bring forward.
+    private(set) var activatedTabs: [ProjectTabIdentifier] = []
+
     private func locked<T>(_ body: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
         return body()
     }
 
-    var openedRoots: [URL] {
-        locked { opened.map(\.root) }
-    }
-
-    var lastGridSize: (columns: Int, rows: Int)? {
-        locked { opened.last.map { ($0.columns, $0.rows) } }
-    }
-
-    func openWorkspace(at projectRoot: URL, columns: Int, rows: Int) async throws {
+    func openProject(at rootPath: URL) async throws -> ProjectOpenOutcome {
         if let openError {
+            locked { openCallCount += 1 }
             throw openError
         }
-        locked { opened.append((projectRoot, columns, rows)) }
+        return locked {
+            openCallCount += 1
+            openedRoots.append(rootPath)
+            let canonical = rootPath.resolvingSymlinksInPath().path
+            if let existing = openTabs.first(where: { $0.rootPath.resolvingSymlinksInPath().path == canonical }) {
+                active = existing.id
+                return .activatedExisting(existing)
+            }
+            let tab = ProjectTab(
+                id: ProjectTabIdentifier(),
+                displayName: rootPath.lastPathComponent,
+                rootPath: rootPath,
+                disambiguator: nil
+            )
+            openTabs.append(tab)
+            sessions[tab.id] = FakeProjectSession()
+            active = tab.id
+            return .opened(tab)
+        }
+    }
+
+    func tabs() async -> [ProjectTab] { locked { openTabs } }
+
+    func activeTab() async -> ProjectTab? {
+        locked { openTabs.first { $0.id == active } }
+    }
+
+    func activate(_ identifier: ProjectTabIdentifier) async throws {
+        locked {
+            activatedTabs.append(identifier)
+            guard openTabs.contains(where: { $0.id == identifier }) else { return }
+            active = identifier
+        }
+    }
+
+    func closeTab(_ identifier: ProjectTabIdentifier) async throws {
+        locked {
+            closedTabs.append(identifier)
+            openTabs.removeAll { $0.id == identifier }
+            sessions[identifier] = nil
+            if active == identifier {
+                active = openTabs.last?.id
+            }
+        }
+    }
+
+    func reorderTabs(_ order: [ProjectTabIdentifier]) async {
+        locked {
+            openTabs = order.compactMap { id in openTabs.first { $0.id == id } }
+        }
+    }
+
+    func session(for identifier: ProjectTabIdentifier) async -> (any ProjectSession)? {
+        if let sharedSession { return sharedSession }
+        return locked { sessions[identifier] }
+    }
+
+    func restoreTabs(from rootPaths: [URL]) async -> TabRestoreOutcome {
+        var restored: [ProjectTab] = []
+        for path in rootPaths {
+            if let outcome = try? await openProject(at: path) {
+                restored.append(outcome.tab)
+            }
+        }
+        return TabRestoreOutcome(restored: restored, missing: [])
     }
 }

@@ -9,7 +9,15 @@ import CodeNavigatorAppKit
 struct CodeNavigatorMain {
     static func main() {
         if CommandLine.arguments.contains("--self-check") {
-            CodeNavigatorApplication.reportSelfCheck()
+            // The graph now crosses an actor boundary to build, so the check has to wait
+            // for it. A semaphore rather than a `Task` alone: `main` must not return before
+            // the check has run, or the gate would see a clean exit and no output.
+            let finished = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                await CodeNavigatorApplication.reportSelfCheck()
+                finished.signal()
+            }
+            finished.wait()
             return
         }
         CodeNavigatorApplication.run()

@@ -26,11 +26,13 @@ import CodeNavigatorContract
 @Observable
 public final class ProjectTabState: Identifiable {
 
-    /// The canonical identity from `ProjectIdentity.canonical(for:isCaseSensitiveVolume:)`.
+    /// The engine's identity for this tab.
     ///
-    /// Two paths that name one directory share this, which is what makes REQ-012 AC-5
-    /// ("이미 열린 프로젝트를 다시 열면 기존 탭 활성화") decidable without guessing.
-    public let id: String
+    /// A UUID, not a path: a path would let a stale reference silently point at a tab that
+    /// was closed and reopened. Deciding when two paths are one project is the engine's —
+    /// it owns the normalisation, and the application asking the same question a second way
+    /// is how the same project ends up open twice.
+    public let id: ProjectTabIdentifier
 
     /// The path as the user chose it — for display, and for reopening after a restart.
     public let rootPath: String
@@ -46,13 +48,20 @@ public final class ProjectTabState: Identifiable {
     /// Unsaved buffers in this project, for the tab's dirty glyph and the close sheet (W-13).
     public private(set) var dirtyBufferCount = 0
 
+    /// This tab's own index and search surface (REQ-012, INV-5).
+    ///
+    /// Held rather than reached for: a tab has no way to name another tab's session, so
+    /// isolation stops being a rule someone follows and becomes a fact about the shape.
+    public let projectSession: any ProjectSession
+
     public init(
-        id: String,
+        id: ProjectTabIdentifier,
         rootPath: String,
         name: String,
-        projectSession: ProjectSession,
+        projectSession: any ProjectSession,
         editorSession: EditorSession
     ) {
+        self.projectSession = projectSession
         self.id = id
         self.rootPath = rootPath
         self.name = name
@@ -74,7 +83,9 @@ public final class ProjectTabState: Identifiable {
     /// What the tab bar draws this tab from (02b §3 W-11).
     public var descriptor: ProjectTabDescriptor {
         ProjectTabDescriptor(
-            id: id,
+            // The presentation layer keys rows by string; the engine's identity is a UUID.
+            // Converted at this one boundary rather than storing a second identity.
+            id: id.rawValue.uuidString,
             rootPath: rootPath,
             name: name,
             dirtyBufferCount: dirtyBufferCount,

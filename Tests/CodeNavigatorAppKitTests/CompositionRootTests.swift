@@ -19,13 +19,12 @@ struct CompositionRootTests {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
-            workspace: RecordingWorkspace(),
+            workspace: FakeWorkspace(sharedSession: project),
             storage: InMemoryKeyValueStore(),
             now: { Date(timeIntervalSince1970: 1_000_000) }
         )
-        return (model, SearchModel(projectSession: project), project, editor)
+        return (model, SearchModel(sessionProvider: { project }), project, editor)
     }
 
     /// Builds the window and forces a layout pass, so SwiftUI evaluates every `body` on the
@@ -117,6 +116,8 @@ struct CompositionRootTests {
             SymbolDefinition(name: "handle", kind: .function, path: "a.swift", line: 1, signature: "func handle()"),
             SymbolDefinition(name: "handle", kind: .function, path: "b.swift", line: 9, signature: "func handle()"),
         ]
+        // A definition lives in a project; with no tab open there is no index to ask.
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
         await model.goToDefinition()
         #expect(model.definitionCandidates?.count == 2, "후보가 없으면 이 테스트가 검증할 경로가 없다")
         layOutWindow(model: model, search: search)

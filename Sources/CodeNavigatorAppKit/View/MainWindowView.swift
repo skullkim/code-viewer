@@ -35,7 +35,7 @@ public struct MainWindowView: View {
         GeometryReader { proxy in
             let tabBar = ProjectTabBarPresentation.make(
                 tabs: model.tabs.descriptors(),
-                activeTabID: model.tabs.activeTabID,
+                activeTabID: model.tabs.activeTabID?.rawValue.uuidString,
                 barWidth: proxy.size.width
             )
             // Widths the user dragged to and panes they hid are both restored on launch
@@ -289,9 +289,14 @@ public struct MainWindowView: View {
     private func performTabAction(_ action: ProjectTabBarAction) async {
         switch action {
         case .activate(let tabID):
-            model.tabs.activate(id: tabID)
-        case .requestClose:
-            await model.closeProject()
+            // The bar speaks in string identities; the engine's are UUIDs. Resolved through
+            // the open tabs rather than reconstructed, so a stale row cannot name a tab that
+            // was closed and reopened.
+            guard let tab = model.tabs.tabs.first(where: { $0.id.rawValue.uuidString == tabID }) else { return }
+            await model.activateTab(tab.id)
+        case .requestClose(let tabID):
+            guard let tab = model.tabs.tabs.first(where: { $0.id.rawValue.uuidString == tabID }) else { return }
+            await model.closeTab(tab.id)
         case .openProject:
             await MenuCommandRouter.perform(.openProject, model: model, search: search)
         }

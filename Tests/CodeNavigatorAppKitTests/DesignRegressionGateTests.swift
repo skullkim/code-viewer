@@ -37,9 +37,8 @@ struct DesignRegressionGateTests {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
-            workspace: RecordingWorkspace(),
+            workspace: FakeWorkspace(sharedSession: project),
             storage: InMemoryKeyValueStore(),
             now: { Date(timeIntervalSince1970: 1_000_000) }
         )
@@ -47,7 +46,7 @@ struct DesignRegressionGateTests {
         await seed(model, project, editor)
 
         let hosting = NSHostingView(
-            rootView: MainWindowView(model: model, search: SearchModel(projectSession: project))
+            rootView: MainWindowView(model: model, search: SearchModel(sessionProvider: { project }))
         )
         hosting.frame = CGRect(origin: .zero, size: size)
         // Pinned: a test machine in dark mode would otherwise fail every light-token check.

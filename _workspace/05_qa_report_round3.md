@@ -941,3 +941,200 @@ PROBE keyDown keyCode=33 chars=[ mode=insert marked='하' hasMarked=true → com
 `.build/CodeNavigator.app`은 **단일 경로**라 매 빌드가 덮는다. 현재 바이너리 **23:14:37** → **22:52 번들·23:05 프로브 모두 소실.** 리더의 *"22:52를 버리지 마라"* 전제가 물리적으로 이미 깨져 있었다. **번들 보존이 필요하면 빌드마다 별도 경로 복사가 선행돼야 한다.**
 
 **(4) 증거 강도 명시.** §28 전체는 **로그 기준**이다. 이 번들에서 **디스크 바이트 미측정** — 디스크 바이트는 22:52 번들에서만 확인했다(§27.2). "전송 '하'"를 "버퍼 '하'"로 읽지 않는다.
+
+---
+
+## 29. 수정 번들(12:37:24) — 엔진 레벨 6칸 **통과** + 방어선 양방향 실측 (12:4x, 8/31)
+
+### 29.1 🔒 라이브 측정 불가 — 화면 잠금
+```
+console 세션 skull / OnConsole=True / CGSSessionScreenIsLocked = True
+```
+앱은 뜨고(메뉴바 8개) `파일 > 최근 프로젝트 열기 > qa-fixture` 클릭도 성공하며 **nvim 도 정상 기동**한다:
+`83661 /opt/homebrew/bin/nvim --embed --cmd cd /tmp/qa-fixture` (D-16 수정 반영 확인).
+그러나 **윈도우 0개**(AX·스크린샷 일치) — 잠금 상태에서 윈도우 서버가 창을 만들지 않는다.
+**→ "12:37 번들 = 창 안 뜨는 회귀"로 오판할 뻔한 자리다.** 어제 같은 절차가 됐으므로 번들 탓으로 읽기 쉬웠다. 세션 상태를 먼저 확인해 갈랐다. **잠금 해제 요청함.**
+
+### 29.2 번들 신선도 · 수정 반영 (실측)
+| 항목 | 값 |
+|---|---|
+| `.build` 바이너리 | 2026-08-31 **12:37:24** |
+| 번들보다 새로운 소스 | **없음** ✅ |
+| 보존본 해시 대조 | `84f5716c1f7d59f9` = `.build/bundles/CodeNavigator-20260831-123724.app` ✅ |
+
+`bundle.sh` 타임스탬프 보존 **동작 확인** — 어제 부재했던 대조군이 실재하게 됐다.
+
+`EditorKeyInput.swift:153` 조건 순서가 실제로 바뀌었다:
+```swift
+if inputMode == .vim, isInsertModeExit(stroke) {        // 이탈 감지가 앞
+    return hasMarkedText ? .commitThenNotation(notation) : .notation(notation)
+}
+```
+
+### 29.3 6칸 매트릭스 — **엔진 레벨 6/6 통과** (라이브 대기)
+`EditorKeyRouteTests` 13건 전부 그린. 6칸 대응 단언 실재 확인(눈으로 파일을 읽어 확인, 이름만 보지 않음):
+
+| | `hasMarked=false` | `hasMarked=true` |
+|---|---|---|
+| **`Esc`** | `.notation("<Esc>")` ✅ | `.commitThenNotation("<Esc>")` ✅ |
+| **`⌃[`** | `.notation("<C-[>")` ✅ | `.commitThenNotation("<C-[>")` ✅ |
+| **`⌃C`** | `.notation("<C-c>")` ✅ | `.commitThenNotation("<C-c>")` ✅ |
+
+**내 사전 가설 하나는 틀렸다**: *"픽스처가 라틴 문자만 써서 자판 의존 회귀를 못 잡을 것"* — 실제로는 `charactersIgnoringModifiers: "ㅐ"/"ㅊ"` 한글 픽스처가 들어 있다(`:143-147`). **단언하기 전에 파일을 읽어 확인했다.**
+
+### 29.4 🔬 방어선 양방향 실측 — **둘 다 실재한다**
+그린이 방어선을 증명하지 않으므로 일부러 깨뜨렸다.
+
+| 변이 | 내용 | 결과 | 판정 |
+|---|---|---|---|
+| **M1** | 조건 순서를 옛 형태로 (`hasMarkedText` 를 guard 안으로) | **✘ 3 issues** — 왼쪽 열 3칸 전부 빨간불 | 방어선 **실재** ✅ |
+| **M2** | `isInsertModeExit` 를 문자 기반으로 되돌림 | **✘ 2 issues** — 한글 자판 테스트가 잡아냄 | 방어선 **실재** ✅ |
+| **원복** | 백업 복원 | `git diff` **비어 있음**, 13/13 그린 | 오염 없음 ✅ |
+
+**→ 최고 심각도 결함(`hasMarked=false` 삼킴)과 원래 결함(자판 의존)에 각각 진짜 방어선이 생겼다.** 이제 둘 중 하나라도 되돌아가면 스위트가 빨간불이 된다.
+
+### 29.5 미해소 — 라이브로만 닫힌다
+- **6칸 디스크 바이트**: 잠금 해제 후. *"우리가 보냈다"* ≠ *"거기 저장됐다"*
+- **첫 타건 아티팩트**(같은 인스턴스 2회 비교): 잠금 해제 후
+- **픽스처 현실성 열린 질문**: 테스트는 한글 `⌃[` 의 `charactersIgnoringModifiers` 를 `ㅐ` 로 가정하나, 어제 실앱 프로브 로그는 `chars=[` 였다. **어느 필드를 찍은 로그인지 미확인.** keyCode 방식은 둘 중 어느 쪽이 현실이어도 견디므로 **수정의 정당성에는 영향 없다** — 픽스처 현실성 문제로만 남긴다.
+
+---
+
+## 30. 감사 — **"조건의 한쪽만 쟀다"** 전수 (13:0x, 8/31)
+
+D-13 최고 심각도가 뚫린 형태(*테스트가 `hasMarked=true` 만 공급*)를 코드베이스 전체에서 찾았다.
+
+### 30.1 범위 — **본 것과 안 본 것**
+**본 것**: `Sources/` 의 **Bool 파라미터를 받는 함수·이니셜라이저 19개 전수** + 리더가 지목한 열거형 2건.
+**안 본 것(명시)**: ① 열거형 switch 전수성(위 2건 외) ② **인자 2개 이상의 조합** 커버리지(단일 플래그 양면성만 봤다) ③ 뷰 내부 private 렌더 플래그의 시각 결과.
+
+### 30.2 🔴 실제 갭 1건 — 렌더 샌드박스/새니타이저
+```
+RenderSandboxPolicyTests          isCaseSensitiveVolume: true × 8,  false × 0
+RenderDocumentSanitizerTests      true × 4,  false × 0
+RenderDocumentSanitizerLimitTests true × 1,  false × 0
+전체 테스트에서 `isCaseSensitiveVolume: false` 리터럴 = 0건
+```
+**그런데 실사용 기본값은 `false` 다.** 이 기기에서 직접 쟀다:
+```
+/tmp        대소문자 구분 안 함 → false
+레포 볼륨    대소문자 구분 안 함 → false
+```
+**→ 사용자가 실제로 밟는 분기(`false`, 경로를 `lowercased()` 하는 쪽)를 아무 테스트도 공급하지 않는다.** `resolvedPathInsideRoot` 는 **루트 밖 리소스를 차단하는 보안 판정**(INV-6)이고, 그 판정의 실사용 분기가 미측정이다.
+
+**부수 발견**: `RenderSandboxPolicy` · `RenderDocumentSanitizer` 는 **프로덕션 호출부가 0건**이다(자기 파일과 테스트에서만 참조). 리더가 남은 작업으로 밝힌 **렌더 마운트가 아직 안 됐기 때문**으로 보이며, 그렇다면 **미완성 작업이므로 결함이 아니다** — 다만 **마운트되는 순간 위 갭이 실사용 경로가 된다.**
+
+### 30.3 ⏸ 변이 확정 실패 — 트리가 컴파일되지 않는다
+`false` 분기를 샌드박스 탈출로 바꾸는 변이를 주입했으나 **스위트를 돌리지 못했다.** 내 변이와 무관한 컴파일 에러:
+```
+ProjectTabSet.swift:58   cannot convert 'ProjectTabIdentifier?' to 'String?'
+AppModel.swift:383       cannot convert 'String' to 'ProjectTabIdentifier'
+```
+프론트의 **다중 프로젝트 배선 작업 중** 상태다. **변이는 즉시 원복했다**(`git diff` 비어 있음, `QA MUTATION` 잔여 0건 — 남겨 두면 프론트 빌드를 오염시킨다).
+**→ 판정 보류.** 컴파일 가능해지면 재실행한다. **"테스트가 없다"까지는 확정, "무방비다"는 미확정.**
+
+### 30.4 ✅ 스크리닝 오탐 — 읽어서 해소한 5건
+리터럴 카운트로는 "한쪽만"으로 뜨지만 **파일을 열어 보니 덮여 있었다.** 카운트는 스크린이지 판정이 아니다.
+
+| 대상 | 스크린 | 실제 |
+|---|---|---|
+| `ProjectIdentity.canonical` | `false` 0건 | 변수 `caseSensitive` 경유로 **양면 커버**(`:112-124`) |
+| `changeKind(pathExists:)` | 직접 호출 0건 | 감시 통합 테스트가 생성·수정·**삭제**로 양면 커버(`:55`) |
+| `ShellVisibilityLayout.resolve` | — | 4조합 중 `false/false` 포함 커버 |
+| `EditorStartupFailureKind` | — | **4케이스 전부** 등장(`launchFailed` 1건) |
+| `GlyphStyle` 3플래그 | `isItalic/isUnderlined` 0건 | **타입이 방어한다** — 세 플래그를 한 값으로 묶어 "반쪽 복사"가 불가능(`GlyphBatcher.swift:4-9`). 약한 측정 + 강한 구조 |
+
+### 30.5 결론
+**D-13 의 형태는 코드베이스에 만연하지 않았다.** 19개 중 실사용 경로에서 한쪽만 측정된 것은 **렌더 계열 1건**이며, 그것도 아직 배선 전이다. **인증 전 조치는 "렌더 마운트 시 `false` 분기 테스트 추가"** 하나로 좁혀진다.
+
+---
+
+## 31. 후속 감사 — 탭 정체성(AC-5)의 대소문자 보장 (13:2x, 8/31)
+
+리더 요청: *"네가 찾은 `isCaseSensitiveVolume` 분기가 지금 랜딩 중인 탭 정체성에도 걸리나."*
+**결론: 동작은 한다(실측). 그러나 그 보장을 붙잡는 테스트가 라이브 경로에 없다.**
+
+### 31.1 🔑 정체성 판정이 **모듈째 이동**했다
+```
+현재 Sources 전체에서 ProjectIdentity 호출부 = 0건   (주석 1줄만 남음)
+라이브 경로 = ProjectWorkspaceEngine.canonicalDirectory(at:)  →  realpath(3)
+             비교        = orderedTabs.first { $0.rootPath.path == canonical.path }   ← 문자열 완전 일치
+```
+**`isCaseSensitiveVolume` 인자는 라이브 경로에 더 이상 없다.** 대소문자를 접는 일을 **경로 해석 API 가 대신**한다.
+
+### 31.2 ✅ 실측 — 라이브 경로는 대소문자를 접는다
+심링크 없는 경로에서, 음성 대조 포함:
+```
+/Users/skull/qa_case_probe/Bar  -> /Users/skull/qa_case_probe/Bar
+/Users/skull/qa_case_probe/bar  -> /Users/skull/qa_case_probe/Bar     ← 디스크 표기로 접힘
+/Users/skull/qa_case_probe/BAR  -> /Users/skull/qa_case_probe/Bar
+/Users/skull/qa_case_probe/nope -> (NULL)                              [음성 대조]
+```
+**→ `/tmp/Foo` 와 `/tmp/foo` 는 한 탭으로 접힌다. AC-5 는 실사용 볼륨에서 지켜진다.**
+그리고 이 방식은 볼륨에 묻지 않으므로 **대소문자 구분 볼륨에서도 자동으로 옳다** — 옛 `isCaseSensitiveVolume` 인자보다 강한 구조다.
+
+**내 사전 가설은 틀렸다**: *"Swift `resolvingSymlinksInPath` 는 대소문자를 안 접을 것"* → **접는다**(위와 동일 결과). Python `os.path.realpath` 만 안 접는다(순수 문자열 구현). **언어별로 다르므로 이름으로 유추할 수 없고, 실측만이 갈랐다.**
+
+### 31.3 ⚠ 갭 — **보장을 붙잡는 테스트가 라이브 경로에 없다**
+| | 대소문자 테스트 | 프로덕션 호출부 |
+|---|---|---|
+| `ProjectIdentityTests:109-125` | **있다** (양면) | **0건** ← 앱이 안 부른다 |
+| `ProjectWorkspaceEngineTests` (AC-5 `:58`, 심링크 `:80`) | **없다** | 라이브 |
+
+**→ 대소문자 보장의 테스트가 죽은 모듈에 남았다.** 지금 초록인 것은 **아무도 부르지 않는 코드**의 초록이다.
+
+**이것이 위험한 이유**: 라이브 보장이 *"존재하는 경로에 대해 경로 해석 API 가 디스크 표기를 돌려준다"* 는 **어디에도 적히지 않은 성질**에 얹혀 있다. 누가 이 자리를 순수 문자열 정규화로 바꾸면(Python 판 realpath 가 정확히 그것이다) **AC-5 가 깨지는데 스위트는 초록**이다. D-13 과 같은 형태다.
+
+**조치(제안)**: `ProjectWorkspaceEngineTests` 에 **대소문자만 다른 두 경로가 한 탭으로 접히는 테스트** 1건. 비용이 거의 없고, 위 성질을 명세로 고정한다.
+
+### 31.4 ⚠ 정규화 전략이 둘 공존한다
+`ProjectIdentity`(죽음) 는 `resolvingSymlinksInPath + lowercased()`, 엔진(라이브) 은 `realpath(3)`. **그 파일 자신의 주석이 경고한다** — *"두 정규화가 어긋나는 것이 한 프로젝트가 두 번 열리는 방식이다"*. 렌더 계열(§30)도 아직 `isCaseSensitiveVolume` 를 받는다.
+**→ 리더·시니어 판단 사항**: `ProjectIdentity` 를 삭제할지 재배선할지. 죽은 채로 두면 **다음 사람이 둘 중 어느 것이 계약인지 모른다.**
+
+---
+
+## 32. 확정 실측 — 렌더 `false` 분기는 **무방비**이고, 인자는 **제거 가능**하다 (13:4x, 8/31)
+
+트리 컴파일이 복구되어 §30 에서 보류했던 변이를 확정했다.
+
+### 32.1 🔴 §30 판정 확정 — **무방비다**
+`false` 분기(실사용 기본값)에 **완전한 샌드박스 탈출**을 주입했다:
+```swift
+if !isCaseSensitiveVolume { return resolvedPath }   // 루트 밖이든 뭐든 통과
+```
+**결과: 73건 전부 그린** (3 스위트).
+**→ "테스트가 없다"가 "무방비다"로 확정됐다.** 루트 밖 리소스를 전면 허용해도 스위트가 아무 말도 하지 않는다.
+
+### 32.2 ✅ 리더 추론 확정 — 인자는 제거해도 된다
+**주장**: 두 값이 이미 `realpath` 를 거치므로 소문자화는 무의미하다.
+`realPath` 헬퍼가 **C `realpath(3)`** 임을 확인했고(`:240-246`), 경로 포함 판정의 대소문자 처리는 **`:223-224` 한 곳뿐**이다.
+
+**대소문자 구분 볼륨을 실제로 만들어** 양쪽을 쟀다(`hdiutil`, APFS Case-sensitive):
+```
+[양성 대조] 구분 볼륨에 Assets/ 와 assets/ 가 공존 → 정말 구분함 ✅
+
+구분 볼륨
+  /Volumes/QACaseSens/root/Assets -> .../Assets      (요청 표기 유지)
+  /Volumes/QACaseSens/root/assets -> .../assets      (별개 디렉토리)
+  /Volumes/QACaseSens/root/ASSETS -> (NULL)          (없는 경로 = 차단)
+
+비구분 볼륨(홈)
+  ~/qa_ci_probe/Assets -> .../Assets
+  ~/qa_ci_probe/assets -> .../Assets                 ← 디스크 표기로 접힘
+  [양성 대조] mkdir assets 해도 디렉토리가 안 늘어남 → 정말 비구분 ✅
+```
+**판정**:
+- **비구분 볼륨**: 모든 표기가 realpath 에서 같은 디스크 표기로 수렴 → **소문자화는 no-op**
+- **구분 볼륨**: 표기가 구별된 채 유지되고 없는 표기는 NULL → **소문자화는 애초에 안 탐(`true` 분기)**
+- **→ `isCaseSensitiveVolume` 를 제거해도 판정이 바뀌는 경우가 없다. 인증 조건 0번은 분기 소멸로 닫힌다.**
+
+### 32.3 ⚠ 리더의 확인 항목 ③은 **확인이 되지 않는다**
+> *"소문자화를 제거해도 기존 33건이 전부 그린인가"*
+
+**돌렸다 — 73건 그린이다. 그러나 이것은 근거가 되지 못한다.** 바로 위 §32.1 에서 **완전한 샌드박스 탈출을 넣어도 같은 73건이 그린**임을 쟀다. **그 스위트는 이 분기에 대해 판별력이 0이다.** 무엇을 넣어도 그린이므로 그린은 정보가 아니다.
+**→ 안전성의 근거는 §32.2 의 파일시스템 실측이지 스위트의 그린이 아니다.** 제거 작업 후에도 스위트 그린을 근거로 삼으면 안 된다.
+
+### 32.4 정리
+- 변이 A·C **모두 원복** — `git diff` 0줄, `QA MUTATION` 잔여 0건
+- 대소문자 구분 볼륨 **언마운트·이미지 삭제**, 홈 프로브 디렉토리 삭제
+- 임시 도구(`qa_rp`, `qa_swiftcase`) 삭제

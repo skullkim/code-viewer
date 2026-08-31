@@ -8,12 +8,11 @@ import CodeNavigatorContract
 @Suite("AppModel 명령 — 입력 배선·정의 이동·프로젝트 열기 (REQ-001·004·005·010)")
 struct AppModelCommandTests {
 
-    private func makeModel() -> (AppModel, FakeProjectSession, FakeEditorSession, RecordingWorkspace) {
+    private func makeModel() -> (AppModel, FakeProjectSession, FakeEditorSession, FakeWorkspace) {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
-        let workspace = RecordingWorkspace()
+        let workspace = FakeWorkspace(sharedSession: project)
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
             workspace: workspace,
             storage: InMemoryKeyValueStore(),
@@ -112,6 +111,10 @@ struct AppModelCommandTests {
         editor.wordUnderCursorValue = "buildIndex"
         project.definitionsByName["buildIndex"] = [definition("buildIndex", path: "Sources/Index.swift", line: 8)]
 
+        // A definition lives in a project; with no tab open there is no index to ask.
+
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
+
         await model.goToDefinition()
 
         #expect(model.definitionCandidates == nil)
@@ -131,6 +134,10 @@ struct AppModelCommandTests {
             definition("parse", path: "Util/ArgParse.swift", line: 12),
         ]
 
+        // A definition lives in a project; with no tab open there is no index to ask.
+
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
+
         await model.goToDefinition()
 
         #expect(model.definitionCandidates?.count == 2)
@@ -142,6 +149,10 @@ struct AppModelCommandTests {
     func noDefinitionReportsAnError() async {
         let (model, _, editor, _) = makeModel()
         editor.wordUnderCursorValue = "legacyScan"
+
+        // A definition lives in a project; with no tab open there is no index to ask.
+
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
 
         await model.goToDefinition()
 
@@ -155,6 +166,10 @@ struct AppModelCommandTests {
     func noSymbolUnderCursorSaysSo() async {
         let (model, project, editor, _) = makeModel()
         editor.wordUnderCursorValue = "   "
+
+        // A definition lives in a project; with no tab open there is no index to ask.
+
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
 
         await model.goToDefinition()
 
@@ -173,6 +188,8 @@ struct AppModelCommandTests {
             definition("parse", path: "Index/Parser.swift", line: 41),
             definition("parse", path: "Util/ArgParse.swift", line: 12),
         ]
+        // A definition lives in a project; with no tab open there is no index to ask.
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
         await model.goToDefinition()
 
         await model.openDefinition(definition("parse", path: "Util/ArgParse.swift", line: 12))
@@ -234,16 +251,15 @@ struct AppModelCommandTests {
         #expect(model.recentProjects.projects().map(\.rootPath) == ["/repo/locked"])
     }
 
-    @Test("프로젝트는 편집기가 거부하지 않을 그리드 크기로 열린다")
+    @Test("프로젝트를 여는 그리드 크기가 0이 아니다")
     func aProjectOpensWithANonZeroGrid() async {
-        let (model, _, _, workspace) = makeModel()
-
-        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
-
-        #expect(workspace.lastGridSize?.columns == AppModel.initialGridColumns)
-        #expect(workspace.lastGridSize?.rows == AppModel.initialGridRows)
-        #expect((workspace.lastGridSize?.columns ?? 0) > 0)
-        #expect((workspace.lastGridSize?.rows ?? 0) > 0)
+        // Neovim refuses a zero-sized UI, so the shell has to name a size before the editor
+        // view has been laid out and can report the real one. The size moved into the
+        // workspace's initialiser when the engine took ownership of the open projects, so
+        // what is left to guard is the constants themselves — a zero here fails at launch,
+        // far from whoever typed it.
+        #expect(AppModel.initialGridColumns > 0)
+        #expect(AppModel.initialGridRows > 0)
     }
 
     // MARK: 상태 메시지 만료 (02 §3 W-7)

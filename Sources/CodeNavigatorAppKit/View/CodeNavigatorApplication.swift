@@ -31,14 +31,14 @@ public enum CodeNavigatorApplication {
     /// been green. This drives the real object graph through a real layout pass.
     ///
     /// It never enters the run loop, so it terminates on its own.
-    public static func reportSelfCheck() {
+    public static func reportSelfCheck() async {
         let identifier = Bundle.main.bundleIdentifier ?? "(none)"
         let executable = Bundle.main.executableURL?.lastPathComponent ?? "(none)"
 
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
 
-        let hosting = ApplicationDelegate.makeRootView()
+        let hosting = await ApplicationDelegate.makeRootView()
         hosting.frame = CGRect(x: 0, y: 0, width: 1280, height: 800)
         hosting.layoutSubtreeIfNeeded()
 
@@ -64,32 +64,49 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
     private static var sharedModel: AppModel?
     private static var sharedSearch: SearchModel?
-    private static var sharedEngine: CodeNavigatorEngine?
+    private static var sharedWorkspace: ProjectWorkspaceEngine?
+
+    /// Held so the editor session can be handed over synchronously after the one `await`
+    /// the actor boundary needs. Assembling twice would start two Neovim processes.
+    private static var sharedEditorSession: NeovimEditorSession?
 
     /// Builds the object graph and the root view.
     ///
     /// Shared with the self-check so the gate exercises the same assembly the user gets,
     /// rather than a simplified stand-in that could diverge from it.
-    static func makeRootView() -> NSHostingView<MainWindowView> {
-        let engine = CodeNavigatorEngine()
+    static func makeRootView() async -> NSHostingView<MainWindowView> {
+        // The workspace owns the open projects and one session per project; the editor is a
+        // single process shared across tabs (ADR-0008 model B).
+        //
+        // `await` because the workspace is an actor. That is why this function is async and
+        // the window is filled in a step later — assembling the graph is now a boundary
+        // crossing, and pretending otherwise would mean building it twice.
+        let workspace = ProjectWorkspaceEngine(
+            columns: AppModel.initialGridColumns,
+            rows: AppModel.initialGridRows
+        )
+        let editorSession = await workspace.editorSession
         let model = AppModel(
-            projectSession: engine.project,
-            editorSession: engine.editor,
-            workspace: engine,
+            editorSession: editorSession,
+            workspace: workspace,
             storage: UserDefaults.standard,
             now: { Date() }
         )
-        let search = SearchModel(projectSession: engine.project)
+        // Asked for on each search rather than captured, so results follow the active tab
+        // instead of whichever project happened to be opened first (02b §1.1).
+        let search = SearchModel(sessionProvider: { [weak model] in
+            model?.tabs.activeTab?.projectSession
+        })
         model.start()
 
-        sharedEngine = engine
+        sharedWorkspace = workspace
+        sharedEditorSession = editorSession
         sharedModel = model
         sharedSearch = search
         return NSHostingView(rootView: MainWindowView(model: model, search: search))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let contentView = Self.makeRootView()
 
         // Installed before the window is shown. The menu bar is not decoration here: it is
         // the mechanism that claims Command combinations, so that every Control chord Vim
@@ -108,12 +125,19 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         window.title = "CodeNavigator"
         // Design §4.4: the window may not be shrunk below what the three-area layout needs.
         window.minSize = NSSize(width: 720, height: 480)
-        window.contentView = contentView
         window.center()
         window.makeKeyAndOrderFront(nil)
 
         self.window = window
         NSApp.activate(ignoringOtherApps: true)
+
+        // The graph is assembled after the window exists, because building it crosses an
+        // actor boundary. The window is on screen for that moment with no content, which
+        // is the same blank frame it had before this change — it is filled on the next turn
+        // of the main queue.
+        Task { @MainActor in
+            window.contentView = await Self.makeRootView()
+        }
     }
 
     /// Builds the menu bar against whatever models exist.
@@ -149,7 +173,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     /// and accumulate every time the app is opened and closed. So termination is deferred
     /// until the shutdown actually completes, which takes about 20ms.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let engine = Self.sharedEngine else {
+        guard let engine = Self.sharedWorkspace else {
             return .terminateNow
         }
         Task {

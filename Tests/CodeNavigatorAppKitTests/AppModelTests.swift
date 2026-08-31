@@ -14,9 +14,8 @@ struct AppModelTests {
         let project = FakeProjectSession()
         let editor = FakeEditorSession()
         let model = AppModel(
-            projectSession: project,
             editorSession: editor,
-            workspace: RecordingWorkspace(),
+            workspace: FakeWorkspace(sharedSession: project),
             storage: InMemoryKeyValueStore(),
             now: { Date(timeIntervalSince1970: 1_000_000) }
         )
@@ -126,14 +125,14 @@ struct AppModelTests {
         // REQ-010 AC-6.
         let storage = InMemoryKeyValueStore()
         let first = AppModel(
-            projectSession: FakeProjectSession(), editorSession: FakeEditorSession(),
-            workspace: RecordingWorkspace(), storage: storage, now: { Date() }
+            editorSession: FakeEditorSession(),
+            workspace: FakeWorkspace(), storage: storage, now: { Date() }
         )
         await first.setInputMode(.standard)
 
         let second = AppModel(
-            projectSession: FakeProjectSession(), editorSession: FakeEditorSession(),
-            workspace: RecordingWorkspace(), storage: storage, now: { Date() }
+            editorSession: FakeEditorSession(),
+            workspace: FakeWorkspace(), storage: storage, now: { Date() }
         )
         #expect(second.inputMode == .standard)
     }
