@@ -93,7 +93,8 @@ final class FakeProjectSession: ProjectSession, @unchecked Sendable {
     }
 }
 
-final class FakeEditorSession: EditorSession, @unchecked Sendable {
+/// Not `final`: one suite subclasses it to add the saving seam W-13 needs.
+class FakeEditorSession: EditorSession, @unchecked Sendable {
     private let lock = NSLock()
     private var currentState: EditorSessionState = .notStarted
     private var currentInputMode: InputMode = .vim

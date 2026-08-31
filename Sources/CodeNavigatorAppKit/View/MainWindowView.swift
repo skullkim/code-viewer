@@ -24,6 +24,9 @@ public struct MainWindowView: View {
     /// disagreed, and closing the symbol-search modal left the editor unreachable.
     @State private var focus = KeyboardFocusCoordinator()
 
+    /// The tab a close was requested for, while the confirmation is up (W-13).
+    @State private var pendingClose: PendingTabClose?
+
     public init(model: AppModel, search: SearchModel) {
         self.model = model
         self.search = search
@@ -105,6 +108,16 @@ public struct MainWindowView: View {
                 .frame(height: layout.statusBarHeight)
             }
             .background(DesignTokens.backgroundWindow.dynamicColor)
+            .sheet(item: $pendingClose) { pending in
+                TabCloseConfirmationView(
+                    confirmation: TabCloseConfirmation.make(
+                        projectName: model.tabs.tabs.first { $0.id == pending.tabID }?.name ?? "",
+                        dirtyFiles: pending.dirtyFiles,
+                        saveState: pending.saveState
+                    ) ?? TabCloseConfirmation.make(projectName: "", dirtyFiles: [""])!,
+                    onAction: { action in Task { await performCloseAction(action) } }
+                )
+            }
             .overlay {
                 if search.isShowingSymbolSearch {
                     SymbolSearchModalView(
@@ -296,9 +309,51 @@ public struct MainWindowView: View {
             await model.activateTab(tab.id)
         case .requestClose(let tabID):
             guard let tab = model.tabs.tabs.first(where: { $0.id.rawValue.uuidString == tabID }) else { return }
-            await model.closeTab(tab.id)
+            // A clean tab closes with no friction. Asking where there is nothing to lose is
+            // how people learn to dismiss the sheet unread, and then it fails the one time
+            // it matters (W-13).
+            let dirty = await model.dirtyFiles(in: tab)
+            guard !dirty.isEmpty else {
+                await model.closeTab(tab.id)
+                return
+            }
+            pendingClose = PendingTabClose(tabID: tab.id, dirtyFiles: dirty, saveState: .idle)
         case .openProject:
             await MenuCommandRouter.perform(.openProject, model: model, search: search)
+        }
+    }
+
+    /// Carries out what the user chose in the close sheet (W-13).
+    ///
+    /// `저장 후 닫기` waits for the save and only closes if it completed. Closing on a
+    /// partial save would discard exactly the files that could not be written — the loss
+    /// the sheet exists to prevent, performed with the user's consent.
+    private func performCloseAction(_ action: TabCloseConfirmation.Action) async {
+        guard let pending = pendingClose,
+              let tab = model.tabs.tabs.first(where: { $0.id == pending.tabID })
+        else {
+            pendingClose = nil
+            return
+        }
+
+        switch action {
+        case .cancel:
+            pendingClose = nil
+
+        case .closeWithoutSaving:
+            pendingClose = nil
+            await model.closeTab(tab.id)
+
+        case .saveAndClose:
+            pendingClose = pending.saving()
+            let outcome = await model.saveAll(in: tab)
+            if outcome.isComplete {
+                pendingClose = nil
+                await model.closeTab(tab.id)
+            } else {
+                // The sheet stays, now naming what was written and what was refused.
+                pendingClose = pending.failed(outcome)
+            }
         }
     }
 

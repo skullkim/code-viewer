@@ -40,6 +40,11 @@ listener.start(queue: .global())
 let isControl = CommandLine.arguments.contains("--control")
 // 우리 로드 방식이 무엇이냐에 따라 CSP 적용이 달라질 수 있다 — 그게 이 질문의 전부다.
 let usesFileURL = CommandLine.arguments.contains("--file-url")
+// 그리고 **문서의 모양**에 따라서도 달라질 수 있다. 이 스파이크의 첫 판은 `<head>` 가 있는
+// 완전한 페이지만 쟀는데, 마크다운은 그 모양을 만들지 않는다 — `injectingPolicy` 의 head 없는
+// 분기가 정책 메타를 문서 **맨 앞**에 놓은 조각을 낸다. 파서가 그 메타를 head 로 끌어올린다는
+// 것은 그럴듯한 이야기이고, 이 빌드에서 그럴듯한 이야기는 근거가 아니다.
+let usesFragment = CommandLine.arguments.contains("--fragment")
 
 // 앱이 실제로 주입하는 정책과 같은 문자열이어야 측정이 의미가 있다.
 let policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; "
@@ -53,21 +58,31 @@ let policyTag = isControl
 let rasterDataURI = "data:image/png;base64,"
     + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
-let html = """
-<html><head>\(policyTag)
+// 참조와 본문을 따로 두고, 완전한 페이지와 머리 없는 조각 두 형태로 조립한다. 두 형태가
+// 같은 참조를 걸어야 비교가 성립한다.
+let references = """
 <link rel="stylesheet" href="http://127.0.0.1:\(port)/style.css">
 <style>@font-face { font-family: X; src: url("http://127.0.0.1:\(port)/font.woff"); }</style>
-</head><body>
+"""
+
+let body = """
 <h1 style="font-family:X">제목</h1>
 <img id="remote" src="http://127.0.0.1:\(port)/image.png">
 <img id="raster" src="\(rasterDataURI)">
 <iframe src="http://127.0.0.1:\(port)/frame.html"></iframe>
+<!-- 인라인 **이벤트 핸들러**. 위의 `<script>` 와 다른 구문이고 CSP 에서도 다른 검사를 탄다.
+     신뢰하지 않는 레포의 README 가 원시 HTML 로 이걸 품는 것이 INV-6 의 그 시나리오다.
+     깨진 `data:` 라 `onerror` 가 뜬다. 요청이 오면 핸들러가 실행된 것이다. -->
+<img id="handler" src="data:image/png;base64,QQ==" onerror="fetch('http://127.0.0.1:\(port)/from-onerror')">
 <script>
   var probe = new Image(); probe.src = "http://127.0.0.1:\(port)/from-inline-script.png";
   fetch("http://127.0.0.1:\(port)/from-fetch");
 </script>
-</body></html>
 """
+
+let html = usesFragment
+    ? policyTag + references + body
+    : "<html><head>\(policyTag)\(references)</head><body>\(body)</body></html>"
 
 @MainActor func report(_ webView: WKWebView, mode: String) {
     DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
@@ -111,10 +126,10 @@ let html = """
         let file = directory.appendingPathComponent("index.html")
         try? html.write(to: file, atomically: true, encoding: .utf8)
         webView.loadFileURL(file, allowingReadAccessTo: directory)
-        mode = isControl ? "대조군 · loadFileURL" : "CSP · loadFileURL"
+        mode = (isControl ? "대조군" : "CSP") + " · loadFileURL" + (usesFragment ? " · 조각" : " · 완전한 페이지")
     } else {
         webView.loadHTMLString(html, baseURL: nil)
-        mode = isControl ? "대조군 · loadHTMLString" : "CSP · loadHTMLString"
+        mode = (isControl ? "대조군" : "CSP") + " · loadHTMLString" + (usesFragment ? " · 조각" : " · 완전한 페이지")
     }
 
     report(webView, mode: mode)

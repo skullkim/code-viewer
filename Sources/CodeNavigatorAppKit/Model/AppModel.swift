@@ -350,6 +350,42 @@ public final class AppModel {
         try? await editorSession.openFile(atRelativePath: path, line: line, recordJump: true)
     }
 
+    // MARK: Saving before a tab closes (W-13)
+
+    /// Which of this tab's buffers have unsaved changes.
+    ///
+    /// Empty when the editor cannot answer — a session that never started has nothing
+    /// unsaved, and treating "cannot ask" as "there is something to lose" would put a sheet
+    /// in front of a close that is safe.
+    public func dirtyFiles(in tab: ProjectTabState) async -> [String] {
+        guard let saver = editorSession as? any EditorSaving else { return [] }
+        let root = URL(fileURLWithPath: tab.rootPath)
+        return (try? await saver.dirtyFiles(inProjectRoot: root)) ?? []
+    }
+
+    /// Writes every dirty buffer in this tab and reports what happened to each.
+    ///
+    /// A thrown error becomes a failure outcome rather than a silent success: the caller
+    /// closes the tab only when the save completed, so "we could not tell" has to read as
+    /// "not complete".
+    public func saveAll(in tab: ProjectTabState) async -> SaveAllOutcome {
+        guard let saver = editorSession as? any EditorSaving else {
+            return SaveAllOutcome(
+                savedPaths: [],
+                failures: [SaveFailure(path: tab.name, reason: "편집 세션이 저장에 응답하지 않습니다")]
+            )
+        }
+        let root = URL(fileURLWithPath: tab.rootPath)
+        do {
+            return try await saver.saveAll(inProjectRoot: root)
+        } catch {
+            return SaveAllOutcome(
+                savedPaths: [],
+                failures: [SaveFailure(path: tab.name, reason: "\(error)")]
+            )
+        }
+    }
+
     // MARK: Opening a project (REQ-001)
 
     public func openProject(at projectRoot: URL) async {
