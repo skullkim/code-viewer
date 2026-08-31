@@ -543,14 +543,25 @@ struct WorkspaceSaveRoutingTests {
         let workspace = ProjectWorkspaceEngine(
             columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
         )
-        let tab = try await workspace.openProject(at: repo)
-        let session = try #require(await workspace.session(for: tab.tab.id))
+        // **둘 다 연다.** 하나만 열면 이 검사는 아무것도 못 잰다: 라우팅이 형제를 잘못
+        // 골라도 그 세션이 자기 루트로 다시 검사해 거절하므로 인덱스는 깨끗한 채로 남는다.
+        // 형제가 탭으로 열려 있어야 "엉뚱한 탭이 먼저 걸리고, 맞는 탭은 영영 못 받는다"가
+        // 관측된다 — 라우팅은 첫 일치에서 멈추기 때문이다.
+        let repoTab = try await workspace.openProject(at: repo)
+        let backupTab = try await workspace.openProject(at: backup)
+        let repoSession = try #require(await workspace.session(for: repoTab.tab.id))
+        let backupSession = try #require(await workspace.session(for: backupTab.tab.id))
 
+        try "class BackupRewritten".write(
+            to: backup.appendingPathComponent("src/App.kt"), atomically: true, encoding: .utf8
+        )
         await workspace.reindexSavedFile(
             atAbsolutePath: backup.appendingPathComponent("src/App.kt").path
         )
 
-        #expect(await session.definitions(named: "BackupOnly").isEmpty,
+        #expect(await backupSession.definitions(named: "BackupRewritten").isEmpty == false,
+                "형제가 먼저 걸려서 저장이 어디에도 안 닿았다")
+        #expect(await repoSession.definitions(named: "BackupRewritten").isEmpty,
                 "형제 디렉토리의 파일이 이 프로젝트 인덱스에 들어갔다")
         await workspace.shutDown()
     }
