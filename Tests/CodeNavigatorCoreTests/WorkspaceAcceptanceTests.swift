@@ -271,3 +271,92 @@ struct WorkspaceStartupBudgetTests {
         await workspace.shutDown()
     }
 }
+
+/// Switching projects, on the live path.
+///
+/// In the single-project engine this meant replacing the one project and dragging the editor
+/// along. Here both stay open, so the scenario becomes: activating a tab moves the editor to that
+/// project — otherwise the tree shows one project while the editor resolves paths against another,
+/// which is the failure the old scenario was written to catch.
+@Suite("탭 전환이 편집기를 데려간다 — 워크스페이스 경로 (REQ-001 AC-2)", .serialized)
+struct WorkspaceTabSwitchTests {
+
+    private func canonical(_ url: URL) -> String {
+        guard let pointer = realpath(url.path, nil) else { return url.path }
+        defer { free(pointer) }
+        return String(cString: pointer)
+    }
+
+    @Test("탭을 활성화하면 편집기의 작업 디렉토리가 그 프로젝트로 간다")
+    func activatingATabMovesTheEditor() async throws {
+        let alpha = TemporaryProjectFixture()
+        alpha.write("src/Alpha.kt", contents: "class AlphaService")
+        let beta = TemporaryProjectFixture()
+        beta.write("src/Beta.kt", contents: "class BetaService")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        let first = try await workspace.openProject(at: alpha.rootURL)
+        let second = try await workspace.openProject(at: beta.rootURL)
+
+        try await workspace.activate(first.tab.id)
+        #expect(try await workspace.editorSession.currentWorkingDirectoryForTesting()
+                == canonical(alpha.rootURL))
+
+        try await workspace.activate(second.tab.id)
+        #expect(try await workspace.editorSession.currentWorkingDirectoryForTesting()
+                == canonical(beta.rootURL))
+        await workspace.shutDown()
+    }
+
+    /// The same relative path names a different file in each tab. Opening it after a switch must
+    /// land in the project the user is looking at — this is the defect the migration found.
+    @Test("전환 후 같은 상대 경로가 그 탭의 파일을 연다")
+    func theSameRelativePathOpensTheActiveTabsFile() async throws {
+        let alpha = TemporaryProjectFixture()
+        alpha.write("shared.txt", contents: "alpha content")
+        let beta = TemporaryProjectFixture()
+        beta.write("shared.txt", contents: "beta content")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        let first = try await workspace.openProject(at: alpha.rootURL)
+        let second = try await workspace.openProject(at: beta.rootURL)
+
+        try await workspace.activate(second.tab.id)
+        try await workspace.editorSession.openFile(atRelativePath: "shared.txt", line: 1, recordJump: false)
+        #expect(try await workspace.editorSession.bufferLinesForTesting().first == "beta content")
+
+        try await workspace.activate(first.tab.id)
+        try await workspace.editorSession.openFile(atRelativePath: "shared.txt", line: 1, recordJump: false)
+        #expect(try await workspace.editorSession.bufferLinesForTesting().first == "alpha content")
+        await workspace.shutDown()
+    }
+
+    /// A save outside every open project belongs to no tab. Reindexing it would put a file into a
+    /// project that does not contain it.
+    @Test("어느 프로젝트에도 속하지 않는 저장은 무시된다")
+    func aSaveOutsideEveryProjectIsIgnored() async throws {
+        let project = TemporaryProjectFixture()
+        project.write("src/App.kt", contents: "class Application")
+        let outside = TemporaryProjectFixture()
+        outside.write("Stray.kt", contents: "class StrayService")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        let tab = try await workspace.openProject(at: project.rootURL)
+        let session = try #require(await workspace.session(for: tab.tab.id))
+
+        // 전제를 먼저 세운다. 편집기가 그 파일을 정말 열지 않으면 저장도 없고, 그러면
+        // "인덱스에 없다"는 아무것도 증명하지 않는다 — 일어나지 않은 일의 결과가 없을 뿐이다.
+        let strayPath = outside.rootURL.appendingPathComponent("Stray.kt").path
+        try await workspace.editorSession.sendKeys(":edit \(strayPath)<CR>")
+        let opened = try await workspace.editorSession.evaluateForTesting("expand('%:p')")
+        #expect(opened.hasSuffix("Stray.kt"), "전제 실패: 프로젝트 밖 파일이 열리지 않았다 (\(opened))")
+        #expect(try await workspace.editorSession.bufferLinesForTesting().first == "class StrayService")
+
+        try await workspace.editorSession.sendKeys(":write<CR>")
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(await session.definitions(named: "StrayService").isEmpty,
+                "프로젝트 밖 파일이 이 프로젝트의 인덱스에 들어갔다")
+        await workspace.shutDown()
+    }
+}
