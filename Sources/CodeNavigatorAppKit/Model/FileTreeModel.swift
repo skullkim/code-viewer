@@ -65,6 +65,34 @@ public final class FileTreeModel {
         await loadChildren(of: FileTreePresentation.rootPath)
     }
 
+    /// 보이는 디렉토리를 디스크에서 다시 읽는다 — **펼침·선택은 그대로 둔다.**
+    ///
+    /// `loadProject` 를 다시 부르는 것이 가장 싼 구현인데, 그건 펼침·선택을 **의도적으로**
+    /// 버린다(프로젝트 전환용이다). 인덱싱이 끝날 때마다 트리가 접히면 큰 레포에서
+    /// 사용자는 트리를 쓸 수 없다 — **고치려던 결함보다 나쁜 수정**이 된다.
+    ///
+    /// 접힌 디렉토리는 안 읽는다. 보이지 않으므로 지금 맞출 필요가 없고, 펼칠 때 읽힌다.
+    public func refreshVisibleDirectories() async {
+        guard projectRootPath != nil else {
+            return
+        }
+        for path in [FileTreePresentation.rootPath] + expandedPaths {
+            await reloadChildren(of: path)
+        }
+    }
+
+    /// 캐시를 무시하고 다시 읽는다.
+    ///
+    /// 실패해도 **있던 목록을 지우지 않는다** — `loadChildren` 은 못 읽은 디렉토리를 접지만,
+    /// 그건 사용자가 방금 펼친 경우의 이야기다. 배경 새로고침이 일시적으로 실패했다고
+    /// 보고 있던 트리가 사라지면 그게 더 나쁘다.
+    private func reloadChildren(of path: String) async {
+        guard let entries = try? await projectSession.directoryEntries(atRelativePath: path) else {
+            return
+        }
+        childrenByPath[path] = entries
+    }
+
     /// Tells the tree which file the edit session is showing (REQ-003 AC-3).
     public func updateCurrentFile(absolutePath: String?, isDirty: Bool) {
         currentFileAbsolutePath = absolutePath

@@ -88,8 +88,12 @@ final class FakeProjectSession: ProjectSession, @unchecked Sendable {
         return textSearchResult
     }
 
+    /// 디렉토리를 몇 번 읽었는지. **다시 읽지 않는 것**도 단언 대상이라 센다.
+    private(set) var directoryEntriesCallCount = 0
+
     func directoryEntries(atRelativePath relativePath: String) async throws -> [DirectoryEntry] {
-        directoryEntries[relativePath] ?? []
+        directoryEntriesCallCount += 1
+        return directoryEntries[relativePath] ?? []
     }
 }
 

@@ -107,10 +107,16 @@ public final class AppModel {
     /// 마지막으로 시작한 더티 재집계. 테스트가 그 완료를 기다릴 수 있게 붙들어 둔다 —
     /// `Task.yield()` 로 기다리면 스케줄링에 따라 통과가 갈린다.
     private var dirtyRefreshTask: Task<Void, Never>?
+    private var treeRefreshTask: Task<Void, Never>?
 
     /// 진행 중인 더티 재집계를 기다린다 (테스트 전용 이음매).
     func awaitDirtyRefresh() async {
         await dirtyRefreshTask?.value
+    }
+
+    /// 진행 중인 트리 새로고침을 기다린다 (테스트 전용 이음매).
+    func awaitTreeRefresh() async {
+        await treeRefreshTask?.value
     }
 
     static let inputModeStorageKey = "inputMode"
@@ -206,6 +212,16 @@ public final class AppModel {
         // is the only place REQ-002 AC-4 becomes visible to a user.
         if state == .ready, wasWorking || indexStatistics == nil {
             Task { await refreshIndexStatistics() }
+        }
+
+        // 인덱싱이 끝나면 트리도 다시 읽는다. 감시자가 새 파일을 잡아 재인덱싱했다는
+        // 뜻이고, 트리는 **열 때 한 번 읽은 캐시**를 들고 있어 그 파일을 모른다
+        // (QA 실측: 검색은 6개, 트리는 5개).
+        //
+        // 끝났을 때만 한다 — 진행률은 큰 레포에서 초당 여러 번 바뀌고, 매번 다시 읽으면
+        // 새로고침 자체가 부하가 된다. 더티 카운트를 "바뀔 때만" 센 것과 같은 이유다.
+        if state == .ready, wasWorking {
+            treeRefreshTask = Task { await fileTree.refreshVisibleDirectories() }
         }
         // The tab bar's spinner reads this. Kept in step here rather than derived in the
         // view, so the bar and the status chip cannot disagree about whether indexing runs.
