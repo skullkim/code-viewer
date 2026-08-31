@@ -59,8 +59,9 @@
 | REQ-NF-002 · SC-8 (유휴 메모리) | backend | `SearchPerformanceTests` + `gate.sh` 격리 측정 스텝 | backend-junior | PASS (격리 실행 27.4MB / 인덱스 비용 19.1MB) |
 | **W-8 약속 (편집기 없이도 인덱스)** · REQ-004 AC-5 | backend | `EditorFailureKeepsIndexTests` (2) — 편집기 실패해도 프로젝트 열림·심볼 검색됨·상태에 실패 남음 · **실패 후 다시 열기가 편집기를 다시 띄운다**(흡수 상태 회귀 방어) | backend-senior | PASS |
 | **REQ-001 AC-2 (전환 시 편집기 동행)** · REQ-004 AC-5 | backend | `EditorFailureKeepsIndexTests` — 크래시 뒤 다른 프로젝트로 전환하면 **전환도 되고 편집기도 돌아온다**(예전 동작으로 변이 시 Red 확인) | backend-senior | PASS |
+| **REQ-012 AC-5 (대소문자 접힘)** | backend | `ProjectWorkspaceEngineTests` — 대소문자만 다른 경로가 한 탭. **볼륨에 직접 물어** 비구분이면 1탭·구분이면 2탭. 정규화를 `realpath`→문자열로 변이 시 Red 확인(빌드 에러 0) | backend-senior | PASS |
 | **REQ-012 AC-1·AC-2·AC-5 · INV-5** | backend | `ProjectWorkspaceEngineTests` (8) — 두 프로젝트 동시 개방·양쪽 검색 · **탭 A 검색이 탭 B 심볼을 못 본다(INV-5)** · 재개방은 `.activatedExisting` · 심링크 다른 표기도 한 프로젝트 · 순서 바꾸기는 순열만 | backend-senior | PASS |
-| **REQ-012 AC-3 (닫으면 해제)** | backend | 위 스위트 — 세션 nil·이웃 탭 무사 · `WorkspaceMemoryReuseTests` (2) — **10회 여닫기 회당 0.08MB**(인덱스 하나 5.3MB). 경계를 두 실측값 사이에서 골랐고 **변이(닫기 무력화)로 Red 확인**(1/2·1/4 는 놓쳤다) | backend-senior | PASS |
+| **REQ-012 AC-3 (닫으면 해제)** | backend | 위 스위트 — 세션 nil·이웃 탭 무사 · `WorkspaceMemoryReuseTests` (2) — **총 증가 688KB < 인덱스 하나 5936KB**. 회차 10·20·40·80 을 각각 새 프로세스에서 재어 **총 증가가 회차와 무관**함을 확인(누수 아님). 판정은 `gate.sh` 격리 스텝(동시 실행 0 확인 후) | backend-senior | PASS |
 | **REQ-012 AC-4·AC-6 (복원)** | backend | 위 스위트 — 못 연 것을 사유(`notFound`)와 함께 돌려준다 | backend-senior | PASS |
 | **ADR-0008/0009 (탭페이지 격리)** | backend | `EditorProjectTabTests` (5) — 탭별 `tcd` · 첫 탭 재사용 · 닫기 · **마지막 탭은 세션 유지** · `showtabline=0`(변이 2건 Red) · `TabPageIsolationSpikeTests` — 격리되는 둘과 **격리 안 되는 둘 모두 단언** | backend-senior | PASS |
 | **D-16 (편집기 cwd)** | backend | `EditorWorkingDirectoryTests` — `lsof` 로 OS 에 묻는다(`:cd` 가 답을 바꿀 수 있으므로). 변이 시 관측값이 `~/Documents/...` — **D-14 TCC 후보 뒷받침** | backend-senior | PASS |
