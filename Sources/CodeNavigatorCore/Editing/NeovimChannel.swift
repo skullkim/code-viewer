@@ -49,9 +49,15 @@ actor NeovimChannel {
 
     /// How long the editor is given to leave on its own before it is killed outright.
     ///
-    /// Long enough that an ordinary exit (measured at 0.02–0.04s) always wins the race, short
-    /// enough that a user closing a project does not accumulate editors.
-    private static let terminationGracePeriod: TimeInterval = 0.5
+    /// **Measured, and the number is small on purpose.** An embedded Neovim essentially never
+    /// honours SIGTERM: a shutdown that waits 0.5s waits the whole 0.5s, every time — a five-test
+    /// suite went from 0.29s to 2.5s when the wait became real. Twenty seconds did not help
+    /// either, so this is not a matter of being patient enough.
+    ///
+    /// The grace is kept rather than dropped because sending SIGTERM costs nothing and a future
+    /// Neovim may honour it; 0.1s is enough for a process that intends to leave and cheap when it
+    /// does not.
+    private static let terminationGracePeriod: TimeInterval = 0.1
 
     /// Stops the editor process for good, escalating if it will not leave.
     ///
@@ -64,12 +70,42 @@ actor NeovimChannel {
     ///
     /// The delayed kill re-checks the pid rather than holding the process object, so it costs
     /// nothing in the normal case: by then the process is gone and `kill` finds nothing.
-    private static func stopProcess(_ process: Process) {
+    /// Stops the process and **does not return until it is gone**.
+    ///
+    /// The escalation used to be scheduled for later and left to run on its own. That is not a
+    /// guarantee: a caller that shuts down and then exits takes the pending work with it, so
+    /// `shutDown()` returned while the editor was still alive. Measured — a suite whose tests
+    /// finish in 0.29s left four editors per run behind a 0.5s delayed kill.
+    ///
+    /// Waiting is cheap in the case that actually happens: an editor that leaves on its own is
+    /// gone in about 0.02s, so the poll almost never reaches a second iteration.
+    private static func stopProcessAndWait(_ process: Process) {
+        guard process.isRunning else { return }
+        let processIdentifier = process.processIdentifier
+        process.terminate()
+
+        // SIGTERM 은 정중한 부탁이고 임베디드 nvim 은 자주 거절한다(실측: 20초 뒤에도 살아 있음).
+        // 짧게 기다려 보고 안 나가면 확실히 보낸다.
+        // `process.isRunning`, not `kill(pid, 0)`: the latter succeeds for a process that has
+        // already exited but not been reaped, so it would report "still alive" for a corpse and
+        // burn the whole grace period on every teardown. Foundation reaps, so it knows.
+        let deadline = Date().addingTimeInterval(terminationGracePeriod)
+        while Date() < deadline, process.isRunning {
+            usleep(2_000)
+        }
+        if process.isRunning {
+            kill(processIdentifier, SIGKILL)
+            process.waitUntilExit()
+        }
+    }
+
+    /// The last-resort path. `deinit` cannot wait, so this one schedules the escalation and hopes
+    /// the process outlives the delay — `shutDown()` is the path that promises anything.
+    private static func stopProcessWithoutWaiting(_ process: Process) {
         guard process.isRunning else { return }
         let processIdentifier = process.processIdentifier
         process.terminate()
         DispatchQueue.global().asyncAfter(deadline: .now() + terminationGracePeriod) {
-            // 죽었으면 kill(pid, 0) 이 실패하므로 아무 일도 일어나지 않는다.
             if kill(processIdentifier, 0) == 0 {
                 kill(processIdentifier, SIGKILL)
             }
@@ -88,7 +124,7 @@ actor NeovimChannel {
     deinit {
         standardOutputPipe.fileHandleForReading.readabilityHandler = nil
         try? standardInputPipe.fileHandleForWriting.close()
-        Self.stopProcess(process)
+        Self.stopProcessWithoutWaiting(process)
     }
 
     // MARK: - Lifecycle
@@ -189,7 +225,7 @@ actor NeovimChannel {
         // `stopProcess`, which is why the kill escalates.
         try? standardInputPipe.fileHandleForWriting.close()
 
-        Self.stopProcess(process)
+        Self.stopProcessAndWait(process)
         byteStream.finish()
         readerTask?.cancel()
         for continuation in notificationContinuations.values {
