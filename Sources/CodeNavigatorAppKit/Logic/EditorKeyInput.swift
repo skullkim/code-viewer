@@ -101,13 +101,28 @@ extension EditorKeyInput {
     /// All three, not just Escape: Vim users leave insert with `⌃[` and `⌃C` as readily,
     /// and handling only Escape would lose the composing syllable through the door nobody
     /// thought to close.
-    /// 글자를 만들지 않는 이름 있는 키 — nvim 이 받아야 한다.
+    /// macOS 가 **명령으로** 전달하는 키 — `doCommandBySelector` 로 온다.
     ///
-    /// `space`·`return`·`tab` 은 여기 없다. 셋은 글자를 만들고 `insertText:` 로 온다.
-    static let movementKeys: Set<NamedKey> = [
+    /// 우리는 그 메서드를 구현하지 않으므로 여기 있는 키는 전부 **조용히 사라진다.**
+    /// 그래서 전부 표기로 보낸다.
+    ///
+    /// **근거는 시스템의 표다**(측정 2026-08-31, `plutil -p`):
+    /// `/System/Library/Frameworks/AppKit.framework/Resources/StandardKeyBinding.dict`
+    /// ```
+    /// "\r" => insertNewline:      "\t" => insertTab:
+    /// backspace => deleteBackward:    arrows => moveUp:/moveDown:/moveLeft:/moveRight:
+    /// ```
+    /// **`space` 는 그 표에 없다** — 그래서 진짜 글자로 `insertText:` 를 통해 온다.
+    ///
+    /// ⚠ 한때 `return`·`tab` 이 여기 없었다. "셋 다 글자를 만든다"는 **확인되지 않은
+    /// 분류**를 근거로 뺐고, 그래서 Enter 가 죽었다(사용자 보고). 표가 있어도 **칸의 값이
+    /// 틀리면 표가 그 오류를 고정한다** — 근거는 "누가 그렇게 말했다"가 아니라 "무엇으로
+    /// 확인했다"여야 한다.
+    static let commandKeys: Set<NamedKey> = [
         .left, .right, .up, .down,
         .backspace, .forwardDelete,
         .home, .end, .pageUp, .pageDown,
+        .returnKey, .tab,
     ]
 
     /// 조합 중에는 **IME 의 것**인 키. 조합 안에서 이동하고 자모를 지운다.
@@ -207,17 +222,17 @@ extension EditorKeyInput {
         // 입력 컨텍스트는 그것들을 `doCommandBySelector` 로 넘긴다 — 우리는 그것을 구현하지
         // 않으므로 **조용히 사라진다.** 사용자 보고가 정확히 이것이었다.
         //
-        // `space`·`return`·`tab` 은 뺀다. 셋은 **글자를 만들어** `insertText:` 로 오고 뷰가
-        // 이미 받는다 — 표기로도 보내면 한 번의 입력이 두 번 처리된다.
+        // `space` 만 뺀다. 그것만이 진짜 글자로 `insertText:` 를 통해 오고 뷰가 이미
+        // 받는다 — 표기로도 보내면 한 번의 입력이 두 번 처리된다.
         //
         // 조합 중이면 방향키·backspace 는 **IME 의 것**이다. 조합 안에서 이동하고 자모를
         // 지운다 — 여기서 가로채면 한글 입력이 망가지고, 그건 고치려던 결함보다 나쁘다.
         // home·end·page 는 음절 안에서 쓸 일이 없으므로 커밋하고 내보낸다(아래 공통 경로).
         let named = NamedKey.named(forKeyCode: stroke.keyCode)
-        let isMovementKey = named.map(Self.movementKeys.contains) ?? false
+        let isCommandKey = named.map(Self.commandKeys.contains) ?? false
         let belongsToCompositionNow = hasMarkedText && named.map(Self.compositionKeys.contains) ?? false
 
-        if isMovementKey, !belongsToCompositionNow {
+        if isCommandKey, !belongsToCompositionNow {
             guard let notation = KeyNotation.notation(for: stroke) else {
                 return .interpretForComposition
             }
