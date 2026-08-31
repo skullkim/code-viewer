@@ -65,6 +65,27 @@ ARCHIVED="$ARCHIVE_DIR/$APP_NAME-$BUILD_STAMP.app"
 if [ ! -d "$ARCHIVED" ]; then
     cp -Rc "$APP_DIR" "$ARCHIVED" 2>/dev/null || cp -R "$APP_DIR" "$ARCHIVED"
 fi
+
+# Records what the build was made from, because a bundle cannot be identified after the fact.
+#
+# The tree moves while this script runs. Measured: a check said "two untracked files, nothing
+# wired" and twenty-two seconds later the build had swept a half-finished feature that had been
+# wired in between — the check and the build were not one action. Someone then measured that
+# bundle believing it was HEAD.
+#
+# So the answer is not to forbid building on a dirty tree (the gate does it every run, and
+# in-progress work is normal here). It is to make every bundle say what it contains.
+MANIFEST="$ARCHIVED.manifest.txt"
+{
+    echo "built:     $(date '+%F %T')"
+    echo "HEAD:      $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo 'not a repo')"
+    echo "clean:     $([ -z "$(git -C "$REPO_ROOT" status --porcelain -- Sources Tests 2>/dev/null)" ] && echo yes || echo 'NO — 아래 파일이 HEAD 와 다르다')"
+    git -C "$REPO_ROOT" status --porcelain -- Sources Tests 2>/dev/null | sed 's/^/  /'
+} > "$MANIFEST"
+
 echo "보존: $ARCHIVED" >&2
+if grep -q '^clean:     NO' "$MANIFEST"; then
+    echo "⚠ 이 번들은 HEAD 가 아니다 — 미커밋 소스가 들어갔다. $MANIFEST 를 보고 판정하라." >&2
+fi
 
 echo "$APP_DIR"
