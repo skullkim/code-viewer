@@ -69,6 +69,8 @@ struct ProjectTabBarTests {
     func uniqueNamesStayBare() {
         // 늘 붙이면 112pt 폭에서 정작 이름이 밀려난다.
         let bar = make([tab("repo"), tab("other")])
+        // 넣은 만큼 나왔는지 먼저 — 항목이 사라지면 "보조 라벨이 없다"가 저절로 참이다.
+        #expect(bar.items.count == 2)
         #expect(bar.items.allSatisfy { $0.secondaryLabel == nil })
     }
 
@@ -260,6 +262,7 @@ struct ProjectTabBarTests {
     @Test("넘침이 없으면 전부 보인다")
     func withoutOverflowEverythingIsVisible() {
         let bar = make((0..<3).map { tab("p\($0)") }, width: 1600)
+        #expect(bar.items.count == 3, "항목이 없으면 '전부 보인다'가 저절로 참이다")
         #expect(bar.items.allSatisfy { $0.isVisible })
         #expect(bar.overflowItems.isEmpty)
     }

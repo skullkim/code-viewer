@@ -148,6 +148,10 @@ struct FileTreePresentationTests {
     func aFileOutsideTheProjectHighlightsNothing() {
         let tree = make(expanded: ["Sources"], currentFile: "/etc/hosts")
 
+        // 행이 있는지 먼저 묻는다. `allSatisfy` 는 **빈 집합에서 참**이라, 트리가 아예
+        // 비어 있으면 "아무 행도 강조 안 한다"가 저절로 통과한다 — 그건 이 테스트가
+        // 재려던 것이 아니다.
+        #expect(!tree.rows.isEmpty, "강조할 행이 없으면 이 단언은 아무것도 재지 않는다")
         #expect(tree.rows.allSatisfy { !$0.isCurrentFile })
     }
 
@@ -170,6 +174,7 @@ struct FileTreePresentationTests {
             isDirty: false
         )
 
+        #expect(!tree.rows.isEmpty, "행이 없으면 '더티 표시가 없다'가 저절로 참이 된다")
         #expect(tree.rows.allSatisfy { !$0.isDirty })
     }
 
