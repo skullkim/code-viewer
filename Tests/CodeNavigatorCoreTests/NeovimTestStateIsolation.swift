@@ -29,6 +29,18 @@ enum NeovimTestStateIsolation {
     static let applied: Void = {
         let base = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("code-navigator-nvim-state", isDirectory: true)
+
+        // Wiped at the start of every run, because redirecting the damage is not the same as
+        // stopping it: this suite kills editors on purpose, a killed editor leaves a
+        // `main.shada.tmp.X` behind, and those accumulate. Measured — 25 of them piled up here in
+        // under an hour, and Neovim starts refusing at 26 (`E138`) while a half-written file makes
+        // it refuse to read (`E576`). Both then fail tests for a reason that has nothing to do
+        // with the code under test.
+        //
+        // A fresh directory each run keeps that from carrying across runs. Corruption produced
+        // *within* a run is still possible; if that ever shows up, the answer is to stop writing
+        // ShaDa at all rather than to clean harder.
+        try? FileManager.default.removeItem(at: base)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         // Both, because which one holds ShaDa moved between Neovim versions and this suite should
         // not depend on which one is installed.
