@@ -112,7 +112,13 @@ public final class AppModel {
         workspace: any ProjectWorkspace,
         storage: KeyValueStore,
         now: @escaping @Sendable () -> Date,
-        isRenderableDocument: @escaping (String) -> Bool = { _ in false }
+        // 기본값은 **진짜 동작**이다. 예전 기본값 `{ _ in false }` 는 중립처럼 보였지만
+        // 중립이 아니라 하나의 행동이었고, 하필 **모든 렌더 검사를 무의미하게 만드는**
+        // 행동이었다 — 주입을 잊은 채 쓴 모델은 렌더가 영원히 안 켜지고, 그 위에서 쓴
+        // 렌더 테스트는 "렌더 꺼짐" 경로만 재면서 전부 초록이 된다.
+        // 잊었을 때 조용히 꺼지는 대신 정상 동작하도록 뒤집었다. 다른 판정을 원하는
+        // 테스트는 그대로 주입하면 된다.
+        isRenderableDocument: @escaping (String) -> Bool = RenderableDocument.isRenderable(relativePath:)
     ) {
         self.editorSession = editorSession
         self.workspace = workspace
@@ -202,14 +208,28 @@ public final class AppModel {
     /// 읽기를 시작하면 **스크롤 위치가 매번 처음으로 돌아간다**.
     public func syncRenderDocument() {
         guard renderViewState.isShowingRender,
-              let path = editorStatus?.filePath,
+              let absolutePath = editorStatus?.filePath,
               let root = projectRootPath,
               let tab = tabs.activeTabID
         else {
             render.clear()
             return
         }
-        render.showIfNeeded(path: path, root: root, tab: tab)
+
+        // **에디터는 절대 경로로 말하고, 엔진의 문은 상대 경로를 받는다**
+        // (`EditorStatus.filePath` 는 절대, `renderSource(atRelativePath:)` 는 상대).
+        // 변환 없이 넘기면 엔진이 거절하고, 그 거절이 **모든 파일에** 일어난다 — 그런데
+        // 문구가 "잘못된 경로입니다"라서 화면은 *경로가 이상한 그 파일* 을 말하는 것처럼
+        // 보인다. 상태바와 파일 트리가 이미 같은 변환을 거쳐 간다.
+        guard let relativePath = PathDisplay.relativePath(
+            ofAbsolutePath: absolutePath, projectRoot: root
+        ) else {
+            // 루트 밖이다. 여기서만 "밖이라서 못 그린다"가 참이 된다.
+            render.showOutsideProjectRoot(absolutePath: absolutePath)
+            return
+        }
+
+        render.showIfNeeded(path: relativePath, root: root, tab: tab)
     }
 
     /// 렌더 보기와 소스 보기를 오간다. 선택은 그 파일에 대해 세션 동안 남는다.

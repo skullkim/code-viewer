@@ -55,6 +55,24 @@ public final class RenderDocumentModel {
         }
     }
 
+    /// 프로젝트 루트 밖의 파일 — 렌더하지 않고 그 사실을 말한다 (INV-6).
+    ///
+    /// 조용히 비우면 사용자는 문서가 비었다고 읽는다. 그렇다고 엔진에 넘기면 루트 제한이
+    /// 거절하는데, **그 거절은 "이 파일이 이상하다"처럼 읽힌다** — 이상한 건 파일이 아니라
+    /// 위치다. 여기서 갈라야 그 문구가 제 뜻을 갖는다.
+    public func showOutsideProjectRoot(absolutePath: String) {
+        loadTask?.cancel()
+        loadTask = nil
+        // 신원을 비운다: 이 문서는 화면에 없다. 늦게 도착한 앞 문서의 답이 여기 그려지면
+        // 안 된다.
+        documentRelativePath = nil
+        projectRoot = nil
+        html = ""
+        blocked = []
+        unavailable = []
+        phase = .failed(reason: "프로젝트 폴더 밖의 파일은 렌더할 수 없습니다: \(absolutePath)")
+    }
+
     /// 문서가 바뀌지 않았을 때 화면을 비운다 — 소스 보기로 돌아갈 때.
     public func clear() {
         loadTask?.cancel()
