@@ -121,19 +121,24 @@ public struct RenderDocumentView<Document: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The document fills what the header leaves. **No `ScrollView` here.**
+    ///
+    /// There used to be one, and it made the surface blank. A `ScrollView` proposes unbounded
+    /// height along its scroll axis, and the document view is a web view — which has no
+    /// intrinsic content size — so it collapsed to **zero height**. A view of size zero emits
+    /// no error, no log, no empty-state text: the reader got a blank panel with a correct
+    /// header above it, and nothing anywhere said why. The rule INV-6 states about blocking
+    /// ("차단된 것을 조용히 비우지 않는다") was broken by layout instead of by policy.
+    ///
+    /// The web view scrolls its own content, so the outer scroller was never needed. The
+    /// measure and typography it used to impose (720pt, 14pt prose) belong to the document
+    /// and now live in the stylesheet the pipeline injects — where they also apply to `.html`
+    /// files, which never went through these modifiers at all.
     private var documentBody: some View {
-        ScrollView {
-            document
-                // Prose, not code: 14pt at a wider leading, plainly different from the
-                // 13pt monospaced grid underneath (W-14).
-                .font(.system(size: Metrics.bodyTextSize))
-                .frame(maxWidth: Metrics.maximumBodyWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, DesignTokens.Spacing.extraLarge)
-                .padding(.horizontal, DesignTokens.Spacing.large)
-        }
-        // No caret, no cursor — but selection and copy stay, because reading includes them.
-        .textSelection(.enabled)
+        document
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // No caret, no cursor — but selection and copy stay, because reading includes them.
+            .textSelection(.enabled)
     }
 
     private func noticeCard(_ notice: RenderNoticeCard) -> some View {
@@ -181,10 +186,8 @@ public struct RenderDocumentView<Document: View>: View {
 private enum Metrics {
     static let headerHeight: CGFloat = 28
     static let badgeVerticalPadding: CGFloat = 1
-        /// 14pt prose — the designer measured 11pt-class text smudging on non-Retina, and
-        /// the body has to read as clearly different from the code grid.
-    static let bodyTextSize: CGFloat = 14
-    static let maximumBodyWidth: CGFloat = 720
+    // 본문 크기(14pt)와 최대 폭(720pt)은 여기 없다 — `RenderDocumentPipeline.documentStyle`
+    // 로 옮겼다. 두 벌로 두면 한쪽만 고쳐지고, 고쳐지지 않은 쪽이 `.html` 경로다.
     static let noticeCardWidth: CGFloat = 420
     static let noticeGlyphSize: CGFloat = 28
     }

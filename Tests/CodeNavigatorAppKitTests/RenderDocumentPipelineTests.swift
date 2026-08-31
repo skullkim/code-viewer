@@ -125,6 +125,66 @@ struct RenderDocumentPipelineTests {
         #expect(document.blocked.map(\.kind) == [.tooLarge])
     }
 
+    // MARK: 문서 서식 (W-14)
+
+    @Test("문서에 본문 서식이 실린다")
+    func theDocumentCarriesItsOwnTypography() async throws {
+        let (root, cleanUp) = try fixture()
+        defer { cleanUp() }
+
+        let document = await RenderDocumentPipeline.prepare(
+            html: "<p>본문</p>", projectRoot: root, loadResource: { _ in .failure(.notFound) }
+        )
+
+        // W-14: 본문 최대 폭 720px 중앙 정렬 · 산문 14px/1.7.
+        // 예전엔 SwiftUI 수식어가 이걸 걸었는데, **그 수식어가 웹뷰를 0 높이로 접었고**
+        // `.html` 파일에는 애초에 안 걸렸다. 서식은 문서의 것이므로 문서가 들고 간다.
+        #expect(document.html.contains("max-width: 720px"))
+        #expect(document.html.contains("14px/1.7"))
+    }
+
+    @Test("코드블록이 가로로 스크롤한다 — 문서 전체가 밀리지 않는다")
+    func codeBlocksScrollHorizontallyOnTheirOwn() async throws {
+        let (root, cleanUp) = try fixture()
+        defer { cleanUp() }
+
+        let document = await RenderDocumentPipeline.prepare(
+            html: "<pre><code>긴 줄</code></pre>", projectRoot: root,
+            loadResource: { _ in .failure(.notFound) }
+        )
+
+        // 02b W-14 접근성: 긴 코드 한 줄이 문서 전체를 가로로 밀면 본문을 읽을 수 없다.
+        #expect(document.html.contains("overflow-x: auto"))
+    }
+
+    @Test("링크가 색만으로 구별되지 않는다")
+    func linksAreNotDistinguishedByColourAlone() async throws {
+        let (root, cleanUp) = try fixture()
+        defer { cleanUp() }
+
+        let document = await RenderDocumentPipeline.prepare(
+            html: "<p><a href=\"#x\">링크</a></p>", projectRoot: root,
+            loadResource: { _ in .failure(.notFound) }
+        )
+
+        // §4.5 색 단독 금지. 밑줄이 없으면 색각 이상에서 링크가 본문과 같아 보인다.
+        #expect(document.html.contains("text-decoration: underline"))
+    }
+
+    @Test("서식이 페치 가능한 참조를 만들지 않는다")
+    func theStylesheetFetchesNothing() async throws {
+        let (root, cleanUp) = try fixture()
+        defer { cleanUp() }
+
+        let document = await RenderDocumentPipeline.prepare(
+            html: "<p>본문</p>", projectRoot: root, loadResource: { _ in .failure(.notFound) }
+        )
+
+        // 우리가 넣는 스타일이 폰트나 이미지를 부르면, 우리가 만든 문서가 INV-6 을 깬다.
+        #expect(!document.html.contains("url("))
+        #expect(document.blocked.isEmpty)
+    }
+
     /// 클로저에서 세는 도구. `await` 사이에 값을 넘겨야 해서 참조 타입이다.
     private final class Counter: @unchecked Sendable {
         private(set) var value = 0
