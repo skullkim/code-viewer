@@ -22,7 +22,7 @@ struct SearchTabScopeTests {
     private func reference(path: String) -> ReferenceSearchResult {
         ReferenceSearchResult(
             references: [
-                SymbolReference(path: path, line: 12, columnStart: 0, columnEnd: 7, previewText: "handler()")
+                Reference(path: path, line: 12, previewText: "handler()", matchRanges: [MatchRange(start: 0, end: 7)], isDefinition: false)
             ],
             total: 1,
             truncated: false,
@@ -66,7 +66,7 @@ struct SearchTabScopeTests {
 
         let session = FakeProjectSession()
         session.textSearchResult = TextSearchResult(
-            items: [TextSearchItem(path: "src/main.rs", line: 3, columnStart: 0, columnEnd: 4, previewText: "todo")],
+            items: [TextSearchItem(path: "src/main.rs", line: 3, previewText: "todo", matchRanges: [MatchRange(start: 0, end: 4)])],
             total: 1, truncated: false, limit: 500
         )
 

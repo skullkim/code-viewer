@@ -6,6 +6,9 @@ public struct SanitizedDocument: Sendable, Hashable {
     public let html: String
     /// What was refused, for the chip and the popover (W-15).
     public let blocked: [BlockedResource]
+    /// Local resources that could not be read — missing or unreadable. **Not blocks.**
+    /// Separate so the sandbox notice does not claim credit for someone's typo.
+    public let unavailable: [UnavailableResource]
 }
 
 /// Rewrites a document's resource references before the web view ever sees it (INV-6,
@@ -48,7 +51,12 @@ public enum RenderDocumentSanitizer {
     /// Reads an allowed local file. Injected so the pass can be tested without a disk, and
     /// so the real read can come from the engine's render-specific path when it lands —
     /// notably *not* from the indexer's reader, whose 1MiB cap is half the render limit.
-    public typealias FileLoader = (String) -> Data?
+    /// Reads an allowed local file, or says why it could not.
+    ///
+    /// `Result`, not `Data?`. The optional collapsed every failure into one event at exactly
+    /// the point where the reason was still known, and the chip downstream then had nothing to
+    /// report but "blocked". Injected so the pass can be tested without a disk.
+    public typealias FileLoader = (String) -> Result<Data, RenderResourceFailure>
 
     public static func sanitize(
         html: String,
@@ -56,6 +64,7 @@ public enum RenderDocumentSanitizer {
         loadFile: FileLoader
     ) -> SanitizedDocument {
         var blocked: [BlockedResource] = []
+        var unavailable: [UnavailableResource] = []
         var output = html
 
         // Script elements go first and whole. Emptying the `src` would leave an element
@@ -80,17 +89,21 @@ public enum RenderDocumentSanitizer {
             in: output,
             projectRoot: projectRoot,
             loadFile: loadFile,
-            blocked: &blocked
+            blocked: &blocked,
+            unavailable: &unavailable
         )
 
         output = rewritingCSSURLs(
             in: output,
             projectRoot: projectRoot,
             loadFile: loadFile,
-            blocked: &blocked
+            blocked: &blocked,
+            unavailable: &unavailable
         )
 
-        return SanitizedDocument(html: injectingPolicy(into: output), blocked: blocked)
+        return SanitizedDocument(
+            html: injectingPolicy(into: output), blocked: blocked, unavailable: unavailable
+        )
     }
 
     // MARK: 요소 제거
@@ -177,7 +190,8 @@ public enum RenderDocumentSanitizer {
         in html: String,
         projectRoot: String,
         loadFile: FileLoader,
-        blocked: inout [BlockedResource]
+        blocked: inout [BlockedResource],
+        unavailable: inout [UnavailableResource]
     ) -> String {
         var output = html
 
@@ -187,7 +201,8 @@ public enum RenderDocumentSanitizer {
                 in: output,
                 projectRoot: projectRoot,
                 loadFile: loadFile,
-                blocked: &blocked
+                blocked: &blocked,
+                unavailable: &unavailable
             )
         }
         // `srcset` carries a comma-separated list; one bad entry is enough, so the whole
@@ -205,7 +220,8 @@ public enum RenderDocumentSanitizer {
         in html: String,
         projectRoot: String,
         loadFile: FileLoader,
-        blocked: inout [BlockedResource]
+        blocked: inout [BlockedResource],
+        unavailable: inout [UnavailableResource]
     ) -> String {
         rewritingAttributeValues(named: attribute, in: html) { element, value in
             // An anchor's href is navigation, not a fetch — nothing is loaded until the
@@ -238,11 +254,38 @@ public enum RenderDocumentSanitizer {
                 return .value(value)
 
             case .allowFile(let resolvedPath):
-                guard let data = loadFile(resolvedPath) else {
-                    blocked.append(BlockedResource(kind: .outsideProjectRoot, detail: value))
+                switch loadFile(resolvedPath) {
+                case .success(let data):
+                    return .value(
+                        "data:\(mediaType(forPath: resolvedPath));base64,\(data.base64EncodedString())"
+                    )
+
+                case .failure(let failure):
+                    // The reason decides what the reader is told. Before this, every failure
+                    // was recorded as `outsideProjectRoot` — so a 3MB image *inside* the
+                    // project reported that it was outside it.
+                    if let kind = blockedKind(for: failure) {
+                        blocked.append(BlockedResource(kind: kind, detail: value))
+                        if kind.showsInlinePlaceholder, tagName(of: element) == "img" {
+                            return .element(BlockedResourceBox.html(
+                                kind: kind,
+                                detail: value,
+                                alternativeText: attributeValue(named: "alt", in: element)
+                            ))
+                        }
+                    } else {
+                        unavailable.append(UnavailableResource(path: value, failure: failure))
+                        // Not blocked, but not silent either. Vanishing is the failure W-15
+                        // exists to prevent; claiming we blocked it is the opposite lie.
+                        if tagName(of: element) == "img" {
+                            return .element(BlockedResourceBox.unavailableHTML(
+                                detail: value,
+                                alternativeText: attributeValue(named: "alt", in: element)
+                            ))
+                        }
+                    }
                     return .value("")
                 }
-                return .value("data:\(mediaType(forPath: resolvedPath));base64,\(data.base64EncodedString())")
 
             case .block(let kind, let detail):
                 blocked.append(BlockedResource(kind: kind, detail: detail))
@@ -296,7 +339,8 @@ public enum RenderDocumentSanitizer {
         in html: String,
         projectRoot: String,
         loadFile: FileLoader,
-        blocked: inout [BlockedResource]
+        blocked: inout [BlockedResource],
+        unavailable: inout [UnavailableResource]
     ) -> String {
         var result = ""
         var rest = Substring(html)
@@ -321,10 +365,15 @@ public enum RenderDocumentSanitizer {
             case .allowInlineData:
                 result += "url(\(raw))"
             case .allowFile(let resolvedPath):
-                if let data = loadFile(resolvedPath) {
+                switch loadFile(resolvedPath) {
+                case .success(let data):
                     result += "url(data:\(mediaType(forPath: resolvedPath));base64,\(data.base64EncodedString()))"
-                } else {
-                    blocked.append(BlockedResource(kind: .outsideProjectRoot, detail: value))
+                case .failure(let failure):
+                    if let kind = blockedKind(for: failure) {
+                        blocked.append(BlockedResource(kind: kind, detail: value))
+                    } else {
+                        unavailable.append(UnavailableResource(path: value, failure: failure))
+                    }
                     result += "url()"
                 }
             case .block(let kind, let detail):
@@ -336,6 +385,28 @@ public enum RenderDocumentSanitizer {
         }
 
         return result + rest
+    }
+
+    /// Which W-15 row a read failure belongs on, or `nil` when it belongs on none.
+    ///
+    /// `nil` is not "ignore it" — the caller records those as `unavailable` instead. The split
+    /// is the point: **W-15 lists what the sandbox refused.** A file that is missing was not
+    /// refused, and putting it on that list tells the reader we blocked something we did not,
+    /// which is the mirror image of the silent blocking W-15 exists to prevent.
+    ///
+    /// ⚠ Where `notFound`/`notReadable` are shown in the document is an open decision
+    /// (asked 2026-08-31). Until it lands they are carried, not classified — assigning them a
+    /// row now would bury the question inside a value nobody would think to re-examine.
+    private static func blockedKind(for failure: RenderResourceFailure) -> BlockedResourceKind? {
+        switch failure {
+        case .tooLarge:
+            return .tooLarge
+        case .invalidPath:
+            // The engine refused the path itself, which is exactly INV-6's root restriction.
+            return .outsideProjectRoot
+        case .notFound, .notReadable:
+            return nil
+        }
     }
 
     // MARK: CSP

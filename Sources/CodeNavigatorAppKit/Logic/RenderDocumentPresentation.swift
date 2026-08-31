@@ -1,31 +1,29 @@
 import Foundation
+import CodeNavigatorContract
 
-/// Where the rendered text came from (REQ-013, leader ruling 2026-08-30).
+/// 화면이 출처를 어떻게 말하는가.
 ///
-/// Buffer first, disk as fallback: the usual reason to open a preview is to see how what
-/// you just typed looks, and rendering the disk copy would show a document missing the
-/// paragraph you are looking for — not "slightly stale" but wrong.
+/// 출처 자체는 `CodeNavigatorContract.RenderSource.Origin` 이 정의한다 — 어느 사본을 읽었는지
+/// 아는 것은 버퍼와 디스크를 실제로 만지는 엔진이다. 여기에는 **그것을 사용자에게 어떻게
+/// 보이느냐**만 둔다.
 ///
-/// The fallback is never silent. If the edit session died and the render quietly dropped to
-/// disk, the user is looking at a wrong screen with no way to know it, which is the same
-/// failure in the other direction.
-public enum RenderSource: Sendable, Hashable {
-    case buffer
-    case disk
+/// 한때 AppKit 에 `.buffer`/`.disk` 라는 같은 뜻의 enum 이 따로 있었다. 두 정의의 주석이
+/// *"방금 친 문단이 빠진 문서를 보게 된다 — 낡은 게 아니라 틀린 것"* 이라는 같은 문단을
+/// 각자 쓰고 있었다. **두 사람이 같은 문단을 따로 쓰고 있으면 그것은 두 개념이 아니다.**
+extension RenderSource.Origin {
 
-    /// The badge shown in the render header. Nil for the ordinary case — a notice that
-    /// appears always is a notice nobody reads.
+    /// 렌더 헤더에 붙는 배지. 정상 경로에는 없다 — 늘 뜨는 알림은 아무도 안 읽는다.
     public var badge: String? {
         switch self {
-        case .buffer: return nil
-        case .disk: return "저장된 내용"
+        case .editorBuffer: return nil
+        case .savedFile: return "저장된 내용"
         }
     }
 
     public var tooltip: String? {
         switch self {
-        case .buffer: return nil
-        case .disk: return "편집 중인 내용이 아니라 디스크에 저장된 내용을 표시하고 있습니다"
+        case .editorBuffer: return nil
+        case .savedFile: return "편집 중인 내용이 아니라 디스크에 저장된 내용을 표시하고 있습니다"
         }
     }
 }
@@ -36,7 +34,7 @@ public enum RenderPhase: Sendable, Hashable {
     case rendering
     /// A re-render after a save. The previous document stays on screen (AC-5).
     case rerendering
-    case rendered(source: RenderSource)
+    case rendered(source: RenderSource.Origin)
     case empty
     case failed(reason: String)
     case undecodable
@@ -112,7 +110,7 @@ extension RenderDocumentPresentation {
         )
     }
 
-    private static func renderSource(for phase: RenderPhase) -> RenderSource? {
+    private static func renderSource(for phase: RenderPhase) -> RenderSource.Origin? {
         guard case .rendered(let source) = phase else {
             return nil
         }

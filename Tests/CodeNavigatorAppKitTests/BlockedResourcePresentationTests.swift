@@ -72,15 +72,21 @@ struct BlockedResourcePresentationTests {
         #expect(panel.rows.first { $0.kind == .script }?.count == 1)
     }
 
-    @Test("차단이 아주 많아도 줄 수는 여섯을 넘지 않는다")
-    func thePopoverNeverGrowsPastSixRows() {
+    @Test("차단이 아주 많아도 줄 수는 종류 수를 넘지 않는다")
+    func thePopoverAggregatesInsteadOfListing() {
         // 40건이 40줄이면 아무도 안 읽는다 — W-15가 종류별 집계를 지정한 이유다.
+        //
+        // 예전엔 `<= 6` 이었다. 6 은 당시의 **종류 수**였고, 지키려던 성질은 "여섯"이 아니라
+        // **"건수가 아니라 종류만큼만 늘어난다"** 였다. 리더가 `.tooLarge` 를 승인하며 같은
+        // 말을 했다 — *6줄 상한은 팝오버가 읽을 수 없게 되는 걸 막으려던 제약이지 6이라는
+        // 숫자가 목적이 아니다.* 그래서 숫자를 올리는 대신 성질로 쓴다.
         let many = BlockedResourceKind.allCases.flatMap { kind in
             (0..<20).map { blocked(kind, "src\($0)") }
         }
         let panel = BlockedResourcePresentation.make(blocked: many)
 
-        #expect(panel.rows.count <= 6)
+        #expect(panel.rows.count <= BlockedResourceKind.allCases.count)
+        #expect(panel.rows.count < many.count, "집계가 아니라 나열이면 팝오버를 못 읽는다")
         #expect(panel.blockedCount == BlockedResourceKind.allCases.count * 20)
     }
 

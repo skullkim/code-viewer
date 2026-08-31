@@ -11,14 +11,37 @@ import CodeNavigatorContract
 @Observable
 public final class SearchModel {
 
-    public private(set) var referencePhase: ReferencePhase = .idle
-    public private(set) var referenceSymbolName: String?
-    public private(set) var selectedReferenceID: String?
+    private var storedReferencePhase: ReferencePhase = .idle
+    private var storedReferenceSymbolName: String?
+    private var storedSelectedReferenceID: String?
 
-    public private(set) var textSearchPhase: TextSearchPhase = .idle
-    public private(set) var lastTextSearchResult: TextSearchResult?
-    public private(set) var textSearchElapsedSeconds: Double?
-    public private(set) var selectedTextSearchItemID: String?
+    private var storedTextSearchPhase: TextSearchPhase = .idle
+    private var storedLastTextSearchResult: TextSearchResult?
+    private var storedTextSearchElapsedSeconds: Double?
+    private var storedSelectedTextSearchItemID: String?
+
+    /// 결과를 가져온 탭. 활성 탭과 다르면 그 결과는 이 화면의 것이 아니다.
+    private var resultsTabID: ProjectTabIdentifier?
+
+    /// 지금 보관 중인 결과가 **다른 탭**의 것인가.
+    ///
+    /// 탭 전환 때 지우는 대신 읽을 때 판단한다 — 지우는 쪽은 누군가 호출을 잊으면 조용히
+    /// 깨지고, 실제로 잊혀 있었다(`AppModel.activateTab` 은 이 모델에 아무 말도 하지 않는다).
+    /// 파생값은 잊을 수가 없다.
+    private var holdsAnotherTabsResults: Bool {
+        guard let resultsTabID else { return false }
+        guard let active = activeTabProvider() else { return false }
+        return resultsTabID != active
+    }
+
+    public var referencePhase: ReferencePhase { holdsAnotherTabsResults ? .idle : storedReferencePhase }
+    public var referenceSymbolName: String? { holdsAnotherTabsResults ? nil : storedReferenceSymbolName }
+    public var selectedReferenceID: String? { holdsAnotherTabsResults ? nil : storedSelectedReferenceID }
+
+    public var textSearchPhase: TextSearchPhase { holdsAnotherTabsResults ? .idle : storedTextSearchPhase }
+    public var lastTextSearchResult: TextSearchResult? { holdsAnotherTabsResults ? nil : storedLastTextSearchResult }
+    public var textSearchElapsedSeconds: Double? { holdsAnotherTabsResults ? nil : storedTextSearchElapsedSeconds }
+    public var selectedTextSearchItemID: String? { holdsAnotherTabsResults ? nil : storedSelectedTextSearchItemID }
     public var textSearchQuery: String = ""
     public var textSearchMode: TextSearchMode = .literal
 
@@ -33,37 +56,41 @@ public final class SearchModel {
     /// opened for the rest of the run — and the results would look plausible, which is the
     /// worst way to be wrong.
     private let sessionProvider: () -> (any ProjectSession)?
+    private let activeTabProvider: () -> ProjectTabIdentifier?
     private let clock: @Sendable () -> Date
 
     private var projectSession: any ProjectSession { sessionProvider() ?? NoProjectSession() }
 
     public init(
         sessionProvider: @escaping () -> (any ProjectSession)?,
+        activeTabProvider: @escaping () -> ProjectTabIdentifier? = { nil },
         clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.sessionProvider = sessionProvider
+        self.activeTabProvider = activeTabProvider
         self.clock = clock
     }
 
     // MARK: References (REQ-006)
 
     public func showReferences(to symbolName: String) async {
-        referenceSymbolName = symbolName
+        resultsTabID = activeTabProvider()
+        storedReferenceSymbolName = symbolName
         selectedTab = .references
-        selectedReferenceID = nil
-        referencePhase = .searching
+        storedSelectedReferenceID = nil
+        storedReferencePhase = .searching
 
         do {
-            referencePhase = .results(try await projectSession.references(to: symbolName))
+            storedReferencePhase = .results(try await projectSession.references(to: symbolName))
         } catch let error as NavigatorError {
-            referencePhase = .failed(error)
+            storedReferencePhase = .failed(error)
         } catch {
-            referencePhase = .failed(.editorRequestFailed(method: "references", reason: "\(error)"))
+            storedReferencePhase = .failed(.editorRequestFailed(method: "references", reason: "\(error)"))
         }
     }
 
     public func selectReference(_ reference: Reference) {
-        selectedReferenceID = reference.id
+        storedSelectedReferenceID = reference.id
     }
 
     public func referencePresentation(indexState: IndexState) -> ReferencePresentation {
@@ -76,7 +103,8 @@ public final class SearchModel {
 
     // MARK: Symbol search (REQ-007)
 
-    public private(set) var symbolResults: [SymbolSearchResult] = []
+    private var storedSymbolResults: [SymbolSearchResult] = []
+    public var symbolResults: [SymbolSearchResult] { holdsAnotherTabsResults ? [] : storedSymbolResults }
     public private(set) var symbolSelectedIndex = 0
     /// When the query in flight started, for the 200ms spinner rule (design §3 W-3).
     public private(set) var symbolSearchStartedAt: Date?
@@ -86,11 +114,12 @@ public final class SearchModel {
     public func runSymbolSearch() async {
         let query = symbolSearchQuery
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            symbolResults = []
+            storedSymbolResults = []
             symbolSearchStartedAt = nil
             return
         }
 
+        resultsTabID = activeTabProvider()
         symbolSearchStartedAt = clock()
         let results = await projectSession.searchSymbols(matching: query)
 
@@ -100,7 +129,7 @@ public final class SearchModel {
         guard query == symbolSearchQuery else {
             return
         }
-        symbolResults = results
+        storedSymbolResults = results
         symbolSelectedIndex = 0
         symbolSearchStartedAt = nil
     }
@@ -120,7 +149,7 @@ public final class SearchModel {
     public func dismissSymbolSearch() {
         isShowingSymbolSearch = false
         symbolSearchQuery = ""
-        symbolResults = []
+        storedSymbolResults = []
         symbolSearchStartedAt = nil
     }
 
@@ -139,27 +168,28 @@ public final class SearchModel {
     public func runTextSearch() async {
         let query = textSearchQuery
         guard !query.isEmpty else {
-            textSearchPhase = .idle
+            storedTextSearchPhase = .idle
             return
         }
 
-        selectedTextSearchItemID = nil
-        textSearchPhase = .searching
+        resultsTabID = activeTabProvider()
+        storedSelectedTextSearchItemID = nil
+        storedTextSearchPhase = .searching
         let startedAt = clock()
 
         do {
             let result = try await projectSession.searchText(query, mode: textSearchMode)
             // Timed here rather than in the engine: a duration measured before rendering
             // would report less than the user waited.
-            textSearchElapsedSeconds = clock().timeIntervalSince(startedAt)
-            lastTextSearchResult = result
-            textSearchPhase = .results(result)
+            storedTextSearchElapsedSeconds = clock().timeIntervalSince(startedAt)
+            storedLastTextSearchResult = result
+            storedTextSearchPhase = .results(result)
         } catch let error as NavigatorError {
             // The previous results stay on screen, dimmed. An invalid regular expression
             // is an error, never an empty result set (SC-6).
-            textSearchPhase = .failed(error)
+            storedTextSearchPhase = .failed(error)
         } catch {
-            textSearchPhase = .failed(.editorRequestFailed(method: "searchText", reason: "\(error)"))
+            storedTextSearchPhase = .failed(.editorRequestFailed(method: "searchText", reason: "\(error)"))
         }
     }
 
@@ -172,7 +202,7 @@ public final class SearchModel {
     }
 
     public func selectTextSearchItem(_ item: TextSearchItem) {
-        selectedTextSearchItemID = item.id
+        storedSelectedTextSearchItemID = item.id
     }
 
     public func textSearchPresentation() -> TextSearchPresentation {

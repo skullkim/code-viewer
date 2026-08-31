@@ -500,6 +500,17 @@ else
     grep -rn "NumberFormatter(" "$REPO_ROOT/Sources" --include="*.swift" | sed 's/^/    /'
 fi
 
+section "프론트엔드: 검색 결과의 탭 범위 (사용자 문장 \"탭 단위로 보고 싶어\")"
+# 결과에는 *상대* 경로가 들어 있고 에디터 루트는 탭을 따라 옮겨간다. 배선이 빠지면 A 의
+# 결과가 B 화면에 남아 `B_루트 + A_상대경로` 로 열린다 — B 에 같은 이름이 있으면 **아무 말
+# 없이 다른 파일이 열린다**. 실측: 조립부의 provider 를 `{ nil }` 로 바꿔도 15건 전부 초록.
+if SCOPE_OUTPUT="$("$REPO_ROOT/scripts/check-search-tab-scope.sh" 2>&1)"; then
+    pass "검색 결과 탭 범위 — $(printf '%s' "$SCOPE_OUTPUT" | tail -1 | sed 's/^ *ok: //')"
+else
+    fail "검색 결과가 탭을 따라가지 않는다"
+    printf '%s\n' "$SCOPE_OUTPUT" | sed 's/^/    /'
+fi
+
 section "프론트엔드: 포커스 표면 대칭"
 # D-11 이 두 번 살아남은 자리다. 처음엔 모달만 `.onAppear` 로 포커스를 잡고 검색 패널은
 # 안 잡았고, 코디네이터로 판단을 옮긴 뒤에도 모달만 여는 경로를 갖고 패널은 닫는 경로만

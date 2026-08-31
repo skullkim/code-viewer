@@ -11,6 +11,7 @@ public actor NeovimEditorSession: EditorSession {
     /// Neovim tells us about saves and cursor movement over these notification names.
     private static let savedNotification = "code_navigator_saved"
     private static let statusNotification = "code_navigator_status"
+    private static let dirtyNotification = "code_navigator_dirty"
     /// How long a jump target stays highlighted. Long enough for the eye to catch the line,
     /// short enough that it does not linger as if it were a selection.
     private static let jumpHighlightMilliseconds = 700
@@ -56,6 +57,7 @@ public actor NeovimEditorSession: EditorSession {
     private var gridBroadcaster = EventBroadcaster<EditorGridSnapshot>()
     private var statusBroadcaster = EventBroadcaster<EditorStatus>()
     private var savedFileBroadcaster = EventBroadcaster<SavedFile>()
+    private var dirtyChangeBroadcaster = EventBroadcaster<String>()
     private var notificationTask: Task<Void, Never>?
 
     /// Creates a session. Pass `executableOverridePath` to use a specific Neovim build; by
@@ -426,6 +428,25 @@ public actor NeovimEditorSession: EditorSession {
 
     // MARK: - 저장과 더티 상태
 
+    /// Fires whenever a buffer's modified flag changes, carrying that buffer's absolute path.
+    ///
+    /// Deliberately **not** a count. Counting per project would require the session to know which
+    /// projects are open, and that belongs to the workspace — a session that had to be told would
+    /// make the tab list owned in two places. The workspace recounts the affected tab when this
+    /// fires; the path is included so it can recount one tab instead of all of them.
+    ///
+    /// Both directions are reported. A tab's dot has to be turned off as well as on, and only the
+    /// buffer knows when a write cleared it.
+    public func dirtyStateChanges() async -> AsyncStream<String> {
+        dirtyChangeBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.unsubscribeDirtyChange(identifier) }
+        }
+    }
+
+    private func unsubscribeDirtyChange(_ identifier: Int) {
+        dirtyChangeBroadcaster.unsubscribe(identifier)
+    }
+
     /// The unsaved files of one project, as project-relative paths.
     ///
     /// Scope is decided by **where the file is**, not by which window or tabpage shows it: in the
@@ -763,6 +784,14 @@ public actor NeovimEditorSession: EditorSession {
             reportStatus()
           end
         })
+        vim.api.nvim_create_autocmd({'BufModifiedSet'}, {
+          callback = function(arguments)
+            local path = vim.api.nvim_buf_get_name(arguments.buf)
+            if path ~= '' then
+              vim.rpcnotify(channelIdentifier, '\(Self.dirtyNotification)', { path = path })
+            end
+          end
+        })
         vim.api.nvim_create_autocmd(
           {'BufEnter', 'TextChanged', 'TextChangedI', 'CursorMoved', 'CursorMovedI', 'ModeChanged'},
           { callback = reportStatus }
@@ -799,6 +828,11 @@ public actor NeovimEditorSession: EditorSession {
         case Self.savedNotification:
             if let saved = Self.makeSavedFile(from: notification.parameters) {
                 savedFileBroadcaster.send(saved)
+            }
+        case Self.dirtyNotification:
+            if let fields = notification.parameters.first?.mapValue,
+               let path = fields.first(where: { $0.key.stringValue == "path" })?.value.stringValue {
+                dirtyChangeBroadcaster.send(path)
             }
         case Self.statusNotification:
             if let fields = notification.parameters.first?.mapValue {

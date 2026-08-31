@@ -21,6 +21,11 @@ struct WorkspaceRenderSourceTests {
     }
 
     /// 절대 경로로 연다 — 탭↔에디터 루트 배선과 무관하게 "그 파일을 편집기가 들고 있다" 를 만든다.
+    ///
+    /// 고정 대기를 쓰지 않는다. `sendKeys` 는 편집기가 아직 붙기 전이면 키를 **큐에 담아 두고**
+    /// 돌아오므로, 부하가 걸린 풀런에서는 그 키가 렌더를 읽은 **뒤에** 소화될 수 있다. 그러면
+    /// 버퍼에 수정이 없는 채로 읽어 "버퍼가 이긴다" 가 이유 없이 실패한다 — 기다림의 길이가
+    /// 아니라 순서의 문제이므로, 대기를 늘리는 대신 **상태를 확인**한다.
     private func openInEditorAndModify(
         _ workspace: ProjectWorkspaceEngine,
         fileURL: URL,
@@ -28,9 +33,32 @@ struct WorkspaceRenderSourceTests {
     ) async throws {
         let session = await workspace.editorSession
         try await session.sendKeys(":e \(fileURL.path)<CR>")
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitUntil("편집기가 \(fileURL.lastPathComponent) 를 든다") {
+            (try? await session.bufferLines(forFileAt: fileURL.path)) != nil
+        }
+
         try await session.sendKeys("O\(marker)<Esc>")
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitUntil("버퍼에 '\(marker)' 가 들어간다") {
+            let lines = (try? await session.bufferLines(forFileAt: fileURL.path)) ?? nil
+            return lines?.contains { $0.contains(marker) } ?? false
+        }
+    }
+
+    /// 조건이 참이 될 때까지 기다린다. 되지 않으면 **무엇을 기다렸는지** 말하고 실패한다 —
+    /// 조용히 넘어가면 뒤의 단언이 엉뚱한 이유로 실패해 원인을 찾는 데 시간을 쓴다.
+    private func waitUntil(
+        _ description: String,
+        timeout: Duration = .seconds(10),
+        _ condition: () async -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        Issue.record("기다린 조건이 끝내 성립하지 않았다: \(description)")
     }
 
     @Test("저장하지 않은 버퍼가 디스크를 이기고, 다른 탭은 영향받지 않는다")

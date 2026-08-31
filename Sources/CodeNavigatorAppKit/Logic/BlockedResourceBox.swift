@@ -16,6 +16,22 @@ import Foundation
 /// through.
 public enum BlockedResourceBox {
 
+    /// The box for a resource we could **not read** — missing or unreadable.
+    ///
+    /// A different sign on the same box (leader ruling 2026-08-31). Two wrong directions sit
+    /// on either side of this: saying nothing, so the reader thinks the app dropped their
+    /// image; and saying "blocked", so they think we refused it. The truth is neither — we
+    /// tried and could not — and it is the one thing that lets them go fix the path.
+    public static func unavailableHTML(detail: String, alternativeText: String?) -> String {
+        box(
+            glyph: "⚠",
+            title: "이미지를 표시할 수 없습니다",
+            accessibleKind: "표시할 수 없는 이미지",
+            detail: detail,
+            alternativeText: alternativeText
+        )
+    }
+
     public static func html(
         kind: BlockedResourceKind,
         detail: String,
@@ -27,14 +43,30 @@ public enum BlockedResourceBox {
             return ""
         }
 
+        return box(
+            glyph: "🛡",
+            title: title(for: kind),
+            accessibleKind: "차단된 \(kind.label)",
+            detail: detail,
+            alternativeText: alternativeText
+        )
+    }
+
+    /// The shared box. One component, two signs — the difference is what happened, not how it
+    /// is drawn, and drawing them differently would make the reader learn two shapes.
+    private static func box(
+        glyph: String,
+        title: String,
+        accessibleKind: String,
+        detail: String,
+        alternativeText: String?
+    ) -> String {
         let alternative = (alternativeText?.isEmpty == false) ? alternativeText : nil
         // The alt text is what the author wrote *for* this slot, so it names the thing better
         // than the URL does. The URL is the fallback.
-        let accessibleName = HTMLText.escapedAttribute(
-            "차단된 \(kind.label): \(alternative ?? detail)"
-        )
+        let accessibleName = HTMLText.escapedAttribute("\(accessibleKind): \(alternative ?? detail)")
 
-        var content = "<span style=\"\(Style.title)\">🛡 \(HTMLText.escaped(title(for: kind)))</span>"
+        var content = "<span style=\"\(Style.title)\">\(glyph) \(HTMLText.escaped(title))</span>"
         content += "<code style=\"\(Style.detail)\">\(HTMLText.escaped(detail))</code>"
         if let alternative {
             content += "<span style=\"\(Style.alternative)\">alt: \(HTMLText.escaped(alternative))</span>"

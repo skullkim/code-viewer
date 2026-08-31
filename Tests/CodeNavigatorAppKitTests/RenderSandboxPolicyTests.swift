@@ -311,10 +311,15 @@ struct RenderSandboxPolicyTests {
         #expect(!BlockedResourceKind.remoteFont.showsInlinePlaceholder)
     }
 
-    @Test("여섯 분류가 전부 화면 문구를 갖는다")
+    @Test("모든 분류가 화면 문구를 갖는다")
     func everyKindHasItsScreenWording() {
-        // §3 W-15 의 여섯 종류. 계약이 늘면 여기서 걸린다.
-        #expect(BlockedResourceKind.allCases.count == 6)
+        // 분류가 늘면 **여기서 걸리라고** 둔 수다. 실제로 걸렸다 — `.tooLarge` 를 더하자
+        // 이 줄이 빨간불이 됐고, 그래서 문구를 빠뜨리지 않고 같이 넣었다. 숫자를 지우면
+        // 다음 분류는 문구 없이 조용히 들어온다.
+        //
+        // 6 → 7: 리더 판정 2026-08-31. 루트 안의 3MB 파일이 `outsideProjectRoot` 로
+        // 기록되던 거짓말을 없애기 위해 `.tooLarge` 를 추가했다.
+        #expect(BlockedResourceKind.allCases.count == 7)
         for kind in BlockedResourceKind.allCases {
             #expect(!kind.label.isEmpty, "\(kind.rawValue)")
         }

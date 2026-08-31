@@ -15,7 +15,7 @@ struct RenderDocumentSanitizerTests {
 
     private func sanitize(
         _ html: String,
-        loadFile: @escaping RenderDocumentSanitizer.FileLoader = { _ in Data("png".utf8) }
+        loadFile: @escaping RenderDocumentSanitizer.FileLoader = { _ in .success(Data("png".utf8)) }
     ) -> SanitizedDocument {
         RenderDocumentSanitizer.sanitize(
             html: html,
@@ -86,7 +86,7 @@ struct RenderDocumentSanitizerTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: #"<img src="images/logo.png">"#,
             projectRoot: fixture.root.path,
-            loadFile: { _ in Data([0x89, 0x50]) }
+            loadFile: { _ in .success(Data([0x89, 0x50])) }
         )
 
         #expect(result.blocked.isEmpty)
@@ -95,19 +95,61 @@ struct RenderDocumentSanitizerTests {
     }
 
     @Test("파일을 못 읽으면 차단으로 떨어진다")
-    func anUnreadableFileFallsBackToBlocked() throws {
+    func anUnreadableFileIsReportedNotDropped() throws {
         // 허용 판정을 받았어도 바이트가 없으면 그릴 것이 없다. 빈 src 를 남기지 않는다.
+        //
+        // 예전엔 `!blocked.isEmpty` 로 쟀다. 그건 **읽기 실패를 "우리가 차단했다"로 기록하던
+        // 시절의 단언**이고, 그게 루트 안 3MB PNG 를 `outsideProjectRoot` 로 적던 거짓말의
+        // 뿌리였다. 지키려던 성질은 "차단 목록에 오른다"가 아니라 **"조용히 사라지지
+        // 않는다"** 이므로 그것을 직접 잰다 — 어느 목록이든 보고되기만 하면 된다.
         let fixture = try TemporaryProject()
         defer { fixture.cleanUp() }
 
         let result = RenderDocumentSanitizer.sanitize(
             html: #"<img src="images/logo.png">"#,
             projectRoot: fixture.root.path,
-            loadFile: { _ in nil }
+            loadFile: { _ in .failure(.notFound) }
         )
 
-        #expect(!result.blocked.isEmpty)
-        #expect(!result.html.contains("images/logo.png"))
+        #expect(result.blocked.count + result.unavailable.count == 1, "실패가 어디에도 안 실렸다")
+        // 경로는 **글자로는 남는다** — 어느 파일이었는지 말하는 것이 판정의 요구다.
+        // 남으면 안 되는 것은 브라우저가 가지러 갈 수 있는 자리다.
+        #expect(
+            fetchableValues(in: result.html, containing: "images/logo.png").isEmpty,
+            "못 읽은 참조가 페치 가능한 자리에 남았다"
+        )
+    }
+
+    @Test("크기 초과는 루트 밖이 아니라 크기 초과로 기록된다")
+    func aFileTooLargeIsRecordedAsSuch() throws {
+        // 이것이 `.tooLarge` 를 만든 이유다(리더 판정). 루트 **안**의 3MB PNG 가
+        // `outsideProjectRoot` 로 적히면, 사용자는 파일을 옮기려 들고 파일은 그 자리에 있다.
+        let fixture = try TemporaryProject()
+        defer { fixture.cleanUp() }
+
+        let result = RenderDocumentSanitizer.sanitize(
+            html: #"<img src="images/logo.png">"#,
+            projectRoot: fixture.root.path,
+            loadFile: { _ in .failure(.tooLarge(byteSize: 3_000_000, limit: 2_097_152)) }
+        )
+
+        #expect(result.blocked.map(\.kind) == [.tooLarge])
+        #expect(result.html.contains("크기 초과"), "자리에 남는 박스가 사유를 말한다")
+    }
+
+    @Test("엔진이 경로를 거부하면 루트 밖으로 기록된다")
+    func anInvalidPathIsRecordedAsOutsideTheRoot() throws {
+        // 이쪽은 실제로 INV-6 의 루트 제한이 건 것이므로 차단이 맞다.
+        let fixture = try TemporaryProject()
+        defer { fixture.cleanUp() }
+
+        let result = RenderDocumentSanitizer.sanitize(
+            html: #"<img src="images/logo.png">"#,
+            projectRoot: fixture.root.path,
+            loadFile: { _ in .failure(.invalidPath) }
+        )
+
+        #expect(result.blocked.map(\.kind) == [.outsideProjectRoot])
     }
 
     // MARK: data: — 리더 판정
@@ -250,7 +292,7 @@ struct RenderDocumentSanitizerTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: ##"<a href="OTHER.md">문서</a><a href="#anchor">앵커</a>"##,
             projectRoot: fixture.root.path,
-            loadFile: { _ in Data("x".utf8) }
+            loadFile: { _ in .success(Data("x".utf8)) }
         )
 
         #expect(result.html.contains("href=\"OTHER.md\""), "링크가 재작성됐다: \(result.html)")

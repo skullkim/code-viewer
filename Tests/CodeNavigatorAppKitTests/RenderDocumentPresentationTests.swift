@@ -31,7 +31,7 @@ struct RenderDocumentPresentationTests {
         // 렌더 보기 동안 에디터로 가는 키가 전달되지 않는다. 그 사실이 화면에 없으면
         // 사용자는 타이핑이 먹히지 않는 것을 고장으로 읽는다.
         let phases: [RenderPhase] = [
-            .rendering, .rerendering, .rendered(source: .buffer), .empty,
+            .rendering, .rerendering, .rendered(source: .editorBuffer), .empty,
             .failed(reason: "x"), .undecodable, .tooLarge(byteCount: 1),
         ]
         for phase in phases {
@@ -44,7 +44,7 @@ struct RenderDocumentPresentationTests {
     @Test("버퍼를 그렸으면 출처 배지가 없다")
     func renderingTheBufferNeedsNoBadge() {
         // 정상 경로다. 늘 배지를 달면 아무도 안 읽게 된다.
-        let screen = make(.rendered(source: .buffer))
+        let screen = make(.rendered(source: .editorBuffer))
         #expect(screen.sourceBadge == nil)
         #expect(screen.sourceTooltip == nil)
     }
@@ -53,7 +53,7 @@ struct RenderDocumentPresentationTests {
     func fallingBackToDiskIsAnnounced() {
         // 조용한 폴백은 "방금 친 문단이 없는 화면"을 정상으로 보이게 한다 — 그건
         // 낡은 게 아니라 틀린 것이다.
-        let screen = make(.rendered(source: .disk))
+        let screen = make(.rendered(source: .savedFile))
         #expect(screen.sourceBadge == "저장된 내용")
         #expect(screen.sourceTooltip?.isEmpty == false)
     }
@@ -109,7 +109,7 @@ struct RenderDocumentPresentationTests {
 
     @Test("문서를 그리는 상태에는 카드가 없다")
     func drawableStatesShowNoCard() {
-        for phase in [RenderPhase.rendering, .rerendering, .rendered(source: .buffer)] {
+        for phase in [RenderPhase.rendering, .rerendering, .rendered(source: .editorBuffer)] {
             #expect(make(phase).notice == nil, "\(phase)")
         }
     }

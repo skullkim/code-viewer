@@ -94,9 +94,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         )
         // Asked for on each search rather than captured, so results follow the active tab
         // instead of whichever project happened to be opened first (02b §1.1).
-        let search = SearchModel(sessionProvider: { [weak model] in
-            model?.tabs.activeTab?.projectSession
-        })
+        let search = SearchModel(
+            sessionProvider: { [weak model] in
+                model?.tabs.activeTab?.projectSession
+            },
+            // 결과에는 *상대* 경로가 들어 있고 에디터의 루트는 탭을 따라 옮겨간다. 이것이
+            // 없으면 A 의 결과가 B 화면에 남아 있다가 `B_루트 + A_상대경로` 로 열린다 —
+            // 같은 이름의 파일이 B 에도 있으면 아무 말 없이 다른 파일이 열린다.
+            activeTabProvider: { [weak model] in
+                model?.tabs.activeTabID
+            }
+        )
         model.start()
         // Brings back the projects that were open, and lands on the one the user left in
         // front (REQ-012 AC-4). Started rather than awaited: the window should appear now,

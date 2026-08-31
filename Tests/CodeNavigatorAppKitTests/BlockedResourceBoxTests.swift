@@ -61,6 +61,52 @@ struct BlockedResourceBoxTests {
         }
     }
 
+    // MARK: 차단과 실패는 다른 문패 (리더 판정 2026-08-31)
+
+    @Test("못 읽은 리소스는 '차단'이라고 말하지 않는다")
+    func anUnreadableResourceDoesNotClaimWeBlockedIt() {
+        // W-15 는 **차단**의 목록이다. 우리가 안 막았는데 막았다고 말하는 것은,
+        // 우리가 막았는데 조용한 것만큼 틀린 보고다.
+        let output = BlockedResourceBox.unavailableHTML(detail: "images/logo.png", alternativeText: nil)
+
+        #expect(!output.contains("차단"))
+        #expect(output.contains("표시할 수 없습니다"))
+    }
+
+    @Test("못 읽은 리소스도 자리에 흔적을 남긴다")
+    func anUnreadableResourceStillLeavesAMark() {
+        // 조용히 사라지는 것도 금지다 — 루트 안 이미지가 오타 하나로 사라졌는데 화면에
+        // 아무 말도 없으면 그게 W-15 가 막으려던 바로 그 상황이다.
+        let output = BlockedResourceBox.unavailableHTML(detail: "images/logo.png", alternativeText: "로고")
+
+        #expect(!output.isEmpty)
+        #expect(output.contains("images/logo.png"), "어느 파일이었는지 말한다")
+        #expect(output.contains("로고"))
+    }
+
+    @Test("두 문패가 눈으로 구별된다")
+    func theTwoLabelsAreDistinguishable() {
+        let blockedBox = box(.remoteImage, detail: "cdn.example.com")
+        let unavailableBox = BlockedResourceBox.unavailableHTML(
+            detail: "images/logo.png", alternativeText: nil
+        )
+
+        // 방패와 경고 — 하나는 정책, 하나는 사고다.
+        #expect(blockedBox.contains("🛡"))
+        #expect(unavailableBox.contains("⚠"))
+        #expect(!unavailableBox.contains("🛡"))
+    }
+
+    @Test("못 읽은 리소스의 경로도 이스케이프된다")
+    func theUnavailablePathIsEscapedToo() {
+        let output = BlockedResourceBox.unavailableHTML(
+            detail: "<script>alert(1)</script>", alternativeText: nil
+        )
+
+        #expect(!output.contains("<script>"))
+        #expect(output.contains("&lt;script&gt;"))
+    }
+
     // MARK: 문서에서 온 문자열은 마크업이 되지 않는다
 
     @Test("출처의 꺾쇠가 태그가 되지 않는다")

@@ -373,9 +373,9 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
 
     func renderSource(
         atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
-    ) async throws -> CodeNavigatorContract.RenderSource {
+    ) async throws -> RenderSource {
         if let renderFailure { throw renderFailure }
-        return CodeNavigatorContract.RenderSource(
+        return RenderSource(
             path: relativePath, text: renderTexts[relativePath] ?? "", origin: .savedFile
         )
     }

@@ -9,7 +9,7 @@ struct RenderBlockedBoxIntegrationTests {
     private let root = "/tmp/cn-box-fixture"
 
     private func sanitize(_ html: String) -> SanitizedDocument {
-        RenderDocumentSanitizer.sanitize(html: html, projectRoot: root, loadFile: { _ in nil })
+        RenderDocumentSanitizer.sanitize(html: html, projectRoot: root, loadFile: { _ in .failure(.notFound) })
     }
 
     @Test("차단된 원격 이미지 자리에 박스가 남는다")
@@ -74,12 +74,31 @@ struct RenderBlockedBoxIntegrationTests {
         let result = RenderDocumentSanitizer.sanitize(
             html: "<img src=\"logo.png\">",
             projectRoot: directory,
-            loadFile: { FileManager.default.contents(atPath: $0) }
+            loadFile: { FileManager.default.contents(atPath: $0).map { .success($0) } ?? .failure(.notFound) }
         )
 
         #expect(result.html.contains("data:image/png;base64,"))
         #expect(!result.html.contains("차단되었습니다"))
         #expect(result.blocked.isEmpty)
+    }
+
+    @Test("못 읽은 로컬 이미지는 '차단'이 아니라 '표시할 수 없음' 박스를 남긴다")
+    func anUnreadableLocalImageSaysSoWithoutClaimingWeBlockedIt() throws {
+        let directory = NSTemporaryDirectory() + "cn-miss-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        try Data([0x89, 0x50]).write(to: URL(fileURLWithPath: directory + "/logo.png"))
+
+        let result = RenderDocumentSanitizer.sanitize(
+            html: "<img src=\"logo.png\" alt=\"로고\">",
+            projectRoot: directory,
+            loadFile: { _ in .failure(.notFound) }
+        )
+
+        #expect(result.html.contains("표시할 수 없습니다"))
+        #expect(!result.html.contains("차단"), "안 막았는데 막았다고 말한다")
+        #expect(result.blocked.isEmpty, "차단 칩에 오르면 사용자가 우리가 막았다고 읽는다")
+        #expect(result.unavailable.count == 1, "그렇다고 조용히 사라지면 안 된다")
     }
 
     @Test("스크립트는 박스를 남기지 않는다")

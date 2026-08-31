@@ -21,7 +21,7 @@ struct RenderDocumentSanitizerLimitTests {
         RenderDocumentSanitizer.sanitize(
             html: html,
             projectRoot: "/Users/dev/repo",
-            loadFile: { _ in nil }
+            loadFile: { _ in .failure(.notFound) }
         )
     }
 

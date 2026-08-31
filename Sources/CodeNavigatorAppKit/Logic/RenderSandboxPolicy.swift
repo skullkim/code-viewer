@@ -9,6 +9,13 @@ public enum BlockedResourceKind: String, Sendable, Hashable, CaseIterable {
     case remoteFont
     case frame
     case outsideProjectRoot
+    /// A local file inside the root that is larger than the render limit.
+    ///
+    /// Its own row rather than folded into another (leader ruling 2026-08-31). Before it, a
+    /// 3MB PNG inside the project was recorded as `outsideProjectRoot` — a lie about where the
+    /// file was. It is also **the only reason on this list the reader can act on**: the others
+    /// describe a policy, this one describes a file they can shrink.
+    case tooLarge
 
     /// The wording W-15's popover uses. The screen and the code say the same words.
     public var label: String {
@@ -19,6 +26,7 @@ public enum BlockedResourceKind: String, Sendable, Hashable, CaseIterable {
         case .remoteFont: return "원격 폰트"
         case .frame: return "프레임"
         case .outsideProjectRoot: return "프로젝트 밖 파일"
+        case .tooLarge: return "크기 초과 파일"
         }
     }
 
@@ -28,7 +36,7 @@ public enum BlockedResourceKind: String, Sendable, Hashable, CaseIterable {
     /// drawing one for it would invent a hole the document never had (W-15).
     public var showsInlinePlaceholder: Bool {
         switch self {
-        case .remoteImage, .outsideProjectRoot, .frame:
+        case .remoteImage, .outsideProjectRoot, .frame, .tooLarge:
             return true
         case .script, .remoteStylesheet, .remoteFont:
             return false
