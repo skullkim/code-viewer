@@ -161,8 +161,41 @@ extension EditorKeyInput {
         // input context, which swallowed it as `doCommand cancelOperation:`. Nobody could
         // leave insert mode: no save, no command, only force quit. It had nothing to do
         // with Korean, and every test before it supplied `hasMarkedText: true`.
-        if inputMode == .vim, isInsertModeExit(stroke) {
-            guard let notation = KeyNotation.notation(for: stroke) else {
+        // **화음은 조합이 아니다** — 삽입 모드라도(D-21, D-19 후속).
+        //
+        // 이 분기는 한때 탈출 3종(`Esc`·`⌃[`·`⌃C`)만 통과시켰다. 그래서 `⌃W`(단어 지우기)·
+        // `⌃U`·`⌃R`·`⌃O`·`⌃N`/`⌃P` 가 전부 IME 로 가서 **사라졌다** — 자판과 무관하게
+        // 모든 사용자에게. IME 는 그 화음으로 만들 글자가 없으니 조용히 삼킨다.
+        //
+        // ⌥ 는 뺀다 — macOS 에서 ⌥ 는 *글자를 만드는* 수식어라(⌥e 는 é 를 시작한다)
+        // 화음으로 단정하면 의도한 문자 입력을 가로챈다.
+        //
+        // **⌘ 도 뺀다. 이유가 다르다** — 비활성 `NSMenuItem` 은 자기 단축키를 소비하지
+        // 않는다(`performKeyEquivalent` 가 false 를 주고 이벤트가 응답자 사슬로 내려온다).
+        // ⌘ 를 화음에 넣으면 Vim 모드에서 REQ-010 AC-5 로 비활성인 ⌘V 가 keyDown 까지
+        // 떨어져 `<D-v>` 로 nvim 에 가고, 표준 모드에서는 메뉴가 먹는다. **같은 키가
+        // 메뉴 활성 상태에 따라 다른 곳으로 간다** — 그 상태는 모드·세션·프로젝트 유무로
+        // 계속 바뀐다. 지금 무해한 이유가 "nvim 이 `<D-v>` 를 기본 매핑 안 해서"인데,
+        // 그건 우리가 통제하는 조건이 아니다.
+        //
+        // ADR-0102 가 라우팅을 규칙 하나(`⌘면 앱`)로 압축한 것이 위임 근거였다. 여기서
+        // ⌘ 를 가져가면 규칙이 둘이 되고 둘째는 숨은 조건을 갖는다 — 새 메뉴 항목을
+        // 추가하는 사람이 키 라우팅까지 생각해야 한다.
+        //
+        // 표준 모드는 `inputMode == .vim` 이 걸러 낸다. 거기서 `⌃A`·`⌃E` 는 vim 키맵이
+        // 아니라 macOS 텍스트 시스템의 것이고, 우리가 가로챌 것이 아니다.
+        let isChord = stroke.modifiers.contains(.control)
+
+        if inputMode == .vim, isChord || isInsertModeExit(stroke) {
+            // **번역기를 거친다.** 예전엔 `KeyNotation` 을 직접 불러서, 한글 자판의 `⌃C` 가
+            // `<C-ㅊ>` 로 나갔다 — 번역기는 옳은데 이 경로가 그것을 안 거쳤다. 값이 맞는
+            // 것과 연결된 것은 다른 문제고, 번역기만 재는 테스트는 그 차이를 못 본다.
+            guard let notation = self.notation(
+                for: stroke,
+                editorMode: editorMode,
+                inputMode: inputMode,
+                latinCharacter: latinCharacter
+            ) else {
                 return .interpretForComposition
             }
             // Composing: the syllable is not in the buffer yet, so it goes first.
