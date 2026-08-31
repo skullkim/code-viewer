@@ -90,7 +90,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             editorSession: editorSession,
             workspace: workspace,
             storage: UserDefaults.standard,
-            now: { Date() }
+            now: { Date() },
+            // 확장자 목록의 주인은 렌더 도메인이다(주니어 합의, 2026-08-31). 여기서 다시
+            // 적으면 한쪽만 늘어나는 날 링크는 열리는데 버튼은 비활성이 된다.
+            isRenderableDocument: RenderableDocument.isRenderable(relativePath:)
         )
         // Asked for on each search rather than captured, so results follow the active tab
         // instead of whichever project happened to be opened first (02b §1.1).

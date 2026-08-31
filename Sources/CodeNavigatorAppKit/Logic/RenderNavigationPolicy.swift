@@ -47,9 +47,6 @@ public enum RenderNavigationPolicy {
     /// security surface that is the same as having no rule.
     private static let browserSchemes: Set<String> = ["http", "https"]
 
-    /// The extensions the render surface can draw (design 02b: `.md · .html 만 지원`).
-    private static let renderableExtensions: Set<String> = ["md", "html"]
-
     public static func decide(
         href: String,
         documentRelativePath: String,
@@ -61,7 +58,8 @@ public enum RenderNavigationPolicy {
             return .refuse(.unsupportedScheme)
         }
         if target.hasPrefix("#") {
-            return .scrollToFragment(String(target.dropFirst()))
+            let fragment = String(target.dropFirst())
+            return .scrollToFragment(fragment.removingPercentEncoding ?? fragment)
         }
         // `//host/path` looks like a path and is not one. Read as local it becomes "file not
         // found", and the reader is told the wrong thing about a remote reference.
@@ -94,8 +92,19 @@ public enum RenderNavigationPolicy {
         documentRelativePath: String,
         projectRoot: String
     ) -> RenderNavigation {
-        if let fragment = url.fragment, url.path.isEmpty || url.absoluteString.hasPrefix("#") {
-            return .scrollToFragment(fragment)
+        // A fragment reaches us attached to the document it came from — the web view resolves
+        // `href="#anchor"` against the base before we see it. **Measured** (2026-08-31,
+        // `scripts/spike-render-host.swift`): with a file base it arrives as
+        // `file:///…/guide.md#anchor`, and with `baseURL: nil` as `about:blank#anchor`.
+        //
+        // Neither shape can be read as "open this path". The first would reopen the document
+        // the reader is already in and throw away their scroll position; the second would be
+        // refused as an unknown scheme, so in-document links would simply stop working.
+        if let fragment = url.fragment, !fragment.isEmpty, isSameDocument(url, documentRelativePath, projectRoot) {
+            // Decoded, because the element id in the document is not encoded. A Korean
+            // heading arrives as `%EC%84%A4%EC%B9%98` and would match nothing (measured —
+            // and these documents are full of Korean headings).
+            return .scrollToFragment(fragment.removingPercentEncoding ?? fragment)
         }
         guard url.isFileURL else {
             return decide(
@@ -105,6 +114,35 @@ public enum RenderNavigationPolicy {
             )
         }
         return local(url.path, documentRelativePath: documentRelativePath, projectRoot: projectRoot)
+    }
+
+    /// Whether this URL addresses the document currently on screen.
+    ///
+    /// Compared through the same resolver the sandbox uses, not by spelling: the base the web
+    /// view hands back can differ from the path we passed in (`/tmp` against `/private/tmp`),
+    /// and comparing strings would call the same file two different files — the exact mistake
+    /// `resolvedPathInsideRoot` exists to prevent.
+    private static func isSameDocument(
+        _ url: URL,
+        _ documentRelativePath: String,
+        _ projectRoot: String
+    ) -> Bool {
+        // `baseURL: nil` leaves the web view no document to resolve against, so it uses
+        // `about:blank`. There is no other document it could mean.
+        if url.absoluteString.hasPrefix("about:blank") {
+            return true
+        }
+        guard url.isFileURL else {
+            return false
+        }
+        let documentPath = (projectRoot as NSString).appendingPathComponent(documentRelativePath)
+        guard
+            let target = RenderSandboxPolicy.resolvedPathInsideRoot(path: url.path, projectRoot: projectRoot),
+            let current = RenderSandboxPolicy.resolvedPathInsideRoot(path: documentPath, projectRoot: projectRoot)
+        else {
+            return false
+        }
+        return target == current
     }
 
     // MARK: 로컬 경로
@@ -166,8 +204,9 @@ public enum RenderNavigationPolicy {
         }
 
         let relative = String(resolved.dropFirst(resolvedRoot.count).drop { $0 == "/" })
-        let renderable = renderableExtensions.contains((relative as NSString).pathExtension.lowercased())
-        return .openInTab(relativePath: relative, asRendered: renderable)
+        // Asked, not decided here. "Can this be rendered" is one question with one answer
+        // (`RenderableDocument`), and the toolbar asks it too.
+        return .openInTab(relativePath: relative, asRendered: RenderableDocument.isRenderable(relativePath: relative))
     }
 
     /// `.` and `..` folded away without asking the file system anything.

@@ -82,6 +82,9 @@ public enum MenuCommandRouter {
         case .togglePanel:
             model.shell.isPanelVisible.toggle()
 
+        case .toggleRenderView:
+            model.toggleRenderView()
+
         // `NSApplication.shared` rather than `NSApp`: the latter is an implicitly unwrapped
         // optional that is nil until an application exists, so it traps in a test process.
         // A router that cannot be exercised without a running application cannot be tested.

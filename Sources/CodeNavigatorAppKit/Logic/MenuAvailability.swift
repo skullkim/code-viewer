@@ -38,6 +38,12 @@ public struct MenuAvailability: Sendable, Hashable {
         case .symbolSearch, .textSearch, .togglePanel:
             return hasOpenProject
 
+        // 렌더는 디스크 사본으로도 그릴 수 있으므로 세션이 죽어도 살아 있다(02b F-9와 같은
+        // 이유). **파일이 렌더 가능한지는 여기서 답하지 않는다** — 그 판정에는 현재 파일이
+        // 필요하고, 이 타입은 파일을 모른다. 툴바가 `RenderViewState` 와 함께 좁힌다.
+        case .toggleRenderView:
+            return hasOpenProject
+
         // Start from the cursor, so they need a live session as well as an index.
         case .goToDefinition, .showReferences, .navigateBack, .navigateForward:
             return hasOpenProject && isSessionRunning

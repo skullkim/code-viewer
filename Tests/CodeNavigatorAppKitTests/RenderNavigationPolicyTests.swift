@@ -200,6 +200,48 @@ struct RenderNavigationPolicyTests {
         }
     }
 
+    @Test("같은 문서를 가리키는 조각 URL 은 스크롤이다")
+    func aFragmentURLIntoTheSameDocumentScrolls() throws {
+        // **실측으로 잡은 결함이다.** 웹뷰는 `href="#anchor"` 를 문서 URL 에 붙여서 넘긴다
+        // (`file:///…/guide.html#anchor`). 그걸 그냥 로컬 경로로 읽으면 "그 파일을 연다"가
+        // 되어 **읽던 문서를 다시 열고 스크롤 위치를 잃는다.**
+        try withFixture { root in
+            let url = try #require(URL(string: "file://" + root + "/docs/guide.md#설치"))
+            let decision = RenderNavigationPolicy.decide(
+                navigationURL: url, documentRelativePath: "docs/guide.md", projectRoot: root
+            )
+
+            #expect(decision == .scrollToFragment("설치"))
+        }
+    }
+
+    @Test("baseURL 이 없을 때의 about:blank 조각도 스크롤이다")
+    func anAboutBlankFragmentAlsoScrolls() throws {
+        // `baseURL: nil` 로 로드하면 웹뷰가 `#anchor` 를 `about:blank#anchor` 로 넘긴다(실측).
+        // 스킴만 보고 판정하면 **문서 안 앵커가 "열 수 없는 링크"가 된다.**
+        try withFixture { root in
+            let url = try #require(URL(string: "about:blank#설치"))
+            let decision = RenderNavigationPolicy.decide(
+                navigationURL: url, documentRelativePath: "docs/guide.md", projectRoot: root
+            )
+
+            #expect(decision == .scrollToFragment("설치"))
+        }
+    }
+
+    @Test("다른 문서의 조각 URL 은 그 문서를 여는 것이다")
+    func aFragmentIntoAnotherDocumentOpensThatDocument() throws {
+        // 조각이 붙었다고 전부 스크롤은 아니다 — 다른 파일이면 그 파일을 열어야 한다.
+        try withFixture { root in
+            let url = try #require(URL(string: "file://" + root + "/docs/OTHER.md#설치"))
+            let decision = RenderNavigationPolicy.decide(
+                navigationURL: url, documentRelativePath: "docs/guide.md", projectRoot: root
+            )
+
+            #expect(decision == .openInTab(relativePath: "docs/OTHER.md", asRendered: true))
+        }
+    }
+
     @Test("루트 밖 file URL 은 거절한다")
     func aFileURLOutsideTheRootIsRefused() throws {
         try withFixture { root in

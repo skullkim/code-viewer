@@ -48,6 +48,10 @@ public final class ProjectTabState: Identifiable {
     /// Unsaved buffers in this project, for the tab's dirty glyph and the close sheet (W-13).
     public private(set) var dirtyBufferCount = 0
 
+    /// 파일마다 소스로 볼지 렌더로 볼지 — 02b §1.1 이 이 상태를 **탭별 × 파일별**로 못박았다.
+    /// 탭 안에 사는 것이 "탭별"의 전부다: 탭이 닫히면 그 선택도 같이 사라진다.
+    public var renderViewSelection = RenderViewSelection()
+
     /// This tab's own index and search surface (REQ-012, INV-5).
     ///
     /// Held rather than reached for: a tab has no way to name another tab's session, so

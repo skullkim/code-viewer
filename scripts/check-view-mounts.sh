@@ -53,14 +53,9 @@ is_exempt() {
         # 렌더 파이프라인이 아직 없다. 이 뷰는 문서 몸통을 주입받는 제네릭 껍데기인데,
         # 그 몸통(WKWebView 호스트)이 존재하지 않아 마운트할 대상이 없다. 지금 꽂으면
         # 이 검사기는 초록이 되고 렌더는 안 되는 — 이 검사기가 막으려는 바로 그 상태가 된다.
-        RenderDocumentView) return 0 ;;         # REQ-013 — frontend-junior, 파이프라인 미완 (2026-08-31)
-        # 같은 부채의 다른 절반. 이 뷰가 문서를 그리는 웹뷰인데, `renderResource` 가
-        # `ProjectWorkspace` 프로토콜에 없어 앱 층에서 리소스를 읽을 수 없다. 읽지 못하면
-        # 인라인할 수 없고, 인라인 못 한 문서를 띄우는 것은 그릴 것이 없는 화면이다.
-        # ⚠ 이 줄은 이 검사기가 **오늘 처음으로** 볼 수 있게 된 뷰다 — 그 전까지
-        # `NSViewRepresentable` 은 발견 자체가 안 됐다. 면제는 새로 생긴 부채가 아니라
-        # 원래 있던 사각이 드러난 것이다.
-        RenderWebView) return 0 ;;             # REQ-013 — frontend-junior, 파이프라인 미완 (2026-08-31)
+        # 렌더 표면 전체. `RenderDocumentView`(크롬)와 `RenderWebView`(문서)를 조립하며,
+        # 그 둘은 이 뷰가 인스턴스화하므로 **더 이상 면제가 아니다** — 두 줄이 한 줄이 됐다.
+        # 남은 것은 창에 꽂는 일 하나뿐이고 그건 frontend-senior 몫이다(리더가 갈랐다).
         *) return 1 ;;
     esac
 }

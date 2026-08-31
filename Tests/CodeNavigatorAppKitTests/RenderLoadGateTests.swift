@@ -76,6 +76,19 @@ struct RenderLoadGateTests {
         #expect(action["type"] as? String == "block")
     }
 
+    @Test("스파이크가 잰 규칙과 앱이 쓰는 규칙이 같다")
+    func theSpikeMeasuredTheRuleWeActuallyUse() {
+        // `scripts/spike-render-host.swift` 가 이 문자열로 쟀다(6건 → 0건, 문서는 렌더됨).
+        // 앱 규칙을 고치면 그 실측이 낡는데, 그 사실이 어디에도 안 걸리면 **낡은 실측을
+        // 근거로 계속 쓰게 된다.** CSP 정책에 걸어 둔 것과 같은 장치다.
+        let measured = #"[{"trigger": {"url-filter": ".*"}, "action": {"type": "block"}}]"#
+
+        #expect(
+            RenderContentRules.blockEverything.trimmingCharacters(in: .whitespacesAndNewlines) == measured,
+            "규칙이 바뀌었다 — spike-render-host 를 다시 돌려라"
+        )
+    }
+
     @Test("되살리는 규칙이 없다")
     func nothingIsExemptedBackIn() {
         // ADR-0109 실측: `ignore-previous-rules` 로는 커스텀 스킴조차 되살아나지 않았다.

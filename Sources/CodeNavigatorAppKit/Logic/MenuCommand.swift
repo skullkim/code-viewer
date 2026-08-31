@@ -29,5 +29,6 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     // 보기
     case toggleFileTree
     case togglePanel
+    case toggleRenderView
     case toggleFullScreen
 }

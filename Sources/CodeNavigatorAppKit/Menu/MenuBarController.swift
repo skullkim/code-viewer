@@ -68,9 +68,17 @@ public final class MenuBarController: NSObject {
             return .separator()
         }
 
+        // A row does one of two things, and the controller must ask for both. Reading only
+        // `command` is what left nine standard rows with a nil action — and with
+        // `autoenablesItems` on, a nil action is a row AppKit permanently disables. The app
+        // could not be quit from its own menu.
+        let action: Selector? = descriptor.command == nil
+            ? descriptor.systemAction?.selector
+            : #selector(fire(_:))
+
         let item = NSMenuItem(
             title: descriptor.title,
-            action: descriptor.command == nil ? nil : #selector(fire(_:)),
+            action: action,
             // An uppercase key equivalent already implies Shift. Naming both makes the
             // match fail silently — measured in the spike, where ⇧⌘F leaked through to
             // Neovim because of exactly this. The descriptors keep it lowercase and the
@@ -78,6 +86,9 @@ public final class MenuBarController: NSObject {
             keyEquivalent: descriptor.keyEquivalent.lowercased()
         )
         item.keyEquivalentModifierMask = modifierMask(descriptor.modifiers)
+        // Ours is targeted at us; a standard action is left untargeted **on purpose** so the
+        // responder chain resolves it — `terminate:` lands on `NSApplication`, and the window
+        // actions land on whichever window is key rather than one captured at launch.
         item.target = descriptor.command == nil ? nil : self
 
         if let command = descriptor.command {
@@ -91,6 +102,13 @@ public final class MenuBarController: NSObject {
             submenu.autoenablesItems = true
             submenu.delegate = self
             item.submenu = submenu
+        } else if descriptor.systemAction == .services {
+            // Handed to AppKit, which fills and maintains it. A submenu we built ourselves
+            // would stay empty forever — the row would look right and do nothing, which is
+            // the same failure as a nil action wearing a different disguise.
+            let submenu = NSMenu(title: descriptor.title)
+            item.submenu = submenu
+            NSApplication.shared.servicesMenu = submenu
         } else if !descriptor.submenu.isEmpty {
             let submenu = NSMenu(title: descriptor.title)
             submenu.autoenablesItems = true

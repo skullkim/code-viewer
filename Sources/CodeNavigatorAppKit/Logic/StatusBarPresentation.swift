@@ -93,13 +93,14 @@ extension StatusBarPresentation {
         inputMode: InputMode,
         message: StatusMessage?,
         projectRoot: String?,
-        layout: ShellLayout
+        layout: ShellLayout,
+        renderView: RenderViewState = .noDocument
     ) -> StatusBarPresentation {
         let pathBudget = layout.showsStatusBarHint ? widePathBudget : narrowPathBudget
         let center = centerRegion(sessionState: sessionState, message: message, inputMode: inputMode, layout: layout)
 
         return StatusBarPresentation(
-            modeSegment: segment(sessionState: sessionState, editorStatus: editorStatus, inputMode: inputMode),
+            modeSegment: segment(sessionState: sessionState, editorStatus: editorStatus, inputMode: inputMode, renderView: renderView),
             path: displayPath(for: editorStatus, projectRoot: projectRoot, budget: pathBudget),
             showsDirtyIndicator: editorStatus?.isDirty ?? false,
             centerText: center.text,
@@ -134,7 +135,8 @@ extension StatusBarPresentation {
     private static func segment(
         sessionState: EditorSessionState,
         editorStatus: EditorStatus?,
-        inputMode: InputMode
+        inputMode: InputMode,
+        renderView: RenderViewState
     ) -> InputModeSegment {
         // A session that cannot take input outranks the mode: which keys you are typing
         // stops mattering when none of them arrive anywhere.
@@ -149,6 +151,14 @@ extension StatusBarPresentation {
             )
         case .notStarted, .connecting, .connected:
             break
+        }
+
+        // 02b C-6 — 7번째 상태. 렌더 보기에서 키 입력은 nvim 에 닿지 않으므로 `NORMAL` 이라
+        // 적으면 거짓말이 된다. 세션 끊김보다는 뒤인데, 그건 *고장* 이 *보기 선택* 보다
+        // 급하기 때문이다 — 소스로 돌아가도 편집이 안 된다는 사실을 렌더를 벗어나서야
+        // 알게 되면 늦다.
+        if renderView.isShowingRender {
+            return InputModeSegment(primaryLabel: "읽기 전용", secondaryLabel: "렌더 보기", tone: .neutral)
         }
 
         guard inputMode == .vim else {

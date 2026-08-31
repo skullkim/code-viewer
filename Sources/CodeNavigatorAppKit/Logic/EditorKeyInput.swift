@@ -25,7 +25,7 @@ public enum EditorKeyInput {
         inputMode: InputMode,
         latinCharacter: (UInt16) -> String?
     ) -> String? {
-        guard shouldTranslate(editorMode: editorMode, inputMode: inputMode) else {
+        guard shouldTranslate(stroke, editorMode: editorMode, inputMode: inputMode) else {
             return KeyNotation.notation(for: stroke)
         }
         // Only when the press produced something Neovim cannot read as a command. A Latin
@@ -51,8 +51,19 @@ public enum EditorKeyInput {
     ///
     /// Visual and command-line modes *are* translated: `:w` is a command even though the
     /// user is typing it.
-    static func shouldTranslate(editorMode: EditorMode, inputMode: InputMode) -> Bool {
+    static func shouldTranslate(_ stroke: KeyStroke, editorMode: EditorMode, inputMode: InputMode) -> Bool {
         guard inputMode == .vim else { return false }
+
+        // **화음은 산문이 아니다.** 삽입 모드를 통째로 비켜 두면 한글 입력은 지켜지지만
+        // `⌃C`·`⌃W`·`⌃R` 처럼 삽입 모드 *안에서* 쓰는 명령이 전부 자모 이름으로 나간다
+        // (D-19). Neovim 은 화음에서 ASCII 만 이해하므로 그건 없는 키를 보내는 것이다.
+        //
+        // ⌥ 는 뺀다 — macOS 에서 ⌥ 는 *글자를 만드는* 수식어라(⌥e 는 é 를 시작한다)
+        // 화음으로 단정하면 의도한 문자 입력을 가로챈다. ⌃·⌘ 은 글자를 만들지 않는다.
+        if stroke.modifiers.contains(.control) || stroke.modifiers.contains(.command) {
+            return true
+        }
+
         return editorMode != .insert
     }
 

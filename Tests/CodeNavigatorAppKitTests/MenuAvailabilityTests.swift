@@ -117,6 +117,10 @@ struct MenuAvailabilityTests {
         for command in MenuCommand.allCases {
             _ = menu.isEnabled(command)
         }
-        #expect(MenuCommand.allCases.count == 24, "명령을 추가·삭제했으면 이 스위트의 규칙도 갱신하라 (파일 5 · 편집 10 · 이동 6 · 보기 3)")
+        // 24 → 25: `.toggleRenderView` 추가 (REQ-013 AC-3, 02b F-14). **이 수는 트립와이어다** —
+        // 명령을 더하면 깨지는 것이 일이고, 깨진 자리에서 "이 명령의 활성 규칙을 정했나"를
+        // 묻게 하는 것이 목적이다. 숫자만 올리고 지나가면 규칙 없는 명령이 새어 나간다.
+        // 내역도 같이 고친다 — 합만 맞고 내역이 낡으면 다음 사람이 어디가 늘었는지 못 읽는다.
+        #expect(MenuCommand.allCases.count == 25, "명령을 추가·삭제했으면 이 스위트의 규칙도 갱신하라 (파일 5 · 편집 10 · 이동 6 · 보기 4)")
     }
 }

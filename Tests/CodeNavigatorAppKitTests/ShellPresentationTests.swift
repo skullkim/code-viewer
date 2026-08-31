@@ -85,7 +85,11 @@ struct ToolbarPresentationTests {
             layout: layout(width: 1600)
         )
 
-        #expect(toolbar.buttons.count == 3)
+        // 개수가 아니라 성질을 단언한다. `count == 3` 은 이 테스트가 지키려던 것이
+        // 아니었다 — 버튼이 늘어나는 것은 정상이고, **프로젝트가 없을 때 눌리는 버튼이
+        // 하나라도 있는 것**이 결함이다. 개수로 적으면 버튼을 더할 때마다 이 테스트가
+        // 깨지고, 깨진 이유를 읽지 않고 숫자만 고치게 된다.
+        #expect(!toolbar.buttons.isEmpty)
         #expect(toolbar.buttons.allSatisfy { !$0.isEnabled })
     }
 
@@ -101,8 +105,10 @@ struct ToolbarPresentationTests {
         // The toolbar no longer names the project (02b C-1): the tab bar owns that, and
         // showing it twice made the user ask whether the two were different things.
         #expect(toolbar.windowTitle == "Index.swift", "툴바가 파일이 아니라 프로젝트를 말하고 있다")
-        #expect(toolbar.buttons.allSatisfy { $0.isEnabled })
-        #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .togglePanel])
+        // 렌더 버튼은 파일이 `.md`·`.html` 일 때만 살아난다(02b F-14 4) — 프로젝트가 열린
+        // 것만으로는 부족하다. 나머지는 프로젝트가 열리면 전부 살아야 한다.
+        #expect(toolbar.buttons.filter { $0.command != .toggleRenderView }.allSatisfy { $0.isEnabled })
+        #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .togglePanel, .toggleRenderView])
     }
 
     @Test("창 제목은 편집 중인 파일 이름 + 더티 표시다")
@@ -170,11 +176,22 @@ struct ToolbarPresentationTests {
             availability: availability, layout: layout(width: 1600)
         )
 
-        for button in toolbar.buttons {
+        // 02b F-14 4 가 만든 **의도된 예외 하나**. 렌더 불가 파일에서 툴바 버튼은 비활성이고
+        // 메뉴 ⇧⌘V 는 살아 있다 — 메뉴는 눌리고 *왜 안 되는지* 를 말해 주는 쪽이고, 툴바는
+        // 아예 못 누르게 하는 쪽이다. 두 표면의 역할이 다르다.
+        //
+        // 예외를 목록으로 못박아 둔다. 조건을 느슨하게 풀면 다음에 어긋나는 버튼이 조용히
+        // 섞여 들어오고, 그때는 이 테스트가 아무것도 지키지 않는다.
+        let fileDependentCommands: Set<MenuCommand> = [.toggleRenderView]
+
+        for button in toolbar.buttons where !fileDependentCommands.contains(button.command) {
             #expect(button.isEnabled == availability.isEnabled(button.command), "\(button.command)")
         }
         // A dead edit session must not disable navigation: the index outlives it.
-        #expect(toolbar.buttons.allSatisfy { $0.isEnabled })
+        #expect(toolbar.buttons.filter { !fileDependentCommands.contains($0.command) }.allSatisfy { $0.isEnabled })
+
+        // 예외가 실재하는지도 잰다 — 목록에만 있고 버튼이 없으면 이 예외는 죽은 글이다.
+        #expect(toolbar.buttons.contains { fileDependentCommands.contains($0.command) })
     }
 }
 

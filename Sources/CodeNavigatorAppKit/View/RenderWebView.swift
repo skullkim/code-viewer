@@ -159,17 +159,36 @@ struct RenderWebView: NSViewRepresentable {
             }
             loadedHTML = html
             isLoadingOwnDocument = true
-            // `baseURL: nil` — the shape the CSP spike measured. What a relative link resolves
-            // to under it is exactly what still needs measuring on a running view.
-            webView?.loadHTMLString(document, baseURL: nil)
+            // The base is the document's own folder, and that choice is measured, not assumed
+            // (`scripts/spike-render-host.swift`, 2026-08-31):
+            //
+            //   baseURL: nil   `./OTHER.md` stays `./OTHER.md` — never resolved, so a click
+            //                  has no URL to hand us, and `#anchor` arrives as
+            //                  `about:blank#anchor`
+            //   file base      `./OTHER.md` → `file:///…/docs/OTHER.md`, `#anchor` →
+            //                  `file:///…/guide.md#anchor` — both judgeable
+            //
+            // And the blocking still holds under it: the same spike measured 6 remote requests
+            // without rules and **0** with them under this base, with the document confirmed
+            // rendered both times. A base that resolved links but weakened the sandbox would
+            // have been the wrong trade; it does not.
+            webView?.loadHTMLString(document, baseURL: documentDirectory)
         }
 
         // MARK: 내비게이션
 
+        /// ⚠ The signature must match the protocol **exactly**, `@MainActor` and all.
+        ///
+        /// `WKNavigationDelegate`'s methods are optional, so a signature that only *nearly*
+        /// matches is not an error — it is simply never called. The compiler says
+        /// "nearly matches optional requirement" as a **warning**, the build stays green, and
+        /// every link in every rendered document navigates freely while this file appears to
+        /// be intercepting them. Caught here by reading a warning; the test below keeps it
+        /// caught by asking the runtime whether this object actually answers the selector.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
         ) {
             // Our own `loadHTMLString`, allowed exactly once per load. Allowing every `.other`
             // navigation would also allow the ones a document can start on its own.
@@ -201,6 +220,12 @@ struct RenderWebView: NSViewRepresentable {
             }
 
             onNavigation(decision)
+        }
+
+        /// The folder the document lives in — what relative links resolve against.
+        private var documentDirectory: URL {
+            URL(fileURLWithPath: (projectRoot as NSString)
+                .appendingPathComponent((documentRelativePath as NSString).deletingLastPathComponent))
         }
 
         private static let ruleListIdentifier = "code-navigator-render-block-all"

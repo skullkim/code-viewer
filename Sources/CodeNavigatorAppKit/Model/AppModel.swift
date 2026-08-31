@@ -97,15 +97,28 @@ public final class AppModel {
     static let initialGridColumns = 80
     static let initialGridRows = 24
 
+    /// 어떤 파일을 렌더할 수 있는가 — `.md`·`.html` 판정.
+    ///
+    /// 주입받는다. 이 모델은 확장자 정책의 주인이 아니고, 목록을 여기에 또 적으면 렌더
+    /// 도메인의 목록과 갈라진다 — 한쪽만 늘어나는 날 링크는 열리는데 버튼은 비활성이 된다.
+    private let isRenderableDocument: (String) -> Bool
+
+    /// 렌더 문서를 준비하는 모델. 여기 사는 이유는 워크스페이스가 여기 있기 때문이고,
+    /// 창의 생성자에 인자를 하나 더 다는 것보다 **아무도 잊을 수 없는 자리**라서다.
+    public let render: RenderDocumentModel
+
     public init(
         editorSession: EditorSession,
         workspace: any ProjectWorkspace,
         storage: KeyValueStore,
-        now: @escaping @Sendable () -> Date
+        now: @escaping @Sendable () -> Date,
+        isRenderableDocument: @escaping (String) -> Bool = { _ in false }
     ) {
         self.editorSession = editorSession
         self.workspace = workspace
         self.storage = storage
+        self.isRenderableDocument = isRenderableDocument
+        self.render = RenderDocumentModel(workspace: workspace)
         self.emptyFileTree = FileTreeModel(
             projectSession: NoProjectSession(),
             editorSession: editorSession
@@ -171,6 +184,47 @@ public final class AppModel {
 
     public func handle(sessionState state: EditorSessionState) {
         sessionState = state
+    }
+
+    // MARK: 렌더 보기 (REQ-013 AC-3, 02b F-14)
+
+    /// 지금 열린 파일의 렌더 상태 — **툴바·상태바·헤더가 전부 이것을 읽는다.**
+    public var renderViewState: RenderViewState {
+        guard let path = editorStatus?.filePath, let tab = tabs.activeTab else {
+            return .noDocument
+        }
+        return tab.renderViewSelection.state(forPath: path, isRenderable: isRenderableDocument(path))
+    }
+
+    /// 화면에 있어야 할 문서를 모델에 알린다.
+    ///
+    /// 창 본문이 아니라 여기서 부른다 — `body` 는 SwiftUI 가 아무 때나 돌리고, 거기서
+    /// 읽기를 시작하면 **스크롤 위치가 매번 처음으로 돌아간다**.
+    public func syncRenderDocument() {
+        guard renderViewState.isShowingRender,
+              let path = editorStatus?.filePath,
+              let root = projectRootPath,
+              let tab = tabs.activeTabID
+        else {
+            render.clear()
+            return
+        }
+        render.showIfNeeded(path: path, root: root, tab: tab)
+    }
+
+    /// 렌더 보기와 소스 보기를 오간다. 선택은 그 파일에 대해 세션 동안 남는다.
+    public func toggleRenderView() {
+        guard let path = editorStatus?.filePath, let tab = tabs.activeTab else {
+            return
+        }
+        guard isRenderableDocument(path) else {
+            // 02b F-14 4. 아무 일도 안 일어나면 사용자는 키가 안 먹은 줄 안다 — 왜 안
+            // 되는지를 말해야 다시 누르지 않는다.
+            show(StatusMessage(kind: .error, text: RenderableDocument.unsupportedMessage))
+            return
+        }
+        tab.renderViewSelection.toggle(path: path, isRenderable: true)
+        syncRenderDocument()
     }
 
     public func handle(editorStatus status: EditorStatus) {
@@ -350,6 +404,15 @@ public final class AppModel {
     /// The identifier under the cursor, for the commands that start from it.
     public func wordUnderCursor() async -> String? {
         (try? await editorSession.wordUnderCursor()) ?? nil
+    }
+
+    /// 렌더된 문서 안의 링크로 파일을 연다 (REQ-013).
+    ///
+    /// 연 뒤에 렌더 문서를 다시 맞춘다 — 새 파일이 `.md` 면 렌더로, 아니면 소스로 열린다.
+    /// 그건 토글이 아니라 **그 파일의 성질**이다(02b D-C).
+    public func openFile(atRelativePath path: String, line: Int?) async {
+        await open(path: path, line: line)
+        syncRenderDocument()
     }
 
     private func open(path: String, line: Int?) async {
@@ -579,7 +642,8 @@ public final class AppModel {
             inputMode: inputMode,
             message: statusMessage,
             projectRoot: projectRootPath,
-            layout: layout
+            layout: layout,
+            renderView: renderViewState
         )
     }
 

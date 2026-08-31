@@ -60,7 +60,8 @@ public struct MainWindowView: View {
                         projectName: model.fileTree.projectName,
                         editorStatus: model.editorStatus,
                         availability: availability,
-                        layout: layout
+                        layout: layout,
+                        renderView: model.renderViewState
                     ),
                     inputMode: model.inputMode,
                     isModeSwitchEnabled: availability.isEnabled(.toggleInputMode),
@@ -246,6 +247,37 @@ public struct MainWindowView: View {
                 onClaimKeyboard: { focus.userFocused(.editor) }
             )
 
+            // 02b 237행: **에디터 위에 얹는다.** Neovim 그리드는 크기가 바뀌지 않고 가려질
+            // 뿐이다 — 사용자 문장이 "렌더링 기능**도** 넣어줘"였고, 그건 더하기이지
+            // 대체가 아니다. 소스로 돌아가면 커서·undo·더티가 그대로 있다.
+            if model.renderViewState.isShowingRender,
+               let path = model.editorStatus?.filePath,
+               let root = model.projectRootPath {
+                RenderSurface(
+                    screen: RenderDocumentPresentation.make(
+                        fileName: PathDisplay.fileName(path),
+                        phase: model.render.phase,
+                        hasPreviousDocument: !model.render.html.isEmpty,
+                        elapsedSeconds: nil
+                    ),
+                    blocked: BlockedResourcePresentation.make(blocked: model.render.blocked),
+                    html: model.render.html,
+                    // 활성 탭에서 추론하지 않는다 — 모델이 문서를 읽을 때 쓴 그 경로를
+                    // 그대로 넘긴다. `gt` 로 탭이 옮겨가면 추론은 맞아 보이는 방식으로 틀린다.
+                    documentRelativePath: model.render.documentRelativePath ?? path,
+                    projectRoot: model.render.projectRoot ?? root,
+                    onAction: { action in
+                        switch action {
+                        case .showSource: model.toggleRenderView()
+                        case .retry: model.render.show(path: path, root: root, tab: model.tabs.activeTabID ?? ProjectTabIdentifier())
+                        }
+                    },
+                    onNavigation: { navigation in
+                        Task { await follow(navigation) }
+                    }
+                )
+            }
+
             // The overlay covers the editor and nothing else: the index outlives the edit
             // session, so the tree and the panels stay usable and at full brightness
             // (design §3 W-8).
@@ -311,6 +343,32 @@ public struct MainWindowView: View {
     /// through the confirmation sheet first (W-13). Until that sheet exists, a close is
     /// carried out directly — and that is a gap worth seeing rather than hiding, because
     /// the alternative is a close button that silently does nothing.
+    /// 렌더된 문서 안의 링크를 따라간다 (REQ-013, INV-6).
+    ///
+    /// 판정은 `RenderNavigationPolicy` 가 이미 끝냈다. 여기서는 그 결정을 수행만 한다 —
+    /// 규칙을 여기서 다시 물으면 정책이 두 벌이 되고, **약한 쪽이 실제 경계가 된다.**
+    private func follow(_ navigation: RenderNavigation) async {
+        switch navigation {
+        case .scrollToFragment:
+            // 웹뷰 안에서 끝난다. 문서를 다시 읽지 않는다 — 읽으면 스크롤이 처음으로 간다.
+            break
+
+        case .openInTab(let relativePath, _):
+            // 라인 번호는 소스에만 있는 개념이라 링크는 파일만 연다(02b F-14 5).
+            // `asRendered` 는 여기서 안 본다 — 새 파일을 렌더로 열지 소스로 열지는
+            // `RenderViewSelection` 이 이미 아는 것이고, 두 곳이 답하면 갈린다.
+            await model.openFile(atRelativePath: relativePath, line: nil)
+
+        case .openInBrowser(let url):
+            // 원격 내용은 앱 안에서 절대 그리지 않는다(INV-6). 브라우저로 넘긴다.
+            guard let target = URL(string: url) else { return }
+            NSWorkspace.shared.open(target)
+
+        case .refuse(let refusal):
+            model.show(StatusMessage(kind: .error, text: refusal.statusMessage))
+        }
+    }
+
     private func performTabAction(_ action: ProjectTabBarAction) async {
         switch action {
         case .activate(let tabID):

@@ -12,6 +12,15 @@ ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 violations=0
 checked=0
+
+# 조립부가 렌더 판정을 주입하는가.
+#
+# 안 넘기면 기본값 `{ _ in false }` 가 들어가고 **렌더 가능한 파일이 하나도 없는 앱**이 된다 —
+# 툴바 버튼은 영원히 비활성이고 ⇧⌘V 는 늘 "렌더할 수 없습니다"를 띄운다. 조용히.
+# 실측: 이 주입을 지워도 테스트 34건이 전부 초록이었다(테스트는 AppModel 을 직접 만든다).
+render_wired() {
+    grep -rn "isRenderableDocument:" "$1" --include='*.swift' 2>/dev/null | grep -c "RenderableDocument"
+}
 while IFS= read -r file; do
     # 한 파일 안의 SearchModel( 호출 수와, 그 뒤 12줄 안에 provider 가 있는 호출 수를 비교
     calls=$(grep -c "SearchModel(" "$file")
@@ -23,6 +32,12 @@ while IFS= read -r file; do
     fi
 done < <(grep -rl "SearchModel(" "$ROOT/Sources" --include='*.swift' 2>/dev/null)
 
+RENDER_WIRED="$(render_wired "$ROOT/Sources")"
+if [ "$RENDER_WIRED" -lt 1 ]; then
+    echo "  조립부가 렌더 판정을 주입하지 않는다 — 렌더 가능한 파일이 하나도 없는 앱이 된다"
+    violations=$((violations + 1))
+fi
+
 if [ "$checked" -eq 0 ]; then
     echo "  대상 0건 — 검사가 아무것도 안 보고 있다(경로가 틀렸거나 조립부가 사라졌다)"
     exit 1
@@ -30,4 +45,4 @@ fi
 if [ "$violations" -ne 0 ]; then
     exit 1
 fi
-echo "  ok: 조립부의 SearchModel ${checked}건 전부 활성 탭을 넘겨받는다"
+echo "  ok: 조립부 배선 ${checked}건 — 검색은 활성 탭을, 렌더는 확장자 판정을 넘겨받는다"

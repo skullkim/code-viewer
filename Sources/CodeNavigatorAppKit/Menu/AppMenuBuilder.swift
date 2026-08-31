@@ -25,15 +25,15 @@ public enum AppMenuBuilder {
 
     private static var applicationMenu: MenuDescriptor {
         MenuDescriptor(title: applicationName, items: [
-            MenuItemDescriptor(title: "\(applicationName) 정보"),
+            MenuItemDescriptor(title: "\(applicationName) 정보", systemAction: .about),
             .separator,
-            MenuItemDescriptor(title: "서비스", submenu: []),
+            MenuItemDescriptor(title: "서비스", systemAction: .services, submenu: []),
             .separator,
-            MenuItemDescriptor(title: "\(applicationName) 가리기", keyEquivalent: "h", modifiers: [.command]),
-            MenuItemDescriptor(title: "다른 항목 가리기", keyEquivalent: "h", modifiers: [.command, .option]),
-            MenuItemDescriptor(title: "모두 보기"),
+            MenuItemDescriptor(title: "\(applicationName) 가리기", systemAction: .hide, keyEquivalent: "h", modifiers: [.command]),
+            MenuItemDescriptor(title: "다른 항목 가리기", systemAction: .hideOthers, keyEquivalent: "h", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "모두 보기", systemAction: .showAll),
             .separator,
-            MenuItemDescriptor(title: "\(applicationName) 종료", keyEquivalent: "q", modifiers: [.command]),
+            MenuItemDescriptor(title: "\(applicationName) 종료", systemAction: .quit, keyEquivalent: "q", modifiers: [.command]),
         ])
     }
 
@@ -86,6 +86,10 @@ public enum AppMenuBuilder {
         MenuDescriptor(title: "보기", items: [
             MenuItemDescriptor(title: "파일 트리 표시", command: .toggleFileTree, keyEquivalent: "1", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "참조·검색 패널 표시", command: .togglePanel, keyEquivalent: "0", modifiers: [.command, .option]),
+            // 툴바 버튼과 달리 렌더 불가 파일에서도 살아 있다 — 02b F-14 4 는 이 경우를
+            // 비활성이 아니라 "왜 안 되는지 말해 주기"로 처리한다. 비활성 메뉴 항목은
+            // 이유를 말할 자리가 없다.
+            MenuItemDescriptor(title: "렌더 보기 전환", command: .toggleRenderView, keyEquivalent: "v", modifiers: [.command, .shift]),
             .separator,
             MenuItemDescriptor(title: "전체 화면 시작", command: .toggleFullScreen, keyEquivalent: "f", modifiers: [.command, .control]),
         ])
@@ -93,14 +97,14 @@ public enum AppMenuBuilder {
 
     private static var windowMenu: MenuDescriptor {
         MenuDescriptor(title: "창", items: [
-            MenuItemDescriptor(title: "최소화", keyEquivalent: "m", modifiers: [.command]),
-            MenuItemDescriptor(title: "확대"),
+            MenuItemDescriptor(title: "최소화", systemAction: .minimize, keyEquivalent: "m", modifiers: [.command]),
+            MenuItemDescriptor(title: "확대", systemAction: .zoom),
         ])
     }
 
     private static var helpMenu: MenuDescriptor {
         MenuDescriptor(title: "도움말", items: [
-            MenuItemDescriptor(title: "\(applicationName) 도움말"),
+            MenuItemDescriptor(title: "\(applicationName) 도움말", systemAction: .help),
         ])
     }
 }

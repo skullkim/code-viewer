@@ -5,8 +5,14 @@
 /// acceptance criteria (REQ-010 AC-5, REQ-011 AC-2), not presentation.
 public struct MenuItemDescriptor: Sendable, Hashable {
     public let title: String
-    /// The command this row runs, or nil for a separator or a plain container.
+    /// The command this row runs, or nil for a separator, a container, or a system row.
     public let command: MenuCommand?
+    /// The standard AppKit behaviour this row performs, for rows that are not ours to define.
+    ///
+    /// Exactly one of `command` and `systemAction` is set on a row that does something. Both
+    /// being nil is what made nine rows decoration — the controller then leaves `action` nil,
+    /// and `autoenablesItems` disables every row that cannot name what it would do.
+    public let systemAction: MenuSystemAction?
     /// The character of the key equivalent, lowercase, or "" for none.
     public let keyEquivalent: String
     public let modifiers: KeyModifiers
@@ -16,6 +22,7 @@ public struct MenuItemDescriptor: Sendable, Hashable {
     public init(
         title: String,
         command: MenuCommand? = nil,
+        systemAction: MenuSystemAction? = nil,
         keyEquivalent: String = "",
         modifiers: KeyModifiers = [],
         isSeparator: Bool = false,
@@ -23,6 +30,7 @@ public struct MenuItemDescriptor: Sendable, Hashable {
     ) {
         self.title = title
         self.command = command
+        self.systemAction = systemAction
         self.keyEquivalent = keyEquivalent
         self.modifiers = modifiers
         self.isSeparator = isSeparator
