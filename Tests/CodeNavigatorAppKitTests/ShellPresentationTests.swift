@@ -107,7 +107,11 @@ struct ToolbarPresentationTests {
         #expect(toolbar.windowTitle == "Index.swift", "툴바가 파일이 아니라 프로젝트를 말하고 있다")
         // 렌더 버튼은 파일이 `.md`·`.html` 일 때만 살아난다(02b F-14 4) — 프로젝트가 열린
         // 것만으로는 부족하다. 나머지는 프로젝트가 열리면 전부 살아야 한다.
-        #expect(toolbar.buttons.filter { $0.command != .toggleRenderView }.allSatisfy { $0.isEnabled })
+        let alwaysOn = toolbar.buttons.filter { $0.command != .toggleRenderView }
+        // 걸러낸 뒤가 비면 `allSatisfy` 는 저절로 참이다 — 내가 오늘 이 필터를 넣으면서
+        // 만든 구멍이다.
+        #expect(!alwaysOn.isEmpty)
+        #expect(alwaysOn.allSatisfy { $0.isEnabled })
         #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .togglePanel, .toggleRenderView])
     }
 
@@ -188,7 +192,9 @@ struct ToolbarPresentationTests {
             #expect(button.isEnabled == availability.isEnabled(button.command), "\(button.command)")
         }
         // A dead edit session must not disable navigation: the index outlives it.
-        #expect(toolbar.buttons.filter { !fileDependentCommands.contains($0.command) }.allSatisfy { $0.isEnabled })
+        let sessionIndependent = toolbar.buttons.filter { !fileDependentCommands.contains($0.command) }
+        #expect(!sessionIndependent.isEmpty)
+        #expect(sessionIndependent.allSatisfy { $0.isEnabled })
 
         // 예외가 실재하는지도 잰다 — 목록에만 있고 버튼이 없으면 이 예외는 죽은 글이다.
         #expect(toolbar.buttons.contains { fileDependentCommands.contains($0.command) })

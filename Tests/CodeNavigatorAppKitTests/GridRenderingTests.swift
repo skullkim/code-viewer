@@ -310,6 +310,9 @@ struct GridRenderingTests {
             defaultBackground: EditorColor(packedRGB: 0x000000),
             revision: 1
         ))
-        #expect(inkedCells(empty, columns: 6).allSatisfy { !$0 })
+        let cells = inkedCells(empty, columns: 6)
+        // 칸을 세지 않으면 "아무것도 안 칠해졌다"가 **칸이 없어서** 참일 수 있다.
+        #expect(cells.count == 6)
+        #expect(cells.allSatisfy { !$0 })
     }
 }

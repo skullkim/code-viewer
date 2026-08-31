@@ -79,6 +79,8 @@ struct TabCloseConfirmationTests {
             Issue.record("시트가 없다")
             return
         }
+        // 버튼이 없는 시트는 이 단언을 완벽하게 만족하면서 사용자를 가둔다.
+        #expect(!sheet.buttons.isEmpty)
         #expect(sheet.buttons.allSatisfy { $0.isEnabled == false })
         #expect(sheet.showsSpinner)
         #expect(sheet.failureNote == nil)
@@ -94,6 +96,8 @@ struct TabCloseConfirmationTests {
         }
         #expect(sheet.failureNote == "⚠ 파일을 저장하지 못했습니다 — 소스 보기에서 확인하세요")
         #expect(sheet.showsSpinner == false)
+        // "다시 고를 수 있어야 한다"는 **고를 것이 있을 때만** 의미가 있다.
+        #expect(!sheet.buttons.isEmpty, "버튼이 없으면 다시 고를 수가 없다")
         #expect(sheet.buttons.allSatisfy { $0.isEnabled }, "실패 후에는 사용자가 다시 고를 수 있어야 한다")
     }
 
@@ -141,6 +145,7 @@ struct TabCloseConfirmationTests {
             Issue.record("시트가 없다")
             return
         }
+        #expect(!sheet.buttons.isEmpty)
         #expect(sheet.buttons.allSatisfy { $0.isEnabled })
         #expect(sheet.showsSpinner == false)
     }
