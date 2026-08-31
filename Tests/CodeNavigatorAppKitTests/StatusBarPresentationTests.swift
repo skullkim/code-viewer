@@ -304,3 +304,58 @@ struct EditorFailureChipTests {
         }
     }
 }
+
+/// A file from another project has to look like one (ADR-0009).
+///
+/// Tabs share one Neovim process, and its buffer list is process-global — so `:bnext` typed
+/// in Vim mode can land on a file belonging to a different project. ADR-0009 accepts that
+/// boundary on the condition that the screen *shows* it when it happens, and the status bar
+/// is where it shows: a path outside the open project is printed absolute instead of being
+/// folded into a relative one that would read as if it belonged here.
+///
+/// The behaviour was already right and nothing asserted it. Backend measured the engine half
+/// (`EditorStatus.filePath` stays absolute); this is the interface half. Without it, anyone
+/// could make the fallback relative and the suite would stay green — and the ADR's grounds
+/// for acceptance would quietly stop being true.
+@Suite("상태바 경로 — 다른 프로젝트의 파일임이 드러난다 (ADR-0009)")
+struct StatusBarForeignPathTests {
+
+    private func path(forFile file: String, projectRoot: String?) -> String? {
+        StatusBarPresentation.make(
+            sessionState: .connected,
+            editorStatus: EditorStatus(
+                filePath: file,
+                isDirty: false,
+                cursorLine: 1,
+                cursorColumn: 1,
+                mode: .normal,
+                inputMode: .vim
+            ),
+            indexState: .ready,
+            inputMode: .vim,
+            message: nil,
+            projectRoot: projectRoot,
+            layout: ShellLayout.resolve(windowSize: CGSize(width: 1280, height: 800))
+        ).path
+    }
+
+    @Test("열린 프로젝트 밖의 파일은 절대 경로로 보인다")
+    func aFileOutsideTheProjectShowsItsAbsolutePath() {
+        let shown = path(forFile: "/other/project/Sources/Main.swift", projectRoot: "/repo")
+        #expect(shown?.hasPrefix("/other/") == true || shown?.contains("/other/project") == true,
+                "다른 프로젝트 파일이 상대 경로로 접히면 이 프로젝트 파일처럼 보인다")
+        #expect(shown?.hasPrefix("Sources/") == false)
+    }
+
+    @Test("열린 프로젝트 안의 파일은 상대 경로로 보인다")
+    func aFileInsideTheProjectShowsARelativePath() {
+        // The counterweight: if everything were absolute the test above would pass for the
+        // wrong reason, and the status bar would be unreadable for ordinary editing.
+        #expect(path(forFile: "/repo/Sources/Main.swift", projectRoot: "/repo") == "Sources/Main.swift")
+    }
+
+    @Test("프로젝트가 없으면 절대 경로 그대로다")
+    func withNoProjectThePathStaysAbsolute() {
+        #expect(path(forFile: "/tmp/scratch.swift", projectRoot: nil)?.contains("/tmp/scratch.swift") == true)
+    }
+}

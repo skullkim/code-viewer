@@ -2,7 +2,12 @@ import Foundation
 
 /// One open project tab, as the tab bar and the tab commands see it.
 public struct ProjectTabDescriptor: Sendable, Hashable, Identifiable {
-    /// The canonical identity the engine assigned to this project (`ProjectTab.rootPath`).
+    /// The engine's identity for this tab, as a string.
+    ///
+    /// `ProjectTabIdentifier` wraps a UUID; this is `rawValue.uuidString`, converted at the
+    /// one boundary where the presentation layer needs a `String` for `Identifiable`. Not
+    /// the root path — a path would let a row keep naming a tab that was closed and
+    /// reopened, and the engine deliberately moved off paths for that reason.
     public let id: String
     /// The path as the user chose it, for display and for reopening.
     public let rootPath: String

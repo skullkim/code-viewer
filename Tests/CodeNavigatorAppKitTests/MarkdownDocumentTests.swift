@@ -217,6 +217,33 @@ struct MarkdownDocumentTests {
         #expect(!output.contains("<a href"))
     }
 
+    @Test("강조가 줄을 넘어가도 이어진다")
+    func emphasisSpansALineBreak() {
+        // 실제 문서에서 잡은 결함이다. 한 줄씩 처리하면 두 번째 줄의 닫는 `**` 가 여는 것으로
+        // 읽혀 **강조가 뒤집힌다** — 굵어야 할 곳이 안 굵고, 아닌 곳이 굵어진다. 서식이 빠지는
+        // 것보다 나쁘다: 문서가 강조하지 않은 문장을 강조된 것으로 보여 준다.
+        let output = html("앞 **강조가\n줄을 넘어간다** 뒤")
+
+        #expect(output.contains("<strong>강조가\n줄을 넘어간다</strong>"))
+        #expect(!output.contains("**"))
+    }
+
+    @Test("줄을 넘어가는 강조가 뒤집히지 않는다")
+    func emphasisAcrossLinesIsNotInverted() {
+        let output = html("그러나 **분기가\n안 되므로 하나씩** 써야 하고, 곧 **열린다**는 뜻이다")
+
+        // 뒤집힘의 지문: 닫는 자리에서 열리면 ` 써야 하고, 곧 ` 이 강조된다.
+        #expect(!output.contains("<strong> 써야 하고, 곧 </strong>"))
+        #expect(output.contains("<strong>열린다</strong>"))
+    }
+
+    @Test("줄 끝 공백 두 개는 줄바꿈으로 남는다")
+    func twoTrailingSpacesStayAHardBreak() {
+        let output = html("첫 줄  \n둘째 줄")
+
+        #expect(output.contains("<br>"))
+    }
+
     @Test("코드 스팬 안의 별표는 강조가 아니다")
     func asterisksInsideCodeAreLiteral() {
         let output = html("`*not em*`")
@@ -257,6 +284,18 @@ struct MarkdownDocumentTests {
         let output = html("| 이름 |\n|---|\n| `코드` |")
 
         #expect(output.contains("<code>코드</code>"))
+    }
+
+    @Test("칸 안의 이스케이프된 파이프가 칸을 나누지 않는다")
+    func escapedPipesDoNotSplitCells() {
+        // 이것도 실제 문서에서 잡았다 — 우리 02b 설계 문서가 코드 스팬 안에서 `\|` 를 쓴다.
+        // 모든 파이프에서 자르면 코드 스팬이 칸 경계에서 두 동강 나고, 남은 역슬래시가
+        // 본문에 그대로 찍힌다.
+        let output = html("| 반환 |\n|---|\n| `a \\| b` |")
+
+        #expect(output.contains("<code>a | b</code>"))
+        #expect(output.components(separatedBy: "<td").count - 1 == 1)
+        #expect(!output.contains("\\"))
     }
 
     @Test("구분선이 없으면 표가 아니다")
