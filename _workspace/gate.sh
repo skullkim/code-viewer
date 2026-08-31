@@ -391,6 +391,24 @@ section "백엔드: swift test"
 # 동시에 뜬 nvim 들이 서로를 밀어내 마우스 입력이 받아들여지기까지의 시간이 들쭉날쭉해지고,
 # 같은 코드가 부하에 따라 통과하기도 실패하기도 한다(실측: 병렬 5회 중 3회 실패, 직렬 3회
 # 전부 통과). 무거운 공유 런타임은 단일 러너로 돌린다는 규율의 적용이다. 비용은 7초 -> 20초.
+#
+# ⚠ 이 옵션이 게이트에서 가리는 것이 하나 있다 — 안전 옵션으로 읽지 말 것.
+#
+# 평범한 `swift test`(병렬 기본)는 7회 중 4회 SIGSEGV 로 죽는다. `--no-parallel` 은 6회 중
+# 0회다. 즉 **인증은 초록인데 개발자가 그냥 돌리면 절반이 죽는다.** 이 옵션은 Docker/nvim
+# 충돌을 막으려고 넣었는데, 부수 효과로 경쟁 조건 하나를 인증 경로에서 지웠다.
+#
+# 크래시 로그를 읽어 원인을 좁혔다(`~/Library/Logs/DiagnosticReports/swiftpm-testing-helper-*`):
+#   objc_release -> SwiftUICore -> _DictionaryStorage.deinit -> AttributedString.Guts.deinit
+# **우리 코드 프레임이 하나도 없다.** SwiftUI/AttributedString 내부 해제 경쟁이고, 테스트가
+# 그 타입들을 여러 스레드에서 동시에 만들고 버려서 난다.
+#
+# 제품은 이 경로에 못 간다: `nonisolated(unsafe)` 0건이고, `@unchecked Sendable` 다섯은 전부
+# I/O·저장 타입이라 AttributedString 을 안 만진다. 앱에서 그 타입들을 만드는 곳은 SwiftUI
+# 뷰 본문뿐이고 그것은 메인 액터다. **단일 스레드라 경쟁이 성립하지 않는다.**
+#
+# 그래서 게이트를 병렬로 바꾸지 않는다 — 절반 확률로 실패하는 게이트는 사람에게 재실행을
+# 가르치고, 그건 게이트가 없는 것보다 나쁘다. 대신 이 주석이 그 사실을 들고 있다.
 TEST_OUTPUT="$(swift test --no-parallel 2>&1)"
 TEST_STATUS=$?
 if [ "$TEST_STATUS" -eq 0 ]; then
