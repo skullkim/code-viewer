@@ -8,6 +8,10 @@ final class TemporaryProjectFixture {
     let rootURL: URL
 
     init(name: String = UUID().uuidString) {
+        // Touched here because every test that starts an editor builds a fixture first, and this
+        // has to happen before the first spawn. See the type for what it protects.
+        NeovimTestStateIsolation.applied
+
         let base = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("code-navigator-tests", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)

@@ -215,7 +215,7 @@ public enum RenderDocumentSanitizer {
             // view must intercept navigation instead; that is the render view's job, and
             // the CSP forbids the page loading anything on its own regardless.
             guard tagName(of: element) != "a" else {
-                return value
+                return .value(value)
             }
 
             // A bare fragment points inside this document and fetches nothing —
@@ -223,7 +223,7 @@ public enum RenderDocumentSanitizer {
             // resolves it against the project root, finds no such file, and blanks a
             // working in-document link.
             guard !value.hasPrefix("#") else {
-                return value
+                return .value(value)
             }
 
             let decision = RenderSandboxPolicy.decide(
@@ -235,20 +235,34 @@ public enum RenderDocumentSanitizer {
             case .allowInlineData:
                 // Ours only after this pass: an author's `data:` reaches here too, and it
                 // is allowed only because `decide` already checked the media type.
-                return value
+                return .value(value)
 
             case .allowFile(let resolvedPath):
                 guard let data = loadFile(resolvedPath) else {
                     blocked.append(BlockedResource(kind: .outsideProjectRoot, detail: value))
-                    return ""
+                    return .value("")
                 }
-                return "data:\(mediaType(forPath: resolvedPath));base64,\(data.base64EncodedString())"
+                return .value("data:\(mediaType(forPath: resolvedPath));base64,\(data.base64EncodedString())")
 
             case .block(let kind, let detail):
                 blocked.append(BlockedResource(kind: kind, detail: detail))
+
+                // An image that occupied space leaves a box saying what stood there (W-15).
+                // Only `img`: it is void, so the element is the whole thing and replacing it
+                // leaves nothing dangling. `iframe` and `object` have closing tags that this
+                // scanner does not pair, and a box followed by a stray `</iframe>` would make
+                // the frame's fallback content visible — a limit recorded in the limit tests.
+                if kind.showsInlinePlaceholder, tagName(of: element) == "img" {
+                    return .element(BlockedResourceBox.html(
+                        kind: kind,
+                        detail: detail,
+                        alternativeText: attributeValue(named: "alt", in: element)
+                    ))
+                }
+
                 // Emptied rather than left alone. A reference we refuse must not survive in
                 // any form the web view could act on.
-                return ""
+                return .value("")
             }
         }
     }
@@ -347,10 +361,21 @@ public enum RenderDocumentSanitizer {
     /// whitespace around `=`, uppercase tags, newlines inside a tag, `>` inside a quoted
     /// value, and references written inside comments or CDATA (those are rewritten too,
     /// which is harmless). `RenderDocumentSanitizerLimitTests` records what it does not.
+    /// What the caller wants done with the element it was shown.
+    ///
+    /// Blanking an attribute is not always enough. A blocked `<img src="">` is a broken-image
+    /// icon — the reference is gone but the hole it leaves says "this app is broken" rather
+    /// than "this was blocked", which is the confusion W-15 exists to prevent. For those the
+    /// caller replaces the whole element with a box that says what was there.
+    enum Rewrite {
+        case value(String)
+        case element(String)
+    }
+
     private static func rewritingAttributeValues(
         named attribute: String,
         in html: String,
-        transform: (_ element: String, _ value: String) -> String
+        transform: (_ element: String, _ value: String) -> Rewrite
     ) -> String {
         var result = ""
         var rest = Substring(html)
@@ -367,11 +392,15 @@ public enum RenderDocumentSanitizer {
             result += rest[rest.startIndex..<tagOpen]
 
             if let value = attributeValue(named: attribute, in: element) {
-                let replacement = transform(element, value)
-                // Replaced by range rather than by string: the same value can appear in two
-                // attributes (`src` and `data-src`), and a blind substitution would rewrite
-                // whichever came first.
-                result += replacingAttribute(named: attribute, in: element, with: replacement) ?? element
+                switch transform(element, value) {
+                case .element(let replacement):
+                    result += replacement
+                case .value(let replacement):
+                    // Replaced by range rather than by string: the same value can appear in two
+                    // attributes (`src` and `data-src`), and a blind substitution would rewrite
+                    // whichever came first.
+                    result += replacingAttribute(named: attribute, in: element, with: replacement) ?? element
+                }
             } else {
                 result += element
             }
@@ -410,7 +439,7 @@ public enum RenderDocumentSanitizer {
             // Not parsed into candidates: a partly-rewritten list is a list with a hole in
             // it, and the browser picks the entry it likes.
             blocked.append(BlockedResource(kind: .remoteImage, detail: value))
-            return ""
+            return .value("")
         }
     }
 

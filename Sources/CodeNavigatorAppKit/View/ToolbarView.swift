@@ -16,7 +16,13 @@ struct ToolbarView: View {
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.medium) {
-            projectButton
+
+            // Room for the window buttons, stated rather than inherited. The project chip
+            // used to sit here and happened to provide this gap; removing it (02b C-1, the
+            // tab bar owns project identity now) would have let the title slide under the
+            // traffic lights.
+            Color.clear
+                .frame(width: Metrics.trafficLightInset, height: 1)
 
             Spacer(minLength: DesignTokens.Spacing.small)
 
@@ -35,26 +41,6 @@ struct ToolbarView: View {
         .padding(.horizontal, DesignTokens.Spacing.large)
         .frame(height: ShellLayout.Metrics.titleBarHeight)
         .background(DesignTokens.backgroundWindow.dynamicColor)
-    }
-
-    private var projectButton: some View {
-        Button {
-            onCommand(.openProject)
-        } label: {
-            HStack(spacing: DesignTokens.Spacing.extraSmall) {
-                Image(systemName: "folder")
-                Text(toolbar.projectButtonTitle)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: Metrics.chevronSize))
-            }
-            .font(.system(size: DesignTokens.Typography.secondarySize))
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
-        .frame(maxWidth: Metrics.projectButtonMaximumWidth)
-        .accessibilityLabel("프로젝트: \(toolbar.projectButtonTitle)")
     }
 
     private var windowTitle: some View {
@@ -122,6 +108,7 @@ struct ToolbarView: View {
     private enum Metrics {
         static let chevronSize: CGFloat = 8
         static let dirtyDotSize: CGFloat = 6
-        static let projectButtonMaximumWidth: CGFloat = 240
+        /// The window buttons live in the top-left; design §4.3 keeps 78pt clear for them.
+        static let trafficLightInset: CGFloat = 78
     }
 }

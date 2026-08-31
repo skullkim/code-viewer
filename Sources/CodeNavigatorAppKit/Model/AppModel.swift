@@ -423,9 +423,8 @@ public final class AppModel {
     /// unsaved, and treating "cannot ask" as "there is something to lose" would put a sheet
     /// in front of a close that is safe.
     public func dirtyFiles(in tab: ProjectTabState) async -> [String] {
-        guard let saver = editorSession as? any EditorSaving else { return [] }
         let root = URL(fileURLWithPath: tab.rootPath)
-        return (try? await saver.dirtyFiles(inProjectRoot: root)) ?? []
+        return (try? await editorSession.dirtyFiles(inProjectRoot: root)) ?? []
     }
 
     /// Writes every dirty buffer in this tab and reports what happened to each.
@@ -434,15 +433,9 @@ public final class AppModel {
     /// closes the tab only when the save completed, so "we could not tell" has to read as
     /// "not complete".
     public func saveAll(in tab: ProjectTabState) async -> SaveAllOutcome {
-        guard let saver = editorSession as? any EditorSaving else {
-            return SaveAllOutcome(
-                savedPaths: [],
-                failures: [SaveFailure(path: tab.name, reason: "편집 세션이 저장에 응답하지 않습니다")]
-            )
-        }
         let root = URL(fileURLWithPath: tab.rootPath)
         do {
-            return try await saver.saveAll(inProjectRoot: root)
+            return try await editorSession.saveAll(inProjectRoot: root)
         } catch {
             return SaveAllOutcome(
                 savedPaths: [],

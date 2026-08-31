@@ -644,25 +644,10 @@ public enum MarkdownDocument {
 
     // MARK: 이스케이프
 
-    /// `&` first. Any other order turns `<` into `&amp;lt;`, which the reader sees literally.
-    private static func escaped(_ text: String) -> String {
-        var output = ""
-        for character in text {
-            switch character {
-            case "&": output += "&amp;"
-            case "<": output += "&lt;"
-            case ">": output += "&gt;"
-            default: output.append(character)
-            }
-        }
-        return output
-    }
-
-    /// Everything `escaped` does, plus the quote — an unescaped quote in a URL or an alt text
-    /// ends the attribute and turns the rest of the author's text into attributes of ours.
-    private static func escapedAttribute(_ text: String) -> String {
-        escaped(text).replacingOccurrences(of: "\"", with: "&quot;")
-    }
+    // 이스케이프는 `HTMLText` 하나만 쓴다 — 규칙이 두 벌이면 한쪽만 고쳐지고, 안 고쳐진
+    // 쪽이 곧 아무도 안 본 경로가 된다.
+    private static func escaped(_ text: String) -> String { HTMLText.escaped(text) }
+    private static func escapedAttribute(_ text: String) -> String { HTMLText.escapedAttribute(text) }
 
     private static func isPunctuation(_ character: Character) -> Bool {
         ##"\`*_{}[]()#+-.!|<>&"'~"##.contains(character)

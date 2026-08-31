@@ -13,7 +13,6 @@ public struct ToolbarButton: Sendable, Hashable, Identifiable {
 
 /// What the 48px title bar shows (design §3 W-1).
 public struct ToolbarPresentation: Sendable, Hashable {
-    public let projectButtonTitle: String
     public let windowTitle: String
     public let showsDirtyIndicator: Bool
     public let buttons: [ToolbarButton]
@@ -23,7 +22,6 @@ public struct ToolbarPresentation: Sendable, Hashable {
 }
 
 extension ToolbarPresentation {
-    public static let noProjectTitle = "프로젝트 없음"
 
     public static func make(
         projectName: String?,
@@ -32,7 +30,6 @@ extension ToolbarPresentation {
         layout: ShellLayout
     ) -> ToolbarPresentation {
         ToolbarPresentation(
-            projectButtonTitle: projectName ?? noProjectTitle,
             windowTitle: windowTitle(projectName: projectName, editorStatus: editorStatus),
             showsDirtyIndicator: editorStatus?.isDirty ?? false,
             buttons: buttons(availability: availability),

@@ -31,7 +31,10 @@ struct RenderDocumentSanitizerTests {
         let result = sanitize(#"<img src="https://evil.com/x.png">"#)
 
         #expect(result.blocked.contains { $0.kind == .remoteImage })
-        #expect(!result.html.contains("evil.com"), "차단했다면서 URI 를 문서에 남겼다")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "차단했다면서 URI 를 페치 가능한 자리에 남겼다"
+        )
     }
 
     @Test("원격 스타일시트도 마찬가지다")
@@ -124,7 +127,10 @@ struct RenderDocumentSanitizerTests {
         let result = sanitize(#"<img src="data:image/svg+xml;base64,PHN2Zz4=">"#)
 
         #expect(result.blocked.contains { $0.kind == .remoteImage })
-        #expect(!result.html.contains("svg+xml"), "SVG data: 가 문서에 남았다")
+        #expect(
+            fetchableValues(in: result.html, containing: "svg+xml").isEmpty,
+            "SVG data: 가 페치 가능한 자리에 남았다"
+        )
     }
 
     // MARK: CSS url()
@@ -133,14 +139,14 @@ struct RenderDocumentSanitizerTests {
     func remoteURLsInStyleAttributesAreRemoved() {
         let result = sanitize(#"<div style="background: url('https://evil.com/bg.png')">x</div>"#)
 
-        #expect(!result.html.contains("evil.com"))
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
         #expect(!result.blocked.isEmpty)
     }
 
     @Test("style 블록 안의 원격 url() 도 제거된다")
     func remoteURLsInStyleBlocksAreRemoved() {
         let result = sanitize("<style>body { background: url(https://evil.com/bg.png); }</style>")
-        #expect(!result.html.contains("evil.com"))
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
     }
 
     // MARK: srcset
@@ -151,7 +157,7 @@ struct RenderDocumentSanitizerTests {
         // 항목을 고른다.
         let result = sanitize(#"<img srcset="https://evil.com/a.png 1x, b.png 2x" src="data:image/png;base64,AA">"#)
 
-        #expect(!result.html.contains("evil.com"))
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
         #expect(!result.blocked.isEmpty)
     }
 
@@ -197,7 +203,10 @@ struct RenderDocumentSanitizerTests {
         """
         let result = sanitize(html)
 
-        #expect(!result.html.contains("evil.com"), "남은 참조: \(result.html)")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "페치 가능한 자리에 남은 참조: \(result.html)"
+        )
         #expect(!result.html.contains("cdn.example.com"))
         #expect(result.blocked.count >= 4, "차단 목록이 \(result.blocked.count)건뿐")
     }
@@ -256,8 +265,16 @@ struct RenderDocumentSanitizerTests {
         // 가정할 수 없다.
         let result = sanitize(#"<img data-src="https://evil.com/x.png" src="https://evil.com/x.png">"#)
 
-        #expect(result.html.contains("src=\"\""), "진짜 src 가 안 비워졌다: \(result.html)")
+        // 무력화의 **방식**은 바뀌었다(비우기 → 요소째 W-15 박스로 교체). 그래서 `src=""`
+        // 를 찾던 단언은 더 이상 그 성질을 재지 못한다. 재려던 것은 형태가 아니라
+        // **"진짜 참조가 페치 가능한 자리에 안 남는다"** 이므로 그것을 직접 잰다.
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "진짜 src 가 페치 가능한 자리에 남았다: \(result.html)"
+        )
         #expect(result.blocked.contains { $0.kind == .remoteImage })
+        // 미끼만 재작성하고 끝내지 않았다는 것 — 차단이 실제로 한 번 일어났다.
+        #expect(result.html.contains("차단되었습니다"))
     }
 
     @Test("data-* 는 남지만 아무것도 가져오지 못한다")
@@ -299,7 +316,7 @@ struct RenderDocumentSanitizerTests {
         let result = sanitize(#"<meta http-equiv="refresh" content="0;url=https://evil.com">"#)
 
         #expect(!result.html.contains("refresh"), "meta refresh 가 남았다")
-        #expect(!result.html.contains("evil.com"))
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
     }
 
     @Test("평범한 meta 는 남는다")
@@ -344,7 +361,10 @@ struct RenderDocumentSanitizerTests {
         // 실리고, 그러면 사용자가 W-15 칩에서 무엇이 빠졌는지 볼 수 없다.
         let result = sanitize(#"<svg><image xlink:href="https://evil.com/pixel.png"/></svg>"#)
 
-        #expect(!result.html.contains("evil.com"), "xlink:href 가 그대로 남았다: \(result.html)")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "xlink:href 가 페치 가능한 자리에 남았다: \(result.html)"
+        )
         #expect(result.blocked.contains { $0.kind == .remoteImage }, "차단 목록에 안 실렸다 — 칩에 안 보인다")
     }
 

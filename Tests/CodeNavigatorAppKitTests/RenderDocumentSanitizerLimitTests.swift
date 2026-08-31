@@ -33,7 +33,10 @@ struct RenderDocumentSanitizerLimitTests {
         // **보이지 않았고**, 작성자가 그렇게 쓰기만 하면 1층이 통째로 우회됐다.
         let result = sanitize(#"<img src=https://evil.com/x.png>"#)
 
-        #expect(!result.html.contains("evil.com"), "따옴표 없는 값이 남았다: \(result.html)")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "따옴표 없는 값이 페치 가능한 자리에 남았다: \(result.html)"
+        )
         #expect(!result.blocked.isEmpty)
     }
 
@@ -43,13 +46,19 @@ struct RenderDocumentSanitizerLimitTests {
         // 아예 검사되지 않는다.** 실측으로 잔존을 확인하고 따옴표 인식으로 고쳤다.
         let result = sanitize(#"<img alt="a>b" src="https://evil.com/w.png">"#)
 
-        #expect(!result.html.contains("evil.com"), "가짜 태그 끝 뒤의 참조가 남았다: \(result.html)")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "가짜 태그 끝 뒤의 참조가 페치 가능한 자리에 남았다: \(result.html)"
+        )
     }
 
     @Test("회귀: = 주변 공백이 있어도 같은 속성이다")
     func whitespaceAroundEqualsIsStillTheSameAttribute() {
         let result = sanitize(#"<img src = "https://evil.com/t.png">"#)
-        #expect(!result.html.contains("evil.com"), "공백 낀 속성이 남았다: \(result.html)")
+        #expect(
+            fetchableValues(in: result.html, containing: "evil.com").isEmpty,
+            "공백 낀 속성이 페치 가능한 자리에 남았다: \(result.html)"
+        )
     }
 
     // MARK: 잡는 것 — 주석·CDATA·대문자·개행 (주석이 반대로 적혀 있던 것들)
@@ -68,12 +77,14 @@ struct RenderDocumentSanitizerLimitTests {
 
     @Test("대문자 태그·속성도 잡는다")
     func uppercaseMarkupIsCaught() {
-        #expect(!sanitize(#"<IMG SRC="https://evil.com/u.png">"#).html.contains("evil.com"))
+        let result = sanitize(#"<IMG SRC="https://evil.com/u.png">"#)
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
     }
 
     @Test("태그 안 개행도 잡는다")
     func newlinesInsideATagAreCaught() {
-        #expect(!sanitize("<img\n  src=\"https://evil.com/v.png\">").html.contains("evil.com"))
+        let result = sanitize("<img\n  src=\"https://evil.com/v.png\">")
+        #expect(fetchableValues(in: result.html, containing: "evil.com").isEmpty)
     }
 
     // MARK: 알려진 한계 — 고쳐야 할 실패가 아니다
@@ -116,14 +127,28 @@ struct RenderDocumentSanitizerLimitTests {
         //
         // 따라서 핸들러를 여기서 긁어내는 규칙을 더하지 않는다 — 속성 이름 목록을 세는 방식은
         // 빠뜨린 이름이 곧 구멍이고, 그 구멍은 조용하다. 이 층이 지키는 성질은 좁게 유지한다.
-        let result = sanitize("<img src=\"missing.png\" onerror=\"fetch('https://evil.example')\">")
+        // 예시는 **1층을 살아서 통과하는** 요소여야 한다. 차단된 이미지를 쓰면 요소째
+        // 박스로 바뀌면서 핸들러가 같이 사라지고(아래 테스트가 그 사실을 고정한다), 그러면
+        // 이 테스트는 "핸들러가 남는다"가 아니라 "차단됐다"를 재게 된다 — 재려던 것과 다른 것.
+        let result = sanitize("<p onclick=\"fetch('https://evil.example')\">문단</p>")
 
-        #expect(result.html.contains("onerror"), "1층은 핸들러를 지우지 않는다 — 그 사실을 고정한다")
+        #expect(result.html.contains("onclick"), "1층은 핸들러를 지우지 않는다 — 그 사실을 고정한다")
         // 위 실측의 전제. 이 지시어가 빠지면 측정 결과가 근거가 아니게 되므로 같이 깨져야 한다.
         #expect(
             RenderDocumentSanitizer.contentSecurityPolicy.contains("script-src 'none'"),
             "핸들러 차단의 근거가 이 지시어다"
         )
+    }
+
+    @Test("차단된 이미지의 핸들러는 요소째 사라진다")
+    func aBlockedImageTakesItsHandlerWithIt() {
+        // W-15 박스가 요소를 통째로 대신하면서 생긴 부수 효과인데, 방향이 맞으므로 고정한다.
+        // 위 테스트가 말하는 "1층은 핸들러를 안 지운다"는 **살아남는 요소**에 대한 말이고,
+        // 차단된 이미지는 살아남지 않는다. 두 문장이 모순이 아니라는 것을 여기서 보인다.
+        let result = sanitize("<img src=\"https://evil.example/x.png\" onerror=\"fetch('https://evil.example')\">")
+
+        #expect(!result.html.contains("onerror"))
+        #expect(result.html.contains("차단되었습니다"))
     }
 
     @Test("2층은 실측됐다 — 다만 이 테스트가 재는 것은 주입까지다")

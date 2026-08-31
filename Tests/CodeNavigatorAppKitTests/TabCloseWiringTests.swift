@@ -14,15 +14,17 @@ import CodeNavigatorContract
 struct TabCloseWiringTests {
 
     /// An editor that answers the save questions, so the model's decisions can be measured.
-    final class SavingEditorSession: FakeEditorSession, EditorSaving, @unchecked Sendable {
+    final class SavingEditorSession: FakeEditorSession, @unchecked Sendable {
         var dirtyPaths: [String] = []
         var outcome = SaveAllOutcome(savedPaths: [], failures: [])
+        var saveAllError: (any Error)?
         private(set) var saveAllCalls: [URL] = []
 
-        func dirtyFiles(inProjectRoot root: URL) async throws -> [String] { dirtyPaths }
+        override func dirtyFiles(inProjectRoot root: URL) async throws -> [String] { dirtyPaths }
 
-        func saveAll(inProjectRoot root: URL) async throws -> SaveAllOutcome {
+        override func saveAll(inProjectRoot root: URL) async throws -> SaveAllOutcome {
             saveAllCalls.append(root)
+            if let saveAllError { throw saveAllError }
             return outcome
         }
     }
@@ -87,23 +89,22 @@ struct TabCloseWiringTests {
         #expect(outcome.failures.map(\.path) == ["b.rs"])
     }
 
-    @Test("편집기가 저장에 답하지 못하면 실패로 다룬다 — 조용한 성공이 아니다")
-    func anEditorThatCannotSaveIsAFailure() async {
-        // `FakeEditorSession` does not implement the saving seam, which stands in for a
-        // session that never started. "We could not ask" has to read as "not complete", or
-        // the tab closes over work nobody wrote.
-        let model = AppModel(
-            editorSession: FakeEditorSession(),
-            workspace: FakeWorkspace(),
-            storage: InMemoryKeyValueStore(),
-            now: { Date(timeIntervalSince1970: 1_000_000) }
-        )
+    @Test("저장이 던지면 실패로 다룬다 — 조용한 성공이 아니다")
+    func aThrownSaveIsAFailure() async {
+        // A session whose RPC has died throws rather than answering. "We could not tell"
+        // has to read as "not complete", or the caller closes the tab over work nobody
+        // wrote.
+        //
+        // This test used to reproduce a session that did not implement saving at all. That
+        // state no longer exists — the protocol requires it now — so it was rewritten
+        // against the failure that can still happen.
+        let (model, editor) = makeModel()
         let tab = await openTab(model)
+        editor.saveAllError = NavigatorError.projectNotFound(path: "/tmp/alpha")
 
         let outcome = await model.saveAll(in: tab)
 
         #expect(outcome.isComplete == false)
-        let dirty = await model.dirtyFiles(in: tab)
-        #expect(dirty.isEmpty, "물어볼 수 없다면 잃을 것도 모르므로 시트를 띄우지 않는다")
+        #expect(outcome.failures.isEmpty == false, "실패 사유가 없으면 시트가 무엇을 말해야 할지 모른다")
     }
 }

@@ -85,7 +85,6 @@ struct ToolbarPresentationTests {
             layout: layout(width: 1600)
         )
 
-        #expect(toolbar.projectButtonTitle == ToolbarPresentation.noProjectTitle)
         #expect(toolbar.buttons.count == 3)
         #expect(toolbar.buttons.allSatisfy { !$0.isEnabled })
     }
@@ -99,7 +98,9 @@ struct ToolbarPresentationTests {
             layout: layout(width: 1600)
         )
 
-        #expect(toolbar.projectButtonTitle == "code-navigator-mac")
+        // The toolbar no longer names the project (02b C-1): the tab bar owns that, and
+        // showing it twice made the user ask whether the two were different things.
+        #expect(toolbar.windowTitle == "Index.swift", "툴바가 파일이 아니라 프로젝트를 말하고 있다")
         #expect(toolbar.buttons.allSatisfy { $0.isEnabled })
         #expect(toolbar.buttons.map(\.command) == [.symbolSearch, .textSearch, .togglePanel])
     }

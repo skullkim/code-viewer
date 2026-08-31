@@ -84,9 +84,11 @@ public struct MainWindowView: View {
                         bar: tabBar,
                         onAction: { action in Task { await performTabAction(action) } }
                     )
+                    // No `Divider()` here: the bar draws its own bottom hairline. Adding one
+                    // stacked a second separator under the first and made the band taller
+                    // than the constant every layout calculation uses (QA measured 38 for a
+                    // 32pt bar).
                     .frame(height: layout.tabBarHeight)
-
-                    Divider()
                 }
 
                 panes(shell: shell, windowWidth: proxy.size.width)
@@ -108,6 +110,16 @@ public struct MainWindowView: View {
                 .frame(height: layout.statusBarHeight)
             }
             .background(DesignTokens.backgroundWindow.dynamicColor)
+            .sheet(isPresented: Binding(
+                get: { MissingTabsPresentation.make(missing: model.missingTabs) != nil },
+                set: { shown in if !shown { model.dismissMissingTabs() } }
+            )) {
+                if let presentation = MissingTabsPresentation.make(missing: model.missingTabs) {
+                    MissingTabsSheetView(presentation: presentation) {
+                        model.dismissMissingTabs()
+                    }
+                }
+            }
             .sheet(item: $pendingClose) { pending in
                 TabCloseConfirmationView(
                     confirmation: TabCloseConfirmation.make(

@@ -244,6 +244,15 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
     func emitSaved(_ file: SavedFile) {
         locked { savedContinuation }?.yield(file)
     }
+    // W-13. Overridden by the suite that measures saving; the default is a session with
+    // nothing unsaved, which is what most tests want.
+    var dirtyFilePaths: [String] = []
+    var saveAllOutcome = SaveAllOutcome(savedPaths: [], failures: [])
+
+    func dirtyFiles(inProjectRoot root: URL) async throws -> [String] { dirtyFilePaths }
+
+    func saveAll(inProjectRoot root: URL) async throws -> SaveAllOutcome { saveAllOutcome }
+
 }
 
 

@@ -34,19 +34,26 @@ trap cleanup_sandbox EXIT INT TERM
 # a door for the next person to quiet any failure; the reason is what keeps it a decision.
 is_exempt() {
     case "$1" in
-        # Two views for features whose integration is still in flight. Exempted by the leader
-        # on 2026-08-30 so that a red gate means something again: both were known, tracked, and
-        # owned, and leaving them red teaches everyone to read past the failure — which is how
-        # the *next* unmounted view goes unnoticed.
+        # One view whose feature is still in flight. Exempted by the leader on 2026-08-30 so that
+        # a red gate means something again: it is known, tracked, and owned, and leaving it red
+        # teaches everyone to read past the failure — which is how the *next* unmounted view
+        # goes unnoticed.
         #
-        # The checker still does its job while these sit here: a third unmounted view fails.
+        # The second entry (`BlockedResourcePlaceholder`) is gone as of 2026-08-31 — not because
+        # it was mounted, but because the view was deleted. It drew the W-15 box in SwiftUI,
+        # and the document is HTML inside a web view, so it could never have appeared. The
+        # box is markup now. An exemption that ends by removing the thing is the honest ending.
         #
-        # ⚠ Each entry is a debt with a named owner, not a decision. Delete the entry the moment
+        # The checker still does its job while this sits here: another unmounted view fails.
+        #
+        # ⚠ The entry is a debt with a named owner, not a decision. Delete it the moment
         # its view is mounted — an exemption that outlives its reason is how this list becomes
-        # the hand-maintained list this script was rewritten to get rid of. Both are tracked as
-        # open items in _workspace/CERTIFICATION.md and must be gone before BUILD_COMPLETE.
-        BlockedResourcePlaceholder) return 0 ;; # REQ-013 렌더 — frontend-junior, 전처리 단계 작업 중
-        RenderDocumentView) return 0 ;;         # REQ-013 렌더 — frontend-junior, 전처리 단계 작업 중
+        # the hand-maintained list this script was rewritten to get rid of. Tracked as an open
+        # item in _workspace/CERTIFICATION.md and must be gone before BUILD_COMPLETE.
+        # 렌더 파이프라인이 아직 없다. 이 뷰는 문서 몸통을 주입받는 제네릭 껍데기인데,
+        # 그 몸통(WKWebView 호스트)이 존재하지 않아 마운트할 대상이 없다. 지금 꽂으면
+        # 이 검사기는 초록이 되고 렌더는 안 되는 — 이 검사기가 막으려는 바로 그 상태가 된다.
+        RenderDocumentView) return 0 ;;         # REQ-013 — frontend-junior, 웹뷰 호스트 부재 (2026-08-31)
         *) return 1 ;;
     esac
 }
