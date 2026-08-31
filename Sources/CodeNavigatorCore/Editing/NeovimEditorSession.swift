@@ -1067,6 +1067,14 @@ public actor NeovimEditorSession: EditorSession {
 
     /// Tabpage state read straight from Neovim, for tests that must check the editor rather than
     /// what this type believes about it.
+    /// Asks Neovim to evaluate an expression, for tests that must check the editor's own view of
+    /// itself rather than what this type believes. Not part of the contract.
+    func evaluateForTesting(_ expression: String) async throws -> String {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_eval", [.string(expression)])
+        return value.stringValue ?? ""
+    }
+
     func currentWorkingDirectoryForTesting() async throws -> String {
         let channel = try requireChannel()
         let value = try await channel.request("nvim_eval", [.string("getcwd()")])
