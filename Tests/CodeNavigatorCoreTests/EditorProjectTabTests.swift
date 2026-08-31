@@ -22,6 +22,7 @@ struct EditorProjectTabTests {
         let first = TemporaryProjectFixture()
         let second = TemporaryProjectFixture()
         let session = try await startedSession(first.rootURL)
+        // 던지는 경로용 보험. 그때는 프로세스가 계속 살아 있어 이 Task 가 실제로 돈다.
         defer { Task { await session.shutDown() } }
 
         let firstTab = ProjectTabIdentifier()
@@ -34,16 +35,25 @@ struct EditorProjectTabTests {
 
         try await session.activateProjectTab(secondTab)
         #expect(try await session.currentWorkingDirectoryForTesting() == second.rootURL.resolved())
+        // 명시적으로 기다린다. defer 의 분리된 Task 는 프로세스가 끝나면 그냥 버려지고,
+        // 그러면 deinit 도 안 돌아 편집기가 부모 없이 남는다 — 이 스위트만 실행당 4개씩
+        // 남기고 있었다. 남은 편집기는 SIGTERM 도 안 듣고 스스로 나가지도 않는다.
+        await session.shutDown()
     }
 
     @Test("첫 프로젝트는 새 탭페이지를 만들지 않는다 — 빈 탭이 하나 남지 않게")
     func theFirstProjectReusesTheTabThatAlreadyExists() async throws {
         let first = TemporaryProjectFixture()
         let session = try await startedSession(first.rootURL)
+        // 던지는 경로용 보험. 그때는 프로세스가 계속 살아 있어 이 Task 가 실제로 돈다.
         defer { Task { await session.shutDown() } }
 
         try await session.openProjectTab(ProjectTabIdentifier(), root: first.rootURL)
         #expect(try await session.tabPageCountForTesting() == 1)
+        // 명시적으로 기다린다. defer 의 분리된 Task 는 프로세스가 끝나면 그냥 버려지고,
+        // 그러면 deinit 도 안 돌아 편집기가 부모 없이 남는다 — 이 스위트만 실행당 4개씩
+        // 남기고 있었다. 남은 편집기는 SIGTERM 도 안 듣고 스스로 나가지도 않는다.
+        await session.shutDown()
     }
 
     @Test("탭을 닫으면 탭페이지가 사라진다")
@@ -51,6 +61,7 @@ struct EditorProjectTabTests {
         let first = TemporaryProjectFixture()
         let second = TemporaryProjectFixture()
         let session = try await startedSession(first.rootURL)
+        // 던지는 경로용 보험. 그때는 프로세스가 계속 살아 있어 이 Task 가 실제로 돈다.
         defer { Task { await session.shutDown() } }
 
         let firstTab = ProjectTabIdentifier()
@@ -61,6 +72,10 @@ struct EditorProjectTabTests {
 
         try await session.closeProjectTab(secondTab)
         #expect(try await session.tabPageCountForTesting() == 1)
+        // 명시적으로 기다린다. defer 의 분리된 Task 는 프로세스가 끝나면 그냥 버려지고,
+        // 그러면 deinit 도 안 돌아 편집기가 부모 없이 남는다 — 이 스위트만 실행당 4개씩
+        // 남기고 있었다. 남은 편집기는 SIGTERM 도 안 듣고 스스로 나가지도 않는다.
+        await session.shutDown()
     }
 
     /// The last tab is a special case in Neovim: `tabclose` refuses on the final tabpage with
@@ -70,6 +85,7 @@ struct EditorProjectTabTests {
     func closingTheLastTabKeepsTheSessionAlive() async throws {
         let first = TemporaryProjectFixture()
         let session = try await startedSession(first.rootURL)
+        // 던지는 경로용 보험. 그때는 프로세스가 계속 살아 있어 이 Task 가 실제로 돈다.
         defer { Task { await session.shutDown() } }
 
         let onlyTab = ProjectTabIdentifier()
@@ -77,6 +93,10 @@ struct EditorProjectTabTests {
         try await session.closeProjectTab(onlyTab)
 
         #expect(await session.state() == .connected)
+        // 명시적으로 기다린다. defer 의 분리된 Task 는 프로세스가 끝나면 그냥 버려지고,
+        // 그러면 deinit 도 안 돌아 편집기가 부모 없이 남는다 — 이 스위트만 실행당 4개씩
+        // 남기고 있었다. 남은 편집기는 SIGTERM 도 안 듣고 스스로 나가지도 않는다.
+        await session.shutDown()
     }
 
     /// Neovim draws its own tab line by default. The application draws the tab bar, so two would
@@ -87,12 +107,17 @@ struct EditorProjectTabTests {
         let first = TemporaryProjectFixture()
         let second = TemporaryProjectFixture()
         let session = try await startedSession(first.rootURL)
+        // 던지는 경로용 보험. 그때는 프로세스가 계속 살아 있어 이 Task 가 실제로 돈다.
         defer { Task { await session.shutDown() } }
 
         try await session.openProjectTab(ProjectTabIdentifier(), root: first.rootURL)
         try await session.openProjectTab(ProjectTabIdentifier(), root: second.rootURL)
 
         #expect(try await session.showTabLineSettingForTesting() == 0)
+        // 명시적으로 기다린다. defer 의 분리된 Task 는 프로세스가 끝나면 그냥 버려지고,
+        // 그러면 deinit 도 안 돌아 편집기가 부모 없이 남는다 — 이 스위트만 실행당 4개씩
+        // 남기고 있었다. 남은 편집기는 SIGTERM 도 안 듣고 스스로 나가지도 않는다.
+        await session.shutDown()
     }
 }
 
