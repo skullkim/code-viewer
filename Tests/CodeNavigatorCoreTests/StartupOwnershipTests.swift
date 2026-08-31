@@ -35,20 +35,23 @@ struct StartupOwnershipTests {
         await session.shutDown()
     }
 
-    @Test("앱과 같은 소유 구조에서도 편집기가 살아 있다 — 엔진만 붙들고 있는 경우")
-    func theEngineAloneKeepsTheEditorAlive() async throws {
+    /// The application's own ownership shape: it holds the workspace, the workspace holds the
+    /// session, the session holds the channel. This used to be written against
+    /// `CodeNavigatorEngine`, which nothing ships — so the shape it checked was not the app's.
+    @Test("앱과 같은 소유 구조에서도 편집기가 살아 있다 — 워크스페이스만 붙들고 있는 경우")
+    func theWorkspaceAloneKeepsTheEditorAlive() async throws {
         let fixture = TemporaryProjectFixture()
         fixture.write("src/App.kt", contents: "class Application")
-        let engine = CodeNavigatorEngine()
-        try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+        _ = try await workspace.openProject(at: fixture.rootURL)
 
-        let identifier = try #require(await engine.editor.processIdentifierForTesting())
+        let identifier = try #require(await workspace.editorSession.processIdentifierForTesting())
         try await Task.sleep(for: .milliseconds(300))
 
-        #expect(isAlive(identifier), "엔진이 살아 있는데 nvim \(identifier) 이 죽었다")
-        #expect(await engine.editor.state() == .connected)
+        #expect(isAlive(identifier), "워크스페이스가 살아 있는데 nvim \(identifier) 이 죽었다")
+        #expect(await workspace.editorSession.state() == .connected)
 
-        await engine.shutDown()
+        await workspace.shutDown()
     }
 
     /// The positive control. If dropping every reference did *not* kill the process, the two
