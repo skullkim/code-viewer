@@ -1017,7 +1017,17 @@ public actor NeovimEditorSession: EditorSession {
             let lines = try await channel.request("nvim_buf_get_lines", [
                 buffer, .integer(0), .integer(-1), .boolean(false),
             ])
-            return lines.arrayValue?.compactMap(\.stringValue) ?? []
+            // A failure to read the reply is reported, never returned as "no lines". `nil` here
+            // means the editor is not holding this file and the caller falls back to disk; an
+            // empty array means the file is genuinely empty. Neither is true when the reply could
+            // not be decoded, and the render view says "내용이 없습니다" for whatever it is given.
+            guard let text = lines.textArrayValue else {
+                throw NavigatorError.editorRequestFailed(
+                    method: "nvim_buf_get_lines",
+                    reason: "버퍼 줄을 텍스트로 읽지 못했습니다"
+                )
+            }
+            return text
         }
 
         return nil
@@ -1031,12 +1041,36 @@ public actor NeovimEditorSession: EditorSession {
 
     /// Buffer and register access for tests that must check the editor's real state rather than
     /// what the engine reports about it. Not part of the contract.
+    /// 임시 진단용 — 디코딩 전 원본 값을 본다. 확인 후 제거.
+    func rawBufferLinesForProbe() async throws -> String {
+        let channel = try requireChannel()
+        let buffers = try await channel.request("nvim_list_bufs", []).arrayValue ?? []
+        guard let buffer = buffers.first else { return "(버퍼 없음)" }
+        let value = try await channel.request("nvim_buf_get_lines", [
+            buffer, .integer(0), .integer(-1), .boolean(false),
+        ])
+        guard let array = value.arrayValue else { return "배열이 아님: \(value)" }
+        return array.map { element in
+            switch element {
+            case .string(let text): return "str(\(text))"
+            case .binary(let bytes): return "bin(\(String(decoding: bytes, as: UTF8.self)))"
+            default: return "기타(\(element))"
+            }
+        }.joined(separator: " | ")
+    }
+
     func bufferLinesForTesting() async throws -> [String] {
         let channel = try requireChannel()
         let value = try await channel.request("nvim_buf_get_lines", [
             .integer(0), .integer(0), .integer(-1), .boolean(false),
         ])
-        return value.arrayValue?.compactMap(\.stringValue) ?? []
+        guard let text = value.textArrayValue else {
+            throw NavigatorError.editorRequestFailed(
+                method: "nvim_buf_get_lines",
+                reason: "버퍼 줄을 텍스트로 읽지 못했습니다"
+            )
+        }
+        return text
     }
 
     func replaceBufferForTesting(with lines: [String]) async throws {

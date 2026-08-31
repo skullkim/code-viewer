@@ -232,7 +232,13 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
 
         // The live buffer wins when the editor is holding this file: a preview is usually opened to
         // see what was just typed, and the file on disk would be missing it (ADR/leader ruling).
-        if let lines = try? await editor.bufferLines(forFileAt: resolved.url.path) {
+        //
+        // `try?` would undo the distinction the session just made. It returns `nil` for "not
+        // holding this file" — an ordinary case that falls back to disk — and *throws* when the
+        // reply could not be read, which is a defect. Swallowing the throw turns the defect into a
+        // silent fallback: the user sees the saved file and nothing reports that the live one was
+        // unreadable. The failure is allowed through; falling back is only for the ordinary case.
+        if let lines = try await editor.bufferLines(forFileAt: resolved.url.path) {
             let text = lines.joined(separator: "\n")
             // The same document must not render from one source and refuse from the other, or the
             // limit looks random to the user.
