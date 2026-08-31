@@ -207,3 +207,67 @@ struct WorkspacePartialFailureTests {
         await workspace.shutDown()
     }
 }
+
+/// REQ-NF-003 on the live path: opening a project has to leave the user able to work.
+@Suite("기동 예산 — 워크스페이스 경로 (REQ-NF-003)", .serialized)
+struct WorkspaceStartupBudgetTests {
+
+    private func makeRepository(fileCount: Int) -> TemporaryProjectFixture {
+        let fixture = TemporaryProjectFixture()
+        for index in 0..<fileCount {
+            fixture.write("src/module\(index % 40)/Service\(index).kt", contents: """
+            package com.example.module\(index % 40)
+
+            class Service\(index) {
+                fun handle(request: String): Boolean = true
+                val identifier: Int = \(index)
+            }
+            """)
+        }
+        return fixture
+    }
+
+    /// The budget is 2s and this measures around 0.3s, so the margin is wide enough to survive a
+    /// shared runner. If it ever starts flaking, it belongs in `gate.sh`'s isolated step with the
+    /// other performance claims rather than having its threshold raised — the number is the claim.
+    @Test("중형 레포에서 탭이 2초 안에 조작 가능해진다", .timeLimit(.minutes(2)))
+    func openingBecomesUsableWithinTheBudget() async throws {
+        let fixture = makeRepository(fileCount: 3_000)
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        let start = Date()
+        let tab = try await workspace.openProject(at: fixture.rootURL)
+        let elapsed = Date().timeIntervalSince(start)
+
+        print("[성능] 탭 열기(인덱싱+편집기) \(String(format: "%.2f", elapsed))초")
+
+        // 조작 가능해야 한다 — 상태만 connected 인 것으로는 부족하다.
+        let session = try #require(await workspace.session(for: tab.tab.id))
+        #expect(await workspace.editorSession.state() == .connected)
+        #expect(await session.definitions(named: "Service100").count == 1)
+        #expect(elapsed < 2.0)
+        await workspace.shutDown()
+    }
+
+    /// Opening a second project must not re-pay the editor's start-up: one Neovim serves them all
+    /// (ADR-0008), so the second tab only adds a tabpage. If this ever approaches the first
+    /// measurement, the process-per-project shape has crept back in.
+    @Test("두 번째 탭은 편집기 기동 비용을 다시 물지 않는다")
+    func theSecondTabDoesNotRestartTheEditor() async throws {
+        let alpha = makeRepository(fileCount: 200)
+        let beta = makeRepository(fileCount: 200)
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        let firstStart = Date()
+        _ = try await workspace.openProject(at: alpha.rootURL)
+        let firstElapsed = Date().timeIntervalSince(firstStart)
+
+        let secondStart = Date()
+        _ = try await workspace.openProject(at: beta.rootURL)
+        let secondElapsed = Date().timeIntervalSince(secondStart)
+
+        print(String(format: "[성능] 첫 탭 %.2f초 · 둘째 탭 %.2f초", firstElapsed, secondElapsed))
+        #expect(await workspace.tabs().count == 2)
+        await workspace.shutDown()
+    }
+}
