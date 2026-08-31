@@ -29,12 +29,20 @@ public actor NeovimEditorSession: EditorSession {
     /// dropping them would silently lose the user's first keystrokes.
     private var queuedKeys: [String] = []
 
-    /// Neovim's tabpage handle for each open project.
+    /// Neovim's tabpage handle and project root for each open project.
     ///
     /// The handles stay here rather than in the contract: they are msgpack values that mean
     /// nothing outside this process, so handing one to the application would give it a token it
     /// can neither read nor check. It already has a tab identity, so that is the key.
-    private var projectTabPages: [ProjectTabIdentifier: MessagePackValue] = [:]
+    ///
+    /// The root is kept alongside because relative paths mean different files in different tabs,
+    /// and `projectRoot` below follows whichever tab is active.
+    private struct ProjectTabPage {
+        let handle: MessagePackValue
+        let root: URL
+    }
+
+    private var projectTabPages: [ProjectTabIdentifier: ProjectTabPage] = [:]
 
     /// The last status published, so a mode change can be re-published without another round trip
     /// to Neovim. Mode arrives on the redraw stream while the rest of the status arrives from
@@ -326,15 +334,21 @@ public actor NeovimEditorSession: EditorSession {
         // (ADR-0009).
         try await channel.request("nvim_command", [.string("tcd \(shellQuoted(root.path))")])
         let handle = try await channel.request("nvim_get_current_tabpage", [])
-        projectTabPages[identifier] = handle
+        projectTabPages[identifier] = ProjectTabPage(handle: handle, root: root)
+
+        // Relative paths are resolved against the tab the user is in. Leaving this at the first
+        // project's root meant `src/App.kt` in the second tab opened the **first** project's file
+        // — no error, just the wrong file, and then saving it reindexed the wrong project.
+        projectRoot = root
     }
 
     func activateProjectTab(_ identifier: ProjectTabIdentifier) async throws {
         let channel = try requireChannel()
-        guard let handle = projectTabPages[identifier] else {
+        guard let page = projectTabPages[identifier] else {
             throw NavigatorError.noProjectOpen
         }
-        try await channel.request("nvim_set_current_tabpage", [handle])
+        try await channel.request("nvim_set_current_tabpage", [page.handle])
+        projectRoot = page.root
     }
 
     /// Closes a project's tabpage.
@@ -344,16 +358,18 @@ public actor NeovimEditorSession: EditorSession {
     /// project. So the session stays and the tabpage is emptied rather than removed.
     func closeProjectTab(_ identifier: ProjectTabIdentifier) async throws {
         let channel = try requireChannel()
-        guard let handle = projectTabPages[identifier] else {
+        guard let page = projectTabPages[identifier] else {
             return
         }
-        try await channel.request("nvim_set_current_tabpage", [handle])
+        try await channel.request("nvim_set_current_tabpage", [page.handle])
         if projectTabPages.count == 1 {
             try await channel.request("nvim_command", [.string("enew!")])
         } else {
             try await channel.request("nvim_command", [.string("tabclose")])
         }
         projectTabPages[identifier] = nil
+        // 남은 탭이 있으면 그쪽 루트를 따른다 — 닫힌 프로젝트의 루트로 상대 경로를 풀면 안 된다.
+        projectRoot = projectTabPages.values.first?.root ?? projectRoot
     }
 
     // MARK: - Navigation
