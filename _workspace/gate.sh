@@ -70,14 +70,17 @@ count_foreign_test_processes() {
         | grep -vc "^ *$$ " || true
 }
 
-require_isolation_for_measurement() {
-    local foreign
-    foreign="$(count_foreign_test_processes)"
-    if [ "${foreign:-0}" -gt 0 ]; then
-        fail "다른 테스트 프로세스 ${foreign}개가 돌고 있다 — 격리 측정이 성립하지 않는다. 끝난 뒤 다시 재라"
+# 판정을 세는 일과 분리한다 — 살아 있는 프로세스 목록에 의존하면 자체 검사를 못 한다.
+check_measurement_isolation() {
+    if [ "${1:-0}" -gt 0 ]; then
+        fail "다른 테스트 프로세스 ${1}개가 돌고 있다 — 격리 측정이 성립하지 않는다. 끝난 뒤 다시 재라"
         return 1
     fi
     return 0
+}
+
+require_isolation_for_measurement() {
+    check_measurement_isolation "$(count_foreign_test_processes)"
 }
 
 # ---------------------------------------------------------------------------
@@ -278,6 +281,26 @@ self_test() {
         printf '  ok: 메모리 판정기가 예산 초과를 잡는다\n'
     else
         printf '  FAIL: 999MB 를 통과시켰다\n'
+        status=1
+    fi
+
+    # 6) 격리 전제 판정기. 이게 죽으면 오염된 측정이 인증 근거가 된다 — 실측으로 겪었다
+    #    (동시 실행 중 유휴 메모리가 30.0MB 대신 80.6MB 로 읽혔다).
+    FAILURES=0
+    check_measurement_isolation 2 >/dev/null 2>&1
+    if [ "$FAILURES" -gt 0 ]; then
+        printf '  ok: 격리 전제 판정기가 동시 실행(2개)을 잡는다\n'
+    else
+        printf '  FAIL: 동시 실행 중에도 측정을 허용했다\n'
+        status=1
+    fi
+
+    FAILURES=0
+    check_measurement_isolation 0 >/dev/null 2>&1
+    if [ "$FAILURES" -eq 0 ]; then
+        printf '  ok: 혼자 돌 때는 측정을 허용한다 (오탐 없음)\n'
+    else
+        printf '  FAIL: 깨끗한 상태를 막는다 — 오탐이다\n'
         status=1
     fi
 
