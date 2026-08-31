@@ -101,6 +101,23 @@ extension EditorKeyInput {
     /// All three, not just Escape: Vim users leave insert with `⌃[` and `⌃C` as readily,
     /// and handling only Escape would lose the composing syllable through the door nobody
     /// thought to close.
+    /// 글자를 만들지 않는 이름 있는 키 — nvim 이 받아야 한다.
+    ///
+    /// `space`·`return`·`tab` 은 여기 없다. 셋은 글자를 만들고 `insertText:` 로 온다.
+    static let movementKeys: Set<NamedKey> = [
+        .left, .right, .up, .down,
+        .backspace, .forwardDelete,
+        .home, .end, .pageUp, .pageDown,
+    ]
+
+    /// 조합 중에는 **IME 의 것**인 키. 조합 안에서 이동하고 자모를 지운다.
+    ///
+    /// home·end·page 는 여기 없다 — 음절 안에서 페이지를 넘길 일이 없다. 그것들은 음절을
+    /// 커밋하고 나간다.
+    static let compositionKeys: Set<NamedKey> = [
+        .left, .right, .up, .down, .backspace, .forwardDelete,
+    ]
+
     static func isInsertModeExit(_ stroke: KeyStroke) -> Bool {
         if NamedKey.named(forKeyCode: stroke.keyCode) == .escape {
             return true
@@ -185,6 +202,27 @@ extension EditorKeyInput {
         // 표준 모드는 `inputMode == .vim` 이 걸러 낸다. 거기서 `⌃A`·`⌃E` 는 vim 키맵이
         // 아니라 macOS 텍스트 시스템의 것이고, 우리가 가로챌 것이 아니다.
         let isChord = stroke.modifiers.contains(.control)
+
+        // **이동 키도 산문이 아니다.** IME 는 방향키나 delete 로 만들 음절이 없고, 그래서
+        // 입력 컨텍스트는 그것들을 `doCommandBySelector` 로 넘긴다 — 우리는 그것을 구현하지
+        // 않으므로 **조용히 사라진다.** 사용자 보고가 정확히 이것이었다.
+        //
+        // `space`·`return`·`tab` 은 뺀다. 셋은 **글자를 만들어** `insertText:` 로 오고 뷰가
+        // 이미 받는다 — 표기로도 보내면 한 번의 입력이 두 번 처리된다.
+        //
+        // 조합 중이면 방향키·backspace 는 **IME 의 것**이다. 조합 안에서 이동하고 자모를
+        // 지운다 — 여기서 가로채면 한글 입력이 망가지고, 그건 고치려던 결함보다 나쁘다.
+        // home·end·page 는 음절 안에서 쓸 일이 없으므로 커밋하고 내보낸다(아래 공통 경로).
+        let named = NamedKey.named(forKeyCode: stroke.keyCode)
+        let isMovementKey = named.map(Self.movementKeys.contains) ?? false
+        let belongsToCompositionNow = hasMarkedText && named.map(Self.compositionKeys.contains) ?? false
+
+        if isMovementKey, !belongsToCompositionNow {
+            guard let notation = KeyNotation.notation(for: stroke) else {
+                return .interpretForComposition
+            }
+            return hasMarkedText ? .commitThenNotation(notation) : .notation(notation)
+        }
 
         if inputMode == .vim, isChord || isInsertModeExit(stroke) {
             // **번역기를 거친다.** 예전엔 `KeyNotation` 을 직접 불러서, 한글 자판의 `⌃C` 가
