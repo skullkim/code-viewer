@@ -97,6 +97,44 @@ struct ProjectWorkspaceEngineTests {
         await workspace.shutDown()
     }
 
+    /// AC-5 on a case-insensitive volume, which is the default on macOS.
+    ///
+    /// `/tmp/Foo` and `/tmp/foo` are the same directory there, so opening both must give one tab.
+    /// The engine gets this right because `realpath(3)` answers with the spelling on disk — but
+    /// that is a property of the resolver, not something the engine states, and nothing asserted
+    /// it. A future change to plain string normalisation would break AC-5 while the suite stayed
+    /// green. **A guarantee that rests on an unstated property is a coincidence, not a guarantee.**
+    ///
+    /// On a case-sensitive volume the two really are different projects, and two tabs is the
+    /// correct answer — so the volume is asked rather than assumed.
+    @Test("대소문자만 다른 경로가 한 탭으로 접힌다 — 비구분 볼륨 (AC-5)")
+    func pathsDifferingOnlyInCaseFoldIntoOneTab() async throws {
+        let container = TemporaryProjectFixture()
+        container.makeDirectory("CaseFolded")
+        let asCreated = container.rootURL.appendingPathComponent("CaseFolded")
+        let lowercased = container.rootURL.appendingPathComponent("casefolded")
+
+        // 볼륨에 직접 묻는다. 대소문자 구분 여부는 파일시스템의 성질이지 우리가 정할 수 없다.
+        let volumeFoldsCase = FileManager.default.fileExists(atPath: lowercased.path)
+
+        let workspace = makeWorkspace()
+        let first = try await workspace.openProject(at: asCreated)
+        let second = try await workspace.openProject(at: lowercased)
+
+        if volumeFoldsCase {
+            guard case .activatedExisting(let tab) = second else {
+                Issue.record("비구분 볼륨인데 대소문자만 다른 경로로 새 탭을 만들었다 — 한 프로젝트가 두 번 열린다")
+                return
+            }
+            #expect(tab.id == first.tab.id)
+            #expect(await workspace.tabs().count == 1)
+        } else {
+            // 구분 볼륨에서는 정말 다른 디렉토리다. 접으면 그게 결함이다.
+            #expect(await workspace.tabs().count == 2)
+        }
+        await workspace.shutDown()
+    }
+
     @Test("탭을 닫으면 그 프로젝트의 인덱스가 해제된다 (AC-3)")
     func closingATabReleasesItsIndex() async throws {
         let alpha = makeProject("Alpha", symbol: "AlphaService")
