@@ -115,7 +115,10 @@ public actor NeovimEditorSession: EditorSession {
         // an obscure RPC error, which is exactly the silent failure REQ-NF-005 forbids.
         let installedVersion = executableLocator.version(of: executableURL)
         if let installedVersion, installedVersion < NeovimVersion.minimumSupported {
-            let reason = "Neovim \(installedVersion)이 설치돼 있지만 \(NeovimVersion.minimumSupported) 이상이 필요합니다."
+            // 동적 값 뒤에 굴절하는 조사를 두지 않는다. 버전은 숫자로 끝나고 숫자의 받침은
+            // 읽어야 정해진다 — 0.9.5 는 "오"라 `가`, 0.10.0 은 "영"이라 `이`다. 조사 유틸도
+            // 이건 못 맞춘다(값의 도메인이 한글이 아니다). `입니다`는 받침에 안 갈린다.
+            let reason = "설치된 Neovim 버전은 \(installedVersion)입니다. \(NeovimVersion.minimumSupported) 이상이 필요합니다."
             updateState(.startupFailed(
                 makeStartupFailure(
                     kind: .versionTooOld, reason: reason, foundVersion: installedVersion.description
