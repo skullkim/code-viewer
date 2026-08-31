@@ -183,10 +183,12 @@ public enum RenderSandboxPolicy {
 
     /// The real path of a reference, if it is provably a file inside the project root.
     ///
-    /// **This is the security boundary, and it is deliberately not `ProjectIdentity`.** That
-    /// function answers "are these two paths the same project" for tab identity (REQ-012
-    /// AC-5); this one answers "may this document read this file". Sharing one function made
-    /// a change for either question silently move the other, and it hid a real escape.
+    /// **This is the security boundary, and it is deliberately separate from tab identity.**
+    /// The engine's `ProjectWorkspaceEngine` answers "are these two paths the same project"
+    /// (REQ-012 AC-5); this one answers "may this document read this file". They must fail in
+    /// opposite directions — identity is forgiving when a path cannot be resolved, security
+    /// refuses — so sharing one function made a change for either question silently move the
+    /// other, and it hid a real escape.
     ///
     /// Resolution uses `realpath`, which **fails when the path does not exist** and resolves
     /// every symlink on the way, including intermediate ones.
