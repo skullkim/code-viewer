@@ -361,6 +361,32 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
         return locked { sessions[identifier] }
     }
 
+    /// Render reads, for tests that only need the app layer to reach them.
+    ///
+    /// Deliberately simple: the real rules — root restriction, the 2MB limit, buffer-before-disk —
+    /// belong to the engine and are measured against `ProjectWorkspaceEngine`. A fake that
+    /// re-implemented them would be a second set of rules to keep in step, which is the thing the
+    /// single door exists to avoid. Tests wanting a specific failure set `renderFailure`.
+    var renderFailure: (any Error)?
+    var renderTexts: [String: String] = [:]
+    var renderBytes: [String: Data] = [:]
+
+    func renderSource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> CodeNavigatorContract.RenderSource {
+        if let renderFailure { throw renderFailure }
+        return CodeNavigatorContract.RenderSource(
+            path: relativePath, text: renderTexts[relativePath] ?? "", origin: .savedFile
+        )
+    }
+
+    func renderResource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> Data {
+        if let renderFailure { throw renderFailure }
+        return renderBytes[relativePath] ?? Data()
+    }
+
     func restoreTabs(from rootPaths: [URL], activeRootPath: URL?) async -> TabRestoreOutcome {
         locked { restoreCallCount += 1 }
         var restored: [ProjectTab] = []

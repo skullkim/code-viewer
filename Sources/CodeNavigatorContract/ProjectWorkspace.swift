@@ -33,6 +33,28 @@ public protocol ProjectWorkspace: Sendable {
     /// The index, tree and search for one tab. `nil` once that tab is closed.
     func session(for identifier: ProjectTabIdentifier) async -> (any ProjectSession)?
 
+    /// The document a render view draws, for one tab (REQ-013).
+    ///
+    /// Named by tab rather than inferred from what is active: the active tabpage moves whenever
+    /// the user types `gt`, and two tabs can both hold a `README.md`, so an inference is wrong in
+    /// the way that looks right.
+    func renderSource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> RenderSource
+
+    /// The bytes of a resource a rendered document refers to — an image, a font.
+    ///
+    /// The same door as the document on purpose. A renderer that read its own images would enforce
+    /// INV-6's root restriction a second way, and the danger is not two readers but **two rules**:
+    /// the weaker becomes the real boundary the day they drift.
+    ///
+    /// Failures keep their reason (`fileNotFound` / `fileTooLarge` / `invalidPath` /
+    /// `fileNotReadable`). An adapter that collapses them into `nil` makes "not there", "too large"
+    /// and "outside the project" one event, and the sandbox chip can no longer say which happened.
+    func renderResource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> Data
+
     /// Reopens a saved set, naming what could not be reopened rather than dropping it (AC-4, AC-6).
     ///
     /// `activeRootPath` is where the user was when they quit. Without it the restored window shows
