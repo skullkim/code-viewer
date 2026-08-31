@@ -17,8 +17,8 @@ import Foundation
 ///
 /// A deliberate subset of CommonMark, chosen for what documentation in a source repository
 /// actually uses. Known gaps, all of which degrade to visible text rather than broken markup:
-/// nested lists flatten to one level, reference-style links are not resolved, `|` inside a
-/// table cell cannot be escaped, and footnotes are not supported.
+/// nested lists flatten to one level, reference-style links are not resolved, and
+/// footnotes are not supported.
 public enum MarkdownDocument {
 
     /// A fragment, not a page — no `<html>` or `<head>`. The sanitizer prepends the CSP meta
@@ -330,17 +330,56 @@ public enum MarkdownDocument {
             + body.joined() + "</tbody></table>"
     }
 
+    /// Splits a row on its cell dividers — the *unescaped* ones.
+    ///
+    /// `\|` is a literal pipe inside a cell, and it is the only way to write one, because a
+    /// table row is split before any inline parsing happens: a pipe inside a code span is
+    /// still a divider. Splitting on every pipe tears the code span in half and leaves the
+    /// backslash showing. Found in our own design document, which writes
+    /// `` `.opened(id) \| .failed(e)` `` in a table — so this is not a hypothetical.
     private static func rowCells(_ row: String) -> [String] {
         var trimmed = Substring(row)
         if trimmed.hasPrefix("|") {
             trimmed = trimmed.dropFirst()
         }
-        if trimmed.hasSuffix("|") {
+        if trimmed.hasSuffix("|"), !trimmed.hasSuffix("\\|") {
             trimmed = trimmed.dropLast()
         }
-        return trimmed.components(separatedBy: "|").map {
-            $0.trimmingCharacters(in: .whitespaces)
+
+        var cells: [String] = []
+        var current = ""
+        var isEscaped = false
+
+        for character in trimmed {
+            if isEscaped {
+                // Only `\|` is consumed here. Every other backslash belongs to the inline
+                // parser, which has its own escapes — eating them would silently change what
+                // `\*` means depending on whether it sits in a table.
+                if character == "|" {
+                    current.append("|")
+                } else {
+                    current.append("\\")
+                    current.append(character)
+                }
+                isEscaped = false
+                continue
+            }
+            switch character {
+            case "\\":
+                isEscaped = true
+            case "|":
+                cells.append(current.trimmingCharacters(in: .whitespaces))
+                current = ""
+            default:
+                current.append(character)
+            }
         }
+
+        if isEscaped {
+            current.append("\\")
+        }
+        cells.append(current.trimmingCharacters(in: .whitespaces))
+        return cells
     }
 
     private static func delimiterAlignments(_ row: String) -> [String?]? {
