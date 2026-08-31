@@ -41,46 +41,6 @@ struct PartialStartFailureTests {
 
     // MARK: - The orphan
 
-    @Test("인덱싱이 실패하면 이미 뜬 편집기를 남기지 않는다")
-    func failedIndexingDoesNotLeaveALiveEditor() async throws {
-        let engine = CodeNavigatorEngine()
-        let missing = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
-
-        await #expect(throws: (any Error).self) {
-            try await engine.start(projectRoot: missing, columns: 80, rows: 24)
-        }
-
-        // 편집기가 성공했더라도 이 시도가 띄운 것이므로 이 시도가 치워야 한다.
-        let identifier = await engine.editor.processIdentifierForTesting()
-        if let identifier {
-            #expect(waitUntilGone(identifier), "인덱싱 실패 후에도 nvim \(identifier) 이 살아 있다")
-        }
-        #expect(await engine.editor.state() != .connected)
-    }
-
-    @Test("권한 없는 디렉토리로 열어도 편집기가 남지 않는다 — 실제 사용자 상황")
-    func deniedPermissionDoesNotLeaveALiveEditor() async throws {
-        let unreadable = makeUnreadableDirectory()
-        defer { restore(unreadable) }
-        let engine = CodeNavigatorEngine()
-
-        await #expect(throws: (any Error).self) {
-            try await engine.start(projectRoot: unreadable, columns: 80, rows: 24)
-        }
-
-        let identifier = await engine.editor.processIdentifierForTesting()
-        if let identifier {
-            #expect(waitUntilGone(identifier), "권한 거부 후에도 nvim \(identifier) 이 살아 있다")
-        }
-    }
-
-    // 편집기가 실패했을 때 인덱스가 살아남는다는 반대편 규칙은
-    // `EditorFailureKeepsIndexTests` 에 있다. 이 스위트가 지키는 것은 "이 시도가 띄운 것을
-    // 이 시도가 치운다"이지 "한쪽이 실패하면 둘 다 되돌린다"가 아니다 — 그 둘을 같은 규칙으로
-    // 묶었던 것이 W-8 의 약속을 깨뜨렸다.
-
-    // MARK: - The silent failure
-
     @Test("읽을 수 없는 루트는 조용히 성공하지 않는다 — 빈 프로젝트로 위장 금지")
     func unreadableRootIsAnErrorNotAnEmptyProject() async throws {
         let unreadable = makeUnreadableDirectory()

@@ -438,8 +438,22 @@ public final class AppModel {
             activeRootPath: shell.activeTabRootPath.map { URL(fileURLWithPath: $0) }
         )
 
+        // 세션을 못 얻은 탭은 **조용히 빼지 않는다.**
+        //
+        // 엔진은 그 탭을 들고 있다 — 세션을 쥐고 배경에서 인덱싱한다. 앱 목록에서만 빠지면
+        // 사용자는 그것을 **보지도 닫지도 못한 채** 자원을 쓴다. 그래서 엔진에서 닫고,
+        // 못 열었다고 말한다(W-12). 두 목록이 갈라지는 자리를 하나 없앤다.
+        var unopened: [MissingTab] = []
         for tab in outcome.restored {
-            guard let session = await workspace.session(for: tab.id) else { continue }
+            guard let session = await workspace.session(for: tab.id) else {
+                try? await workspace.closeTab(tab.id)
+                unopened.append(MissingTab(
+                    displayName: tab.displayName,
+                    rootPath: tab.rootPath,
+                    reason: .noPermission
+                ))
+                continue
+            }
             let state = ProjectTabState(
                 id: tab.id,
                 rootPath: tab.rootPath.path,
@@ -458,7 +472,7 @@ public final class AppModel {
             tabs.activate(id: active.id)
         }
         projectRootPath = tabs.activeTab?.rootPath
-        missingTabs = outcome.missing
+        missingTabs = outcome.missing + unopened
         rememberOpenTabs()
     }
 
@@ -538,6 +552,9 @@ public final class AppModel {
             tabs.activate(id: existing.id)
         } else {
             guard let session = await workspace.session(for: tab.id) else {
+                // 엔진은 이미 탭을 만들었다. 여기서 그냥 돌아가면 **화면에 없는 탭이
+                // 세션을 쥔 채 남고, 사용자는 닫을 방법이 없다.** 만든 것을 되돌린다.
+                try? await workspace.closeTab(tab.id)
                 projectOpenError = NavigatorError.projectNotFound(path: tab.rootPath.path)
                 return
             }

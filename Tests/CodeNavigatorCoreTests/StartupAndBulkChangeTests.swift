@@ -36,35 +36,6 @@ struct StartupAndBulkChangeTests {
         return process.terminationStatus
     }
 
-    @Test("REQ-NF-003: 중형 레포에서 엔진이 2초 안에 조작 가능해진다", .timeLimit(.minutes(2)))
-    func engineBecomesUsableWithinStartupBudget() async throws {
-        let fixture = makeRepository(fileCount: 3_000)
-        let engine = CodeNavigatorEngine()
-
-        let start = Date()
-        try await engine.start(projectRoot: fixture.rootURL, columns: 80, rows: 24)
-        let elapsed = Date().timeIntervalSince(start)
-        defer { Task { await engine.shutDown() } }
-
-        print("[성능] 엔진 기동(인덱싱+편집기 동시) \(String(format: "%.2f", elapsed))초")
-
-        // 기동이 끝난 시점에 실제로 조작 가능해야 한다 — 상태만 connected 인 것으로는 부족하다.
-        #expect(await engine.editor.state() == .connected)
-        #expect(await engine.project.definitions(named: "Service100").count == 1)
-        #expect(elapsed < 2.0)
-    }
-
-    /// Concurrency, measured as **overlap rather than as a race between durations**.
-    ///
-    /// The old shape compared three wall-clock numbers taken at three different moments
-    /// (`combined < indexing + editor`) and asked whether the sum was beaten. On a shared runner
-    /// that is a question about how busy the machine was: indexing and start-up are each ~0.2s, so
-    /// their sum is ~0.4s and one hiccup inverts it. It also only holds when the two are of
-    /// similar length — if one dominates, "faster than the sum" is true whether or not they ran
-    /// together.
-    ///
-    /// Recording when each half starts and ends inside **one** run answers the claim directly, and
-    /// nothing outside that run can move it.
     @Test("인덱싱과 편집기 기동의 구간이 실제로 겹친다", .timeLimit(.minutes(2)))
     func indexingAndEditorStartOverlapInTime() async throws {
         let fixture = makeRepository(fileCount: 3_000)

@@ -356,7 +356,17 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
         }
     }
 
+    /// 엔진은 탭을 갖고 있는데 세션 조회만 nil 인 상태를 만든다.
+    ///
+    /// 억지 상황이 아니다 — 앱이 `session(for:)` 을 별도로 물어보는 구조 자체가 이 틈을
+    /// 허용한다. **틈이 닫혀 있는지 재려면 먼저 틈을 만들 수 있어야 한다.**
+    var sessionlessRoots: [String] = []
+
     func session(for identifier: ProjectTabIdentifier) async -> (any ProjectSession)? {
+        let isSessionless = locked {
+            openTabs.first { $0.id == identifier }.map { sessionlessRoots.contains($0.rootPath.path) } ?? false
+        }
+        if isSessionless { return nil }
         if let sharedSession { return sharedSession }
         return locked { sessions[identifier] }
     }
