@@ -210,6 +210,123 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
         }
     }
 
+    // MARK: - Reading files for the render view (REQ-013)
+
+    /// The document a render view draws, from one tab.
+    ///
+    /// The tab is named rather than inferred from what is active: rendering is asked for by a view
+    /// that belongs to a tab, and the active tabpage moves whenever the user types `gt`. Inferring
+    /// would render whichever project the cursor drifted to, and both tabs can hold a `README.md`.
+    public func renderSource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> RenderSource {
+        let resolved = try resolvePath(relativePath, in: identifier)
+
+        // The live buffer wins when the editor is holding this file: a preview is usually opened to
+        // see what was just typed, and the file on disk would be missing it (ADR/leader ruling).
+        if let lines = try? await editor.bufferLines(forFileAt: resolved.url.path) {
+            let text = lines.joined(separator: "\n")
+            // The same document must not render from one source and refuse from the other, or the
+            // limit looks random to the user.
+            try Self.checkWithinRenderLimit(byteSize: text.utf8.count, path: resolved.relativePath)
+            return RenderSource(path: resolved.relativePath, text: text, origin: .editorBuffer)
+        }
+        return try Self.readDocumentFromDisk(at: resolved)
+    }
+
+    /// The bytes of a resource a rendered document refers to — an image, a font.
+    ///
+    /// Bytes rather than text, and the same door as the document on purpose. A renderer that read
+    /// its own images would enforce INV-6's root restriction a second way, and the danger is not
+    /// two readers but **two rules**: the weaker one becomes the real boundary the day they drift.
+    ///
+    /// Failures keep their reason. An adapter that collapses these into `nil` makes "not there",
+    /// "too large" and "outside the project" the same event, and then the sandbox chip cannot say
+    /// which one happened (W-15).
+    public func renderResource(
+        atRelativePath relativePath: String, in identifier: ProjectTabIdentifier
+    ) async throws -> Data {
+        let resolved = try resolvePath(relativePath, in: identifier)
+
+        // Size is checked before reading: measuring after means the memory is already spent, which
+        // is what the limit exists to prevent.
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.url.path),
+              let byteSize = attributes[.size] as? Int
+        else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath, reason: "파일 정보를 읽을 수 없습니다"
+            )
+        }
+        try Self.checkWithinRenderLimit(byteSize: byteSize, path: resolved.relativePath)
+
+        guard let data = try? Data(contentsOf: resolved.url) else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath, reason: "파일을 읽을 수 없습니다"
+            )
+        }
+        return data
+    }
+
+    private func resolvePath(
+        _ relativePath: String, in identifier: ProjectTabIdentifier
+    ) throws -> ProjectRelativePath {
+        guard let tab = currentTab(identifier) else {
+            throw NavigatorError.noProjectOpen
+        }
+        return try ProjectRelativePath.resolve(relativePath, inProjectRoot: tab.rootPath)
+    }
+
+    private static func readDocumentFromDisk(at resolved: ProjectRelativePath) throws -> RenderSource {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolved.url.path),
+              let byteSize = attributes[.size] as? Int
+        else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath, reason: "파일 정보를 읽을 수 없습니다"
+            )
+        }
+        try checkWithinRenderLimit(byteSize: byteSize, path: resolved.relativePath)
+
+        guard let data = try? Data(contentsOf: resolved.url) else {
+            throw NavigatorError.fileNotReadable(
+                path: resolved.relativePath, reason: "파일을 읽을 수 없습니다"
+            )
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw NavigatorError.fileNotDecodable(path: resolved.relativePath)
+        }
+        return RenderSource(path: resolved.relativePath, text: text, origin: .savedFile)
+    }
+
+    /// 🔴 Deliberately **not** `SourceFileReader.maximumFileSizeInBytes`, which is half this and
+    /// belongs to indexing. Borrowing it would refuse every file between the two limits, and
+    /// refusing them as "missing" rather than "too large" is the blank screen AC-6 forbids.
+    private static func checkWithinRenderLimit(byteSize: Int, path: String) throws {
+        guard byteSize <= RenderSource.maximumByteSize else {
+            throw NavigatorError.fileTooLarge(
+                path: path, byteSize: byteSize, limit: RenderSource.maximumByteSize
+            )
+        }
+    }
+
+    // MARK: - Saving (W-13)
+
+    /// Unsaved files in one tab's project, for the close-confirmation sheet.
+    public func dirtyFiles(in identifier: ProjectTabIdentifier) async throws -> [String] {
+        guard let tab = currentTab(identifier) else {
+            throw NavigatorError.noProjectOpen
+        }
+        return try await editor.dirtyFiles(inProjectRoot: tab.rootPath)
+    }
+
+    /// Saves one tab's unsaved files, reporting per file. Scoped by root, because `:wa` crosses
+    /// tabpages and would write another project's work without the user approving it.
+    public func saveAll(in identifier: ProjectTabIdentifier) async throws -> SaveAllOutcome {
+        guard let tab = currentTab(identifier) else {
+            throw NavigatorError.noProjectOpen
+        }
+        return try await editor.saveAll(inProjectRoot: tab.rootPath)
+    }
+
     // MARK: - Cost
 
     /// What the workspace currently costs (REQ-NF-002, AC-3).

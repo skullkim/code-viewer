@@ -86,6 +86,25 @@ public protocol EditorSession: Sendable {
 
     /// Files Neovim reports as written, one per `:w`. The engine re-indexes each of them, so an
     /// in-app save is reflected without waiting on the file watcher (REQ-009 AC-5).
+    /// Files this project has unsaved changes in, project-relative (W-13's sheet lists them).
+    ///
+    /// Scoped by root rather than by "the current project", because one Neovim serves every open
+    /// project (ADR-0008) and its active tabpage moves whenever the user types `gt`. A session
+    /// asked for "the current project" would answer with wherever the cursor happens to be, which
+    /// is not the project the user is closing.
+    ///
+    /// Buffers outside every open project root belong to no tab and are left alone: closing a tab
+    /// is no reason to save a file the user opened by hand somewhere else.
+    func dirtyFiles(inProjectRoot root: URL) async throws -> [String]
+
+    /// Saves every unsaved buffer belonging to one project.
+    ///
+    /// Not `:wa` — measured, that writes across tabpage boundaries, so closing one project would
+    /// silently write another project's unsaved work to disk without the user approving it. The
+    /// buffers are enumerated and saved individually, which is also what makes a per-file result
+    /// possible: W-13 keeps its sheet open on failure and has to say *which* files were refused.
+    func saveAll(inProjectRoot root: URL) async throws -> SaveAllOutcome
+
     func savedFiles() async -> AsyncStream<SavedFile>
 
     func shutDown() async
