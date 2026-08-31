@@ -9,7 +9,12 @@ import Foundation
 ///
 /// Measured on this machine before the fix: **26 leftover temp files**, at which point Neovim
 /// refuses outright — `E138: All main.shada.tmp.X files exist, cannot write ShaDa file!`. The
-/// user's own editor had stopped saving marks and history entirely, and each test run added one.
+/// user's own editor had stopped saving marks and history entirely.
+///
+/// ⚠ Note for anyone checking whether this still works: **counting the user's shada directory
+/// proves nothing while it is in that state.** Once the temp files are full, the count stays
+/// frozen whether or not this isolation is in place — the breakage imitates the fix. The test
+/// below asks Neovim where its state actually is, which is the only evidence that separates them.
 ///
 /// So the suite gets its own state directory. This is deliberately **test-only**: whether the
 /// product should share the user's ShaDa or keep its own is a question about what a user wants
