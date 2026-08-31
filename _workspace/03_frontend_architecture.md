@@ -111,6 +111,8 @@ EditorGridSnapshot ──▶ GridRenderer(순수: 스냅샷 → 드로잉 명령
 - [ADR-0107 탭이 상태의 단위](../docs/adr/0107-tab-scoped-state.md) — INV-5를 소유 관계로. 0106의 불변식은 유지하되 탭 안에서 성립 (REQ-012)
 - [ADR-0108 탭 바를 고정 높이 행으로](../docs/adr/0108-tab-bar-in-the-shell.md) — 0104의 규칙을 행 하나 늘려 그대로 적용 (REQ-012 AC-1)
 - [ADR-0109 렌더 샌드박스](../docs/adr/0109-render-sandbox.md) — 전면 차단 + 앱이 인라인하는 `data:` 로컬 리소스. **JS 끄기는 네트워크를 안 막는다**(9건 실측) (REQ-013, INV-6)
+- [ADR-0110 표준 메뉴 행](../docs/adr/0110-standard-menu-rows.md) — AppKit 셀렉터 축을 descriptor 에 두어 `MenuCommand` 를 안 늘린다 (frontend-junior 작성, D-20)
+- [ADR-0111 탭 목록 발산](../docs/adr/0111-tab-list-divergence.md) — 장부가 둘인 것을 단일화하지 않고 **발산 경로를 닫는다**. `tabs()` 는 죽은 코드가 아니라 그 발산을 재는 **오라클** (REQ-012)
 
 ---
 
