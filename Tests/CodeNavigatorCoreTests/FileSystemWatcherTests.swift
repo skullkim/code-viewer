@@ -120,6 +120,9 @@ final class FileSystemWatcherTests {
         #expect(collector.waitFor { events in
             events.contains { $0.relativePath == "Inside.kt" }
         })
+        // 빈 집합이면 allSatisfy 는 참이다 — **죽은 감시자가 이 단언을 가장 잘 통과한다.**
+        // 무언가를 실제로 잡았다는 것을 먼저 못박아야 "그중에 Elsewhere 가 없다"가 의미를 갖는다.
+        #expect(collector.collected.isEmpty == false, "감시자가 아무 이벤트도 못 잡았다")
         #expect(collector.collected.allSatisfy { $0.relativePath != "Elsewhere.kt" })
     }
 }

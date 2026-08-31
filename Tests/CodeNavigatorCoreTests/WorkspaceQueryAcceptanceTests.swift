@@ -141,7 +141,11 @@ struct WorkspaceQueryAcceptanceTests {
         let entries = try await session.directoryEntries(atRelativePath: "src")
         let directories = entries.prefix { $0.isDirectory }
         #expect(directories.isEmpty == false)
-        #expect(entries.dropFirst(directories.count).allSatisfy { $0.isDirectory == false })
+        // 디렉토리 뒤에 파일이 실제로 있어야 "그 뒤는 전부 파일이다"가 무언가를 잰다.
+        // dropFirst 결과가 비면 allSatisfy 는 참이고, 그건 트리가 비었을 때도 참이다.
+        let afterDirectories = entries.dropFirst(directories.count)
+        #expect(afterDirectories.isEmpty == false, "디렉토리 뒤에 파일이 없다 — 순서를 잴 수 없다")
+        #expect(afterDirectories.allSatisfy { $0.isDirectory == false })
         await workspace.shutDown()
     }
 

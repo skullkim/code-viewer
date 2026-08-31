@@ -18,6 +18,8 @@ struct ProjectScannerTests {
         let scan = try scan(fixture)
         #expect(scan.filePaths.contains("src/main/App.kt"))
         #expect(scan.filePaths.contains("README.md"))
+        // 빈 목록이면 참이다 — 파일을 하나도 못 찾은 스캐너가 이 단언을 통과한다.
+        #expect(scan.filePaths.isEmpty == false, "스캐너가 파일을 하나도 못 찾았다")
         #expect(scan.filePaths.allSatisfy { !$0.hasPrefix("/") })
     }
 
