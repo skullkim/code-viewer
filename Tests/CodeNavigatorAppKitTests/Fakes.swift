@@ -345,12 +345,16 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
         return locked { sessions[identifier] }
     }
 
-    func restoreTabs(from rootPaths: [URL]) async -> TabRestoreOutcome {
+    func restoreTabs(from rootPaths: [URL], activeRootPath: URL?) async -> TabRestoreOutcome {
         var restored: [ProjectTab] = []
         for path in rootPaths {
             if let outcome = try? await openProject(at: path) {
                 restored.append(outcome.tab)
             }
+        }
+        if let activeRootPath,
+           let match = restored.first(where: { $0.rootPath.path == activeRootPath.path }) {
+            try? await activate(match.id)
         }
         return TabRestoreOutcome(restored: restored, missing: [])
     }

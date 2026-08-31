@@ -125,14 +125,23 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
 
     // MARK: - Restoring
 
-    public func restoreTabs(from rootPaths: [URL]) async -> TabRestoreOutcome {
+    public func restoreTabs(from rootPaths: [URL], activeRootPath: URL?) async -> TabRestoreOutcome {
         var restored: [ProjectTab] = []
         var missing: [MissingTab] = []
+        var identifierForActiveRoot: ProjectTabIdentifier?
 
         for rootPath in rootPaths {
             do {
                 let outcome = try await openProject(at: rootPath)
                 restored.append(outcome.tab)
+                // 비교는 정규화된 값끼리 한다. 저장된 경로와 디스크 표기가 심링크·대소문자로
+                // 갈릴 수 있고, 문자열로 비교하면 사용자가 있던 탭을 못 찾아 조용히 다른 탭이
+                // 뜬다 — AC-5 에서 같은 정규화가 하는 일이다.
+                if let activeRootPath,
+                   let canonicalActive = try? Self.canonicalDirectory(at: activeRootPath),
+                   canonicalActive.path == outcome.tab.rootPath.path {
+                    identifierForActiveRoot = outcome.tab.id
+                }
             } catch {
                 missing.append(
                     MissingTab(
@@ -143,6 +152,14 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
                 )
             }
         }
+        // 사용자가 있던 탭이 사라졌으면 남은 것 중 첫 번째로 간다. 아무 데도 안 가면 탭 바만
+        // 있고 아래는 비어 있는 창이 된다.
+        if let identifierForActiveRoot {
+            try? await activate(identifierForActiveRoot)
+        } else if let first = restored.first {
+            try? await activate(first.id)
+        }
+
         return TabRestoreOutcome(restored: restored, missing: missing)
     }
 

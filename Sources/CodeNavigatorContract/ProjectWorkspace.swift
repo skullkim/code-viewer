@@ -34,5 +34,10 @@ public protocol ProjectWorkspace: Sendable {
     func session(for identifier: ProjectTabIdentifier) async -> (any ProjectSession)?
 
     /// Reopens a saved set, naming what could not be reopened rather than dropping it (AC-4, AC-6).
-    func restoreTabs(from rootPaths: [URL]) async -> TabRestoreOutcome
+    ///
+    /// `activeRootPath` is where the user was when they quit. Without it the restored window shows
+    /// whichever project happened to be restored last, which is not the same thing — AC-4 asks for
+    /// the list **and** the active tab. When that project is one of the ones that went missing,
+    /// the first surviving tab takes over rather than leaving the window blank under a full tab bar.
+    func restoreTabs(from rootPaths: [URL], activeRootPath: URL?) async -> TabRestoreOutcome
 }

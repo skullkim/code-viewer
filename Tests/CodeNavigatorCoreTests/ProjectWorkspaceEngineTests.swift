@@ -186,12 +186,51 @@ struct ProjectWorkspaceEngineTests {
         let gone = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
         let workspace = makeWorkspace()
 
-        let outcome = await workspace.restoreTabs(from: [alpha.rootURL, gone])
+        let outcome = await workspace.restoreTabs(from: [alpha.rootURL, gone], activeRootPath: nil)
 
         #expect(outcome.restored.count == 1)
         #expect(outcome.missing.count == 1)
         #expect(outcome.missing.first?.reason == .notFound)
         #expect(outcome.missing.first?.rootPath == gone)
+        await workspace.shutDown()
+    }
+
+    /// AC-4 asks for the tab list **and the active tab** to come back. Restoring the list alone
+    /// leaves the user looking at whichever project happened to be restored last, which is not
+    /// where they were when they quit.
+    @Test("복원은 활성 탭까지 되살린다 (AC-4)")
+    func restoringBringsBackTheActiveTab() async throws {
+        let alpha = makeProject("Alpha", symbol: "AlphaService")
+        let beta = makeProject("Beta", symbol: "BetaService")
+        let gamma = makeProject("Gamma", symbol: "GammaService")
+        let workspace = makeWorkspace()
+
+        // 사용자가 마지막에 보고 있던 것은 가운데 탭이다 — 마지막에 연 것이 아니다.
+        let outcome = await workspace.restoreTabs(
+            from: [alpha.rootURL, beta.rootURL, gamma.rootURL],
+            activeRootPath: beta.rootURL
+        )
+
+        #expect(outcome.restored.count == 3)
+        #expect(await workspace.tabs().map(\.displayName)
+                == [alpha, beta, gamma].map { $0.rootURL.lastPathComponent })
+        #expect(await workspace.activeTab()?.displayName == beta.rootURL.lastPathComponent,
+                "복원 후 활성 탭이 사용자가 있던 곳이 아니다")
+        await workspace.shutDown()
+    }
+
+    /// The active project can be the one that went missing. Falling back to nothing would leave
+    /// the window blank with tabs sitting above it.
+    @Test("활성이던 프로젝트가 사라졌으면 남은 것 중 첫 번째가 활성이 된다 (AC-4·AC-6)")
+    func aMissingActiveProjectFallsBackToTheFirstRestored() async throws {
+        let alpha = makeProject("Alpha", symbol: "AlphaService")
+        let gone = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
+        let workspace = makeWorkspace()
+
+        let outcome = await workspace.restoreTabs(from: [alpha.rootURL, gone], activeRootPath: gone)
+
+        #expect(outcome.missing.map(\.rootPath) == [gone])
+        #expect(await workspace.activeTab()?.displayName == alpha.rootURL.lastPathComponent)
         await workspace.shutDown()
     }
 
