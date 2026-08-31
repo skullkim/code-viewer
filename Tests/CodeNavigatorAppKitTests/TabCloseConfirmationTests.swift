@@ -1,4 +1,5 @@
 import Testing
+import CodeNavigatorContract
 @testable import CodeNavigatorAppKit
 
 /// The sheet that stands between a dirty tab and closing it (W-13, REQ-012 AC-3).
@@ -82,13 +83,74 @@ struct TabCloseConfirmationTests {
     @Test("저장에 실패하면 시트가 남고 이유를 말한다")
     func aFailedSaveKeepsTheSheetOpen() {
         // Closing after a failed save is exactly the data loss the sheet exists to prevent.
-        guard let sheet = sheet(files: ["a.rs"], state: .failed) else {
+        let outcome = SaveAllOutcome(savedPaths: [], failures: [SaveFailure(path: "a.rs", reason: "권한이 없습니다")])
+        guard let sheet = sheet(files: ["a.rs"], state: .failed(outcome)) else {
             Issue.record("시트가 없다")
             return
         }
-        #expect(sheet.failureNote == "⚠ 일부 파일을 저장하지 못했습니다 — 소스 보기에서 확인하세요")
+        #expect(sheet.failureNote == "⚠ 파일을 저장하지 못했습니다 — 소스 보기에서 확인하세요")
         #expect(sheet.showsSpinner == false)
         #expect(sheet.buttons.allSatisfy { $0.isEnabled }, "실패 후에는 사용자가 다시 고를 수 있어야 한다")
+    }
+
+    // MARK: 부분 저장 실패
+
+    @Test("일부만 저장됐으면 몇 개인지 말한다 — 뭉개지 않는다")
+    func aPartialSaveSaysHowMuchWasSaved() {
+        // "저장 실패" alone tells the user their work is at risk without telling them how
+        // much. Three dirty files where two were written is a different situation from
+        // three where none were, and the difference decides what they do next.
+        let outcome = SaveAllOutcome(
+            savedPaths: ["a.rs", "b.rs"],
+            failures: [SaveFailure(path: "c.rs", reason: "권한이 없습니다")]
+        )
+        guard let sheet = sheet(files: ["a.rs", "b.rs", "c.rs"], state: .failed(outcome)) else {
+            Issue.record("시트가 없다")
+            return
+        }
+        #expect(sheet.failureNote?.contains("3개 중 2개") == true, "무엇이 저장됐는지가 문구에 없다")
+        #expect(sheet.failedRows == ["c.rs"], "실패한 파일이 어느 것인지 드러나야 한다")
+    }
+
+    @Test("전부 실패하면 저장된 개수를 말하지 않는다")
+    func aTotalFailureDoesNotClaimPartialSuccess() {
+        let outcome = SaveAllOutcome(
+            savedPaths: [],
+            failures: [
+                SaveFailure(path: "a.rs", reason: "권한이 없습니다"),
+                SaveFailure(path: "b.rs", reason: "권한이 없습니다"),
+            ]
+        )
+        guard let sheet = sheet(files: ["a.rs", "b.rs"], state: .failed(outcome)) else {
+            Issue.record("시트가 없다")
+            return
+        }
+        #expect(sheet.failureNote?.contains("2개 중 0개") == false)
+        #expect(sheet.failedRows == ["a.rs", "b.rs"])
+    }
+
+    @Test("부분 실패에서도 시트는 열려 있고 버튼이 산다")
+    func thePartialFailureSheetStaysOpenAndActionable() {
+        // Closing here would discard exactly the files that failed to save.
+        let outcome = SaveAllOutcome(savedPaths: ["a.rs"], failures: [SaveFailure(path: "b.rs", reason: "읽기 전용")])
+        guard let sheet = sheet(files: ["a.rs", "b.rs"], state: .failed(outcome)) else {
+            Issue.record("시트가 없다")
+            return
+        }
+        #expect(sheet.buttons.allSatisfy { $0.isEnabled })
+        #expect(sheet.showsSpinner == false)
+    }
+
+    @Test("실패 사유가 파일마다 그대로 실린다")
+    func eachFailureCarriesItsOwnReason() {
+        // Two files can fail for different reasons, and "저장하지 못했습니다" would hide
+        // that one is read-only while the other is missing a directory.
+        let outcome = SaveAllOutcome(savedPaths: [], failures: [
+            SaveFailure(path: "a.rs", reason: "권한이 없습니다"),
+            SaveFailure(path: "b.rs", reason: "폴더가 없습니다"),
+        ])
+        let sheet = sheet(files: ["a.rs", "b.rs"], state: .failed(outcome))
+        #expect(sheet?.failureReasons == ["a.rs": "권한이 없습니다", "b.rs": "폴더가 없습니다"])
     }
 
     @Test("프로젝트 이름이 제목에 그대로 들어간다")

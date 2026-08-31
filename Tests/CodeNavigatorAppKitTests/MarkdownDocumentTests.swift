@@ -153,6 +153,18 @@ struct MarkdownDocumentTests {
         #expect(output.contains("<li>하나</li>"))
     }
 
+    @Test("여러 줄에 걸친 목록 항목이 한 항목으로 이어진다")
+    func aListItemContinuesOntoTheNextLine() {
+        // 문단에서 고친 것과 같은 결함이 목록에도 있었다(CERTIFICATION.md 에서 잡음). 항목이
+        // 한 줄로 끝난다고 보면 이어지는 줄이 목록 밖으로 떨어져 나가고, 그 줄에서 닫히는
+        // `**` 가 여는 것으로 읽혀 강조가 뒤집힌다.
+        let output = html("- **강조가\n  줄을 넘어가는 항목**\n- 둘째")
+
+        #expect(output.contains("<strong>"))
+        #expect(!output.contains("**"))
+        #expect(output.components(separatedBy: "<li>").count - 1 == 2)
+    }
+
     @Test("목록이 끝나면 닫힌다")
     func aListClosesWhenItEnds() {
         let output = html("- 하나\n\n그다음 문단")

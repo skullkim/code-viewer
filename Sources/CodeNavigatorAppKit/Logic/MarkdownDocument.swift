@@ -138,8 +138,23 @@ public enum MarkdownDocument {
             guard let marker = listMarker(trimmed), marker.isOrdered == ordered else {
                 break
             }
-            items.append("<li>\(inline(marker.content))</li>")
             index += 1
+
+            // An item runs until something else starts one. Treating a bare following line
+            // as the end of the list drops it out of the item entirely — and takes any
+            // emphasis opened on the first line with it, which inverts the rest exactly the
+            // way per-line paragraphs did. One item, one inline call.
+            var itemLines = [marker.content]
+            while index < lines.count {
+                let continuation = lines[index].trimmingCharacters(in: .whitespaces)
+                guard !continuation.isEmpty, !startsANewBlock(continuation) else {
+                    break
+                }
+                itemLines.append(continuation)
+                index += 1
+            }
+
+            items.append("<li>\(inline(itemLines.joined(separator: "\n")))</li>")
         }
 
         let tag = ordered ? "ol" : "ul"
