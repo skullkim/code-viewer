@@ -56,6 +56,19 @@ public enum RenderedElement: Sendable, Hashable {
 }
 
 /// Whether an element loads, and if not, under which heading it is reported.
+/// 참조가 가리키는 자리.
+///
+/// **"밖에 있다" 와 "거기 없다" 는 다른 사건이다.** 하나로 접으면 문구가 하나를 고르고,
+/// QA 라이브에서 그 선택은 **프로젝트 안의 파일을 밖에 있다고 안내**했다. 그리고 안 막은
+/// 것이 차단 칩에 실려 **보안 신호가 부풀려졌다** — 부풀려진 신호는 진짜 차단까지 못 믿게
+/// 만든다.
+public enum ResolvedResourceLocation: Sendable, Hashable {
+    case insideRoot(resolvedPath: String)
+    case outsideRoot
+    /// 루트 안을 가리키는데 거기 없거나 읽을 수 없다. **차단이 아니다.**
+    case notFound
+}
+
 public enum SandboxDecision: Sendable, Hashable {
     /// A local file proven inside the root. **The loader must open this exact path** and
     /// not the reference it came from: checking one path and opening another leaves a
@@ -64,6 +77,8 @@ public enum SandboxDecision: Sendable, Hashable {
     /// Already inline. There is nothing to fetch and nothing to confine.
     case allowInlineData
     case block(kind: BlockedResourceKind, detail: String)
+    /// 우리가 막은 것이 아니라 우리가 못 읽은 것. 칩에는 안 오르고 자리에는 남는다.
+    case unavailable(detail: String)
 
     public var isBlocked: Bool {
         if case .block = self { return true }
@@ -183,10 +198,17 @@ public enum RenderSandboxPolicy {
         }
 
         let path = filePath(from: source)
-        guard let resolved = resolvedPathInsideRoot(path: path, projectRoot: projectRoot) else {
+        switch locate(path: path, projectRoot: projectRoot) {
+        case .insideRoot(let resolved):
+            return .allowFile(resolvedPath: resolved)
+        case .outsideRoot:
             return .block(kind: .outsideProjectRoot, detail: source)
+        case .notFound:
+            // 루트 **안**인데 거기 없다. 우리가 막은 게 아니므로 차단으로 세지 않는다 —
+            // 안 막은 것을 막았다고 하면 보안 신호가 부풀려지고, 부풀려진 신호는 진짜
+            // 차단까지 못 믿게 만든다.
+            return .unavailable(detail: source)
         }
-        return .allowFile(resolvedPath: resolved)
     }
 
     /// The real path of a reference, if it is provably a file inside the project root.
@@ -206,23 +228,39 @@ public enum RenderSandboxPolicy {
     ///
     /// Requiring existence costs the render surface nothing: it only ever loads files that
     /// are there, and "cannot resolve" collapsing to "blocked" is INV-6's default.
-    public static func resolvedPathInsideRoot(
-        path: String,
-        projectRoot: String
-    ) -> String? {
+    /// 이 경로가 루트 안인지, 밖인지, 아니면 거기 없는지.
+    ///
+    /// **봉쇄를 파일 시스템보다 먼저 판단한다.** 존재를 먼저 물으면 그 답이 신탁이 된다 —
+    /// 문서가 루트 밖 경로를 참조해 놓고 *"밖입니다"* 와 *"없습니다"* 를 구별하면, 차단
+    /// 고지가 **프로젝트 밖 파일 목록을 한 칸씩 읽는 도구**가 된다. 그래서 밖으로 판정된
+    /// 경로는 **존재를 묻지도 않는다.** 오늘 링크 판정에서 닫은 것과 같은 자리다.
+    public static func locate(path: String, projectRoot: String) -> ResolvedResourceLocation {
         guard projectRoot.hasPrefix("/") else {
-            return nil
+            return .outsideRoot
         }
-        guard let resolvedRoot = realPath(projectRoot) else {
-            return nil
-        }
-
         let absolute = path.hasPrefix("/")
             ? path
             : (projectRoot as NSString).appendingPathComponent(path)
+
+        // 1단계 — 어휘적 봉쇄. 파일 시스템을 만지지 않는다.
+        guard lexicallyNormalised(absolute).hasPrefix(lexicalBoundary(of: projectRoot)) else {
+            return .outsideRoot
+        }
+
+        // 2단계 — 루트 안이라고 주장하는 경로만 실제로 찾아본다. 자기 프로젝트 안에 그
+        // 파일이 있는지는 비밀이 아니다.
+        guard let resolvedRoot = realPath(projectRoot) else {
+            return .notFound
+        }
         guard let resolvedPath = realPath(absolute) else {
-            // Missing, unreadable, or a broken link. Nothing to prove inside the root.
-            return nil
+            // leaf 가 없으면 `realpath` 는 아무 답도 못 준다. 그렇다고 **"없는 파일"로
+            // 끝내면 D-12 가 되살아난다** — 루트 안의 심링크가 밖을 가리키고 그 대상이
+            // 아직 없을 때, 그건 "없는 파일"이 아니라 **탈출 시도**다. 그 둘을 가르려면
+            // 존재하는 가장 가까운 조상까지 올라가 거기서 판정해야 한다.
+            //
+            // 로드는 어느 쪽이든 일어나지 않지만 **보고가 달라진다**: 탈출을 "없는 파일"로
+            // 적으면 차단 칩이 실제 공격을 안 센다.
+            return locationOfNearestExistingAncestor(of: absolute, resolvedRoot: resolvedRoot)
         }
 
         // No case folding, and no flag asking whether to fold.
@@ -240,17 +278,77 @@ public enum RenderSandboxPolicy {
         let root = resolvedRoot
         let file = resolvedPath
 
+        // 3단계 — 심링크. 루트 안에 있으면서 밖을 가리킬 수 있다(D-12).
         // The root directory is not a file inside itself.
         guard file != root else {
-            return nil
+            return .outsideRoot
         }
         // The separator is part of the check, or `/repo-secrets` counts as inside `/repo`.
         guard file.hasPrefix(root.hasSuffix("/") ? root : root + "/") else {
-            return nil
+            return .outsideRoot
         }
         // The resolved spelling is returned, not the requested one — that is what the
         // loader opens.
-        return resolvedPath
+        return .insideRoot(resolvedPath: resolvedPath)
+    }
+
+    /// leaf 가 없을 때, 존재하는 가장 가까운 조상으로 봉쇄를 판정한다.
+    ///
+    /// 조상이 루트 밖이면 **경로 전체가 밖**이다 — 심링크가 밖을 가리키는데 대상 파일만
+    /// 아직 없는 경우가 정확히 그 모양이고, D-12 가 그것이었다. 조상이 루트 안이면
+    /// 그냥 **거기 없는 파일**이다.
+    private static func locationOfNearestExistingAncestor(
+        of absolute: String,
+        resolvedRoot: String
+    ) -> ResolvedResourceLocation {
+        let boundary = resolvedRoot.hasSuffix("/") ? resolvedRoot : resolvedRoot + "/"
+        var ancestor = (absolute as NSString).deletingLastPathComponent
+
+        while ancestor.count > 1 {
+            if let resolved = realPath(ancestor) {
+                let inside = resolved == resolvedRoot || resolved.hasPrefix(boundary)
+                return inside ? .notFound : .outsideRoot
+            }
+            ancestor = (ancestor as NSString).deletingLastPathComponent
+        }
+
+        // 조상 중 존재하는 것이 하나도 없다 — 판정할 근거가 없으므로 닫는 쪽으로.
+        return .outsideRoot
+    }
+
+    /// 루트 안으로 해석된 절대 경로, 또는 nil. `locate` 의 얇은 래퍼.
+    public static func resolvedPathInsideRoot(path: String, projectRoot: String) -> String? {
+        guard case .insideRoot(let resolved) = locate(path: path, projectRoot: projectRoot) else {
+            return nil
+        }
+        return resolved
+    }
+
+    /// 루트가 끝나는 자리. 구분자를 포함해야 `/repo-secrets` 가 `/repo` 안으로 안 세어진다.
+    static func lexicalBoundary(of projectRoot: String) -> String {
+        let normalised = lexicallyNormalised(projectRoot)
+        return normalised.hasSuffix("/") ? normalised : normalised + "/"
+    }
+
+    /// `.` 과 `..` 를 파일 시스템에 묻지 않고 접는다.
+    ///
+    /// `standardizingPath` 가 아니다 — 그쪽은 존재하는 경로의 심링크를 풀어서 이 검사의
+    /// 답이 **디스크에 무엇이 있느냐에 달리게** 된다. 이 단계가 피하려는 의존이 그것이다.
+    static func lexicallyNormalised(_ path: String) -> String {
+        var components: [String] = []
+        for part in path.split(separator: "/", omittingEmptySubsequences: true) {
+            switch part {
+            case ".":
+                continue
+            case "..":
+                if !components.isEmpty {
+                    components.removeLast()
+                }
+            default:
+                components.append(String(part))
+            }
+        }
+        return "/" + components.joined(separator: "/")
     }
 
     /// `realpath(3)`: full symlink resolution, and nil when the path does not exist.

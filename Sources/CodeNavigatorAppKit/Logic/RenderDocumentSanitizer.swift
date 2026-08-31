@@ -287,6 +287,17 @@ public enum RenderDocumentSanitizer {
                     return .value("")
                 }
 
+            case .unavailable(let detail):
+                // 못 읽은 것이지 막은 것이 아니다. 칩에는 안 오르고, 자리에는 남는다.
+                unavailable.append(UnavailableResource(path: detail, failure: .notFound))
+                if tagName(of: element) == "img" {
+                    return .element(BlockedResourceBox.unavailableHTML(
+                        detail: detail,
+                        alternativeText: attributeValue(named: "alt", in: element)
+                    ))
+                }
+                return .value("")
+
             case .block(let kind, let detail):
                 blocked.append(BlockedResource(kind: kind, detail: detail))
 
@@ -376,6 +387,9 @@ public enum RenderDocumentSanitizer {
                     }
                     result += "url()"
                 }
+            case .unavailable(let detail):
+                unavailable.append(UnavailableResource(path: detail, failure: .notFound))
+                result += "url()"
             case .block(let kind, let detail):
                 blocked.append(BlockedResource(kind: kind, detail: detail))
                 result += "url()"

@@ -152,14 +152,27 @@ struct RenderSandboxPolicyTests {
         #expect(FileManager.default.fileExists(atPath: resolved))
     }
 
-    @Test("존재하지 않는 파일은 차단된다 — 해석 실패는 차단이다")
-    func aMissingFileIsBlocked() throws {
-        // 렌더는 존재하는 파일만 로드하므로 잃는 것이 없고, "해석 못 함 = 차단"이
-        // INV-6의 기본값과 같은 방향이다.
+    @Test("루트 안의 없는 파일은 로드되지 않되 차단으로 세지 않는다")
+    func aMissingFileInsideTheRootIsNeitherLoadedNorCountedAsBlocked() throws {
+        // 예전엔 `.outsideProjectRoot` 로 단언했다. **지키려던 성질은 "해석 못 한 것을
+        // 로드하지 않는다"** 였는데, 단언은 *분류*를 붙잡고 있었다. 그 분류가 라이브에서
+        // 사용자에게 보였고 — 프로젝트 **안**의 파일이 *"폴더 밖에 있다"* 로 안내됐다.
+        // 게다가 안 막은 것이 차단 칩에 실려 **보안 신호가 부풀려졌다**(차단 2건인데 3).
+        //
+        // 그래서 성질을 직접 잰다: 로드되지 않고(fail closed), 차단으로도 세지 않는다.
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
 
-        #expect(blockedKind(fixture.decide(.image(source: "images/absent.png"))) == .outsideProjectRoot)
+        let decision = fixture.decide(.image(source: "images/absent.png"))
+
+        #expect(!decision.isBlocked, "우리가 막은 게 아니다")
+        if case .unavailable = decision {} else {
+            Issue.record("못 읽은 것으로 분류돼야 한다: \(decision)")
+        }
+        // fail closed 는 그대로다 — 어떤 경우에도 파일로 허용되지 않는다.
+        if case .allowFile = decision {
+            Issue.record("해석 못 한 경로가 로드 허용됐다")
+        }
     }
 
     // MARK: 루트 밖은 막는다
