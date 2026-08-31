@@ -137,3 +137,73 @@ struct WorkspaceEditorFailureTests {
         await workspace.shutDown()
     }
 }
+
+/// Partial-failure cleanup on the live path.
+///
+/// `PartialStartFailureTests` asserts this against `CodeNavigatorEngine`. The workspace opens
+/// projects differently — the index first, then the editor — so its failure shape is its own and
+/// the old suite says nothing about it.
+@Suite("열기 실패가 흔적을 남기지 않는다 — 워크스페이스 경로", .serialized)
+struct WorkspacePartialFailureTests {
+
+    private func makeUnreadableDirectory() -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("unreadable-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        return url
+    }
+
+    @Test("읽을 수 없는 루트는 탭을 남기지 않는다")
+    func anUnreadableRootLeavesNoTab() async throws {
+        let unreadable = makeUnreadableDirectory()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: unreadable.path)
+            try? FileManager.default.removeItem(at: unreadable)
+        }
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        await #expect(throws: (any Error).self) {
+            try await workspace.openProject(at: unreadable)
+        }
+
+        // 반쪽 열린 탭이 남으면 탭 바에 이름은 있는데 아무것도 안 되는 프로젝트가 생긴다.
+        #expect(await workspace.tabs().isEmpty)
+        #expect(await workspace.activeTab() == nil)
+        await workspace.shutDown()
+    }
+
+    @Test("실패한 열기가 편집기 프로세스를 남기지 않는다")
+    func aFailedOpenLeavesNoEditorProcess() async throws {
+        let missing = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
+        let workspace = ProjectWorkspaceEngine(columns: 80, rows: 24)
+
+        await #expect(throws: (any Error).self) {
+            try await workspace.openProject(at: missing)
+        }
+
+        // 인덱싱이 먼저 실패하므로 편집기는 애초에 뜨지 않아야 한다 — 뜬 뒤 버려지면 고아다.
+        let identifier = await workspace.editorSession.processIdentifierForTesting()
+        #expect(identifier == nil, "실패한 열기가 편집기 \(identifier ?? -1) 을 띄웠다")
+        await workspace.shutDown()
+    }
+
+    @Test("이미 열린 프로젝트가 있을 때 다른 열기가 실패해도 그것은 그대로다")
+    func aFailedOpenLeavesTheExistingTabAlone() async throws {
+        let good = TemporaryProjectFixture()
+        good.write("src/App.kt", contents: "class Application")
+        let missing = URL(fileURLWithPath: "/nonexistent/project-\(UUID().uuidString)")
+        let workspace = ProjectWorkspaceEngine(
+            columns: 80, rows: 24, editorExecutableOverridePath: "/nonexistent/nvim"
+        )
+
+        let opened = try await workspace.openProject(at: good.rootURL)
+        await #expect(throws: (any Error).self) {
+            try await workspace.openProject(at: missing)
+        }
+
+        #expect(await workspace.tabs().map(\.id) == [opened.tab.id])
+        #expect(await workspace.session(for: opened.tab.id)?.definitions(named: "Application").isEmpty == false)
+        await workspace.shutDown()
+    }
+}
