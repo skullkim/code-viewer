@@ -103,6 +103,7 @@ struct TabCloseWiringTests {
         let outcome = await model.saveAll(in: tab)
 
         #expect(outcome.isComplete == false)
-        #expect(await model.dirtyFiles(in: tab).isEmpty, "물어볼 수 없다면 잃을 것도 모르므로 시트를 띄우지 않는다")
+        let dirty = await model.dirtyFiles(in: tab)
+        #expect(dirty.isEmpty, "물어볼 수 없다면 잃을 것도 모르므로 시트를 띄우지 않는다")
     }
 }

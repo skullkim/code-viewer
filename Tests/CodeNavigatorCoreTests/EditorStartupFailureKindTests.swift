@@ -98,6 +98,17 @@ struct EditorStartupFailureKindTests {
         }
 
         let failure = try #require(await startupFailure(from: session))
+
+        // 실패 경로가 그 프로세스를 죽이므로 종료 통지가 뒤따라 온다. 그 통지가 진단을 덮으면
+        // 사용자는 "세션이 끊겼으니 재기동하라"를 보게 되는데, 그건 뜬 적 없는 것을 다시
+        // 띄우라는 말이고 어느 단계에서 멈췄는지도 사라진다. 통지는 비동기라 잠깐 기다린 뒤
+        // 확인한다 — 기다리지 않으면 덮이기 전을 보고 통과할 수 있다.
+        try await Task.sleep(for: .milliseconds(300))
+        let stillFailed = await startupFailure(from: session)
+        let stateNow = await session.state()
+        #expect(stillFailed?.kind == .unresponsive,
+                "종료 통지가 기동 실패 진단을 덮었다: \(stateNow)")
+
         #expect(failure.kind == .unresponsive, "종류=\(failure.kind) 사유=\(failure.reason)")
         // 버전은 읽혔으므로 실려 있어야 한다 — "없다"가 아니라는 증거다.
         #expect(failure.foundVersion == "0.12.5")

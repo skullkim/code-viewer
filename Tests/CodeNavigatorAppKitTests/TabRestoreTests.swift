@@ -73,7 +73,10 @@ struct TabRestoreTests {
         await model.restoreTabs()
 
         #expect(model.tabs.tabs.isEmpty)
-        #expect(workspace.openedRoots.isEmpty, "복원할 게 없는데 엔진을 부르면 빈 세션이 뜬다")
+        // Asserting the call never happened, not merely that nothing came back: an engine
+        // asked to restore an empty list may still spin up a session for a window that is
+        // about to show the welcome screen.
+        #expect(workspace.restoreCallCount == 0, "복원할 게 없는데 엔진을 불렀다")
     }
 
     @Test("사라진 프로젝트는 조용히 버리지 않고 알린다 (AC-6)")

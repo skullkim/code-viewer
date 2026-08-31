@@ -44,6 +44,8 @@ public final class ShellPreferences {
     static let treeVisibleKey = "shell.treeVisible"
     static let panelVisibleKey = "shell.panelVisible"
     static let windowFrameKey = "shell.windowFrame"
+    static let openTabsKey = "shell.openTabs"
+    static let activeTabKey = "shell.activeTab"
 
     public init(storage: KeyValueStore) {
         self.storage = storage
@@ -66,6 +68,31 @@ public final class ShellPreferences {
 
     public func setPanelWidth(_ width: CGFloat) {
         panelWidth = ShellLayout.clampPanelWidth(width)
+    }
+
+    // MARK: 열린 탭 (REQ-012 AC-4)
+
+    /// The projects that were open, in the user's order, and which one was in front.
+    ///
+    /// Stored as paths rather than the engine's tab identifiers: identifiers are per-run
+    /// (a UUID minted when a project opens), so a stored one would name nothing after a
+    /// relaunch. The path is what survives a restart.
+    public func setOpenTabs(rootPaths: [String], activeRootPath: String?) {
+        storage.setData(try? JSONEncoder().encode(rootPaths), forKey: Self.openTabsKey)
+        storage.setData(activeRootPath.flatMap { $0.data(using: .utf8) }, forKey: Self.activeTabKey)
+    }
+
+    public var openTabRootPaths: [String] {
+        guard let data = storage.data(forKey: Self.openTabsKey),
+              let paths = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            return []
+        }
+        return paths
+    }
+
+    public var activeTabRootPath: String? {
+        storage.data(forKey: Self.activeTabKey).flatMap { String(data: $0, encoding: .utf8) }
     }
 
     // MARK: 창 프레임 (REQ-011 AC-3)

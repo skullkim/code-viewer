@@ -915,6 +915,15 @@ public actor NeovimEditorSession: EditorSession {
 
     private func handleProcessExit(status: Int32) {
         isUserInterfaceAttached = false
+
+        // A start-up that already failed keeps its diagnosis. The process then exiting is a
+        // consequence of that failure, not news about it, and `disconnected` would replace a
+        // specific answer — which stage timed out, which version was found — with "the session
+        // ended, restart it". That sends the user to restart something that was never up, and it
+        // is the same collapse D-10 was about: a precise failure flattened into a generic one.
+        if case .startupFailed = stateBroadcaster.latest {
+            return
+        }
         updateState(.disconnected(reason: "편집 세션이 종료됐습니다 (상태 \(status)). 재기동할 수 있습니다."))
     }
 

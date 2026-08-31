@@ -98,6 +98,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             model?.tabs.activeTab?.projectSession
         })
         model.start()
+        // Brings back the projects that were open, and lands on the one the user left in
+        // front (REQ-012 AC-4). Started rather than awaited: the window should appear now,
+        // not after every index has been rebuilt.
+        Task { @MainActor in await model.restoreTabs() }
 
         sharedWorkspace = workspace
         sharedEditorSession = editorSession

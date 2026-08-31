@@ -270,6 +270,10 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
         self.sharedSession = sharedSession
     }
 
+    /// Roots the fake reports as gone, for the restore path (AC-6).
+    var missingRoots: [String] = []
+    var missingReason: TabRestoreFailureReason = .notFound
+
     var openError: (any Error)?
     private(set) var openCallCount = 0
     /// Every root the application asked to open, in order.
@@ -277,6 +281,8 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
     private(set) var closedTabs: [ProjectTabIdentifier] = []
     /// Every tab the application asked the engine to bring forward.
     private(set) var activatedTabs: [ProjectTabIdentifier] = []
+    /// How many times the application asked the engine to restore. Zero on a first run.
+    private(set) var restoreCallCount = 0
 
     private func locked<T>(_ body: () -> T) -> T {
         lock.lock()
@@ -347,8 +353,18 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
     }
 
     func restoreTabs(from rootPaths: [URL], activeRootPath: URL?) async -> TabRestoreOutcome {
+        locked { restoreCallCount += 1 }
         var restored: [ProjectTab] = []
+        var missing: [MissingTab] = []
         for path in rootPaths {
+            guard !missingRoots.contains(path.path) else {
+                missing.append(MissingTab(
+                    displayName: path.lastPathComponent,
+                    rootPath: path,
+                    reason: missingReason
+                ))
+                continue
+            }
             if let outcome = try? await openProject(at: path) {
                 restored.append(outcome.tab)
             }
@@ -357,6 +373,6 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
            let match = restored.first(where: { $0.rootPath.path == activeRootPath.path }) {
             try? await activate(match.id)
         }
-        return TabRestoreOutcome(restored: restored, missing: [])
+        return TabRestoreOutcome(restored: restored, missing: missing)
     }
 }

@@ -80,6 +80,13 @@ public final class AppModel {
     private var streamTasks: [Task<Void, Never>] = []
     /// One index subscription per open tab.
     private var indexWatchers: [ProjectTabIdentifier: Task<Void, Never>] = [:]
+
+    /// Projects that were open last time and could not be reopened (REQ-012 AC-6).
+    ///
+    /// Kept rather than dropped: silently forgetting a project is indistinguishable from
+    /// the application losing it, and the user cannot tell whether their folder moved or
+    /// something went wrong here.
+    public private(set) var missingTabs: [MissingTab] = []
     private var statusMessageExpiryTask: Task<Void, Never>?
 
     static let inputModeStorageKey = "inputMode"
@@ -350,6 +357,64 @@ public final class AppModel {
         try? await editorSession.openFile(atRelativePath: path, line: line, recordJump: true)
     }
 
+    // MARK: 탭 복원 (REQ-012 AC-4·AC-6)
+
+    /// Reopens the projects that were open, and lands on the one the user was looking at.
+    ///
+    /// The engine does the reopening: it owns the sessions and the normalisation that
+    /// decides whether a stored path still names the same project. What this adds is the
+    /// application's half — the stored list, and turning what came back into tabs.
+    public func restoreTabs() async {
+        let storedPaths = shell.openTabRootPaths
+        // Nothing to restore is not the same as restoring nothing: calling the engine with
+        // an empty list would start a session for a window that shows the welcome screen.
+        guard !storedPaths.isEmpty else { return }
+
+        let outcome = await workspace.restoreTabs(
+            from: storedPaths.map { URL(fileURLWithPath: $0) },
+            activeRootPath: shell.activeTabRootPath.map { URL(fileURLWithPath: $0) }
+        )
+
+        for tab in outcome.restored {
+            guard let session = await workspace.session(for: tab.id) else { continue }
+            let state = ProjectTabState(
+                id: tab.id,
+                rootPath: tab.rootPath.path,
+                name: tab.displayName,
+                projectSession: session,
+                editorSession: editorSession
+            )
+            tabs.open(state)
+            watchIndexState(of: state)
+            await state.fileTree.loadProject(name: tab.displayName, rootPath: tab.rootPath.path)
+        }
+
+        // Which tab is in front is the engine's answer, so the application follows it rather
+        // than guessing from the order things came back in.
+        if let active = await workspace.activeTab() {
+            tabs.activate(id: active.id)
+        }
+        projectRootPath = tabs.activeTab?.rootPath
+        missingTabs = outcome.missing
+        rememberOpenTabs()
+    }
+
+    /// Clears the report after the user has seen it (W-12).
+    public func dismissMissingTabs() {
+        missingTabs = []
+    }
+
+    /// Records what is open, so the next launch can bring it back.
+    ///
+    /// Paths, not identifiers: the engine mints an identifier per run, so a stored one
+    /// would name nothing tomorrow.
+    private func rememberOpenTabs() {
+        shell.setOpenTabs(
+            rootPaths: tabs.tabs.map(\.rootPath),
+            activeRootPath: tabs.activeTab?.rootPath
+        )
+    }
+
     // MARK: Saving before a tab closes (W-13)
 
     /// Which of this tab's buffers have unsaved changes.
@@ -433,6 +498,7 @@ public final class AppModel {
         }
 
         projectRootPath = tabs.activeTab?.rootPath
+        rememberOpenTabs()
     }
 
     /// Brings a tab forward (REQ-012 AC-2).
@@ -444,6 +510,7 @@ public final class AppModel {
         try? await workspace.activate(identifier)
         tabs.activate(id: identifier)
         projectRootPath = tabs.activeTab?.rootPath
+        rememberOpenTabs()
     }
 
     /// Closes a tab, in the engine as well as on screen (REQ-012 AC-3).
@@ -453,6 +520,7 @@ public final class AppModel {
         indexWatchers[identifier] = nil
         tabs.close(id: identifier)
         projectRootPath = tabs.activeTab?.rootPath
+        rememberOpenTabs()
         if tabs.tabs.isEmpty {
             definitionCandidates = nil
             indexStatistics = nil
