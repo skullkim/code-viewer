@@ -21,6 +21,10 @@ final class EditorGridNSView: NSView {
     var onClaimKeyboard: (() -> Void)?
     var onMouse: ((EditorMouseEvent) -> Void)?
     var onGridSizeChange: ((Int, Int) -> Void)?
+    /// Reports the appearance this view is actually drawing in, so the editor's colours can be
+    /// rebuilt for it (REQ-016 AC-6). The view is asked rather than `NSApp` because the effective
+    /// appearance belongs to a view hierarchy — this is the surface the colours land on.
+    var onAppearanceChange: ((NSAppearance) -> Void)?
 
     private let renderer = GridRenderer()
     private let metrics = CellMetrics()
@@ -160,6 +164,17 @@ final class EditorGridNSView: NSView {
         if shouldOwnKeyboard {
             claimKeyboard()
         }
+        // Reported on mount as well as on change. `viewDidChangeEffectiveAppearance` fires when
+        // the appearance *changes*, which is not guaranteed to happen for a view that is born
+        // into a dark window — without this the first palette would be the light one and stay
+        // that way until the user toggled the system theme. Resending is cheap: the model drops
+        // an appearance equal to the one it already holds.
+        onAppearanceChange?(effectiveAppearance)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?(effectiveAppearance)
     }
 
     /// Whether the coordinator has given this view the keyboard.
@@ -185,7 +200,9 @@ final class EditorGridNSView: NSView {
             action: action,
             row: row,
             column: column,
-            modifiers: KeyStroke(event).neovimModifierNotation
+            // Only the modifiers, never a whole `KeyStroke`: building one asks a mouse event
+            // for `keyCode`, which AppKit answers with an exception rather than a value.
+            modifiers: KeyModifiers(event).neovimModifierNotation
         ))
     }
 }
@@ -283,6 +300,7 @@ struct EditorGridView: NSViewRepresentable {
     private let onMouse: (EditorMouseEvent) -> Void
     private let onGridSizeChange: (Int, Int) -> Void
     private let onClaimKeyboard: () -> Void
+    private let onAppearanceChange: (NSAppearance) -> Void
 
     init(
         frame: GridFrame?,
@@ -293,7 +311,8 @@ struct EditorGridView: NSViewRepresentable {
         onKey: @escaping (String) -> Void,
         onMouse: @escaping (EditorMouseEvent) -> Void,
         onGridSizeChange: @escaping (Int, Int) -> Void,
-        onClaimKeyboard: @escaping () -> Void = {}
+        onClaimKeyboard: @escaping () -> Void = {},
+        onAppearanceChange: @escaping (NSAppearance) -> Void = { _ in }
     ) {
         self.editorMode = editorMode
         self.inputMode = inputMode
@@ -304,6 +323,7 @@ struct EditorGridView: NSViewRepresentable {
         self.onKey = onKey
         self.onMouse = onMouse
         self.onGridSizeChange = onGridSizeChange
+        self.onAppearanceChange = onAppearanceChange
     }
 
     func makeNSView(context: Context) -> EditorGridNSView {
@@ -315,6 +335,7 @@ struct EditorGridView: NSViewRepresentable {
         view.onKey = onKey
         view.onMouse = onMouse
         view.onGridSizeChange = onGridSizeChange
+        view.onAppearanceChange = onAppearanceChange
         return view
     }
 
@@ -326,6 +347,7 @@ struct EditorGridView: NSViewRepresentable {
         view.onKey = onKey
         view.onMouse = onMouse
         view.onGridSizeChange = onGridSizeChange
+        view.onAppearanceChange = onAppearanceChange
         view.isInputBlocked = isInputBlocked
 
         // Frames are whole pictures, so a changed revision means redraw everything; an

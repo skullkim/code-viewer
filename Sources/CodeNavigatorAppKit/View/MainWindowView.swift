@@ -246,7 +246,10 @@ public struct MainWindowView: View {
                 onGridSizeChange: { columns, rows in
                     Task { await model.resizeGrid(columns: columns, rows: rows) }
                 },
-                onClaimKeyboard: { focus.userFocused(.editor) }
+                onClaimKeyboard: { focus.userFocused(.editor) },
+                onAppearanceChange: { appearance in
+                    Task { await model.appearanceChanged(to: AppearanceScheme(appearance)) }
+                }
             )
 
             // 02b 237행: **에디터 위에 얹는다.** Neovim 그리드는 크기가 바뀌지 않고 가려질

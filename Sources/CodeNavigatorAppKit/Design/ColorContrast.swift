@@ -23,6 +23,52 @@ public enum ColorContrast {
         let darker = min(firstLuminance, secondLuminance)
         return (lighter + 0.05) / (darker + 0.05)
     }
+
+    /// Perceptual distance between two colours — CIE76 ΔE in CIELAB (design §4.1.1).
+    ///
+    /// Contrast and distance answer different questions, and REQ-016 needs both. Contrast asks
+    /// *can this be read*; distance asks *can this be told apart from its neighbour*. The defect
+    /// this palette exists to fix scores perfectly on the first and zero on the second: Neovim's
+    /// default keyword colour is the **same value** as the plain foreground, so keywords are
+    /// entirely readable and completely invisible as keywords. A contrast-only check calls that
+    /// palette healthy.
+    ///
+    /// CIE76 rather than CIEDE2000 because §4.1.1 publishes CIE76 numbers, and a check that
+    /// computes a different metric than the document it is checking is not a check.
+    public static func colorDistance(_ first: RGBColor, _ second: RGBColor) -> Double {
+        let start = perceptualComponents(of: first)
+        let end = perceptualComponents(of: second)
+        let lightness = start.lightness - end.lightness
+        let greenRed = start.greenRed - end.greenRed
+        let blueYellow = start.blueYellow - end.blueYellow
+        return (lightness * lightness + greenRed * greenRed + blueYellow * blueYellow).squareRoot()
+    }
+
+    /// sRGB → CIELAB under a D65 white point, the illuminant sRGB is defined against.
+    private static func perceptualComponents(
+        of color: RGBColor
+    ) -> (lightness: Double, greenRed: Double, blueYellow: Double) {
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let red = linear(color.red)
+        let green = linear(color.green)
+        let blue = linear(color.blue)
+
+        // Normalised by the D65 white so that white lands on L*=100.
+        let x = (0.4124564 * red + 0.3575761 * green + 0.1804375 * blue) / 0.95047
+        let y = 0.2126729 * red + 0.7151522 * green + 0.0721750 * blue
+        let z = (0.0193339 * red + 0.1191920 * green + 0.9503041 * blue) / 1.08883
+
+        // The linear segment near black keeps the curve from going vertical there.
+        func adjust(_ value: Double) -> Double {
+            value > 0.008856 ? cbrt(value) : (7.787 * value + 16.0 / 116.0)
+        }
+        let fx = adjust(x)
+        let fy = adjust(y)
+        let fz = adjust(z)
+        return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+    }
 }
 
 /// An sRGB colour with components in 0...1, parsed from the hex values in design §4.1.

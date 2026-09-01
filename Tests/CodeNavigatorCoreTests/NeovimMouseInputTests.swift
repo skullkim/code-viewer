@@ -237,4 +237,95 @@ struct NeovimMouseInputTests {
 
         #expect(await session.state() == .notStarted)
     }
+
+    /// 프로브가 훑는 행에서 **배경이 명시된** 셀 수.
+    ///
+    /// 행을 좁히는 것이 이 함수의 요점이다. 화면 전체를 세면 상태줄처럼 늘 배경을 가진 것이
+    /// 섞여 들어와 단언이 **선택과 무관한 이유로 참**이 된다 — 빈 집합에서 저절로 참이 되는
+    /// 단언과 같은 종류의 거짓 통과다.
+    private func selectionBackgroundCellCount(in snapshot: EditorGridSnapshot) -> Int {
+        (probeStartRow...probeEndRow).reduce(0) { total, row in
+            guard snapshot.lines.count > row else { return total }
+            let painted = snapshot.lines[row].runs
+                .filter { $0.style.background != nil }
+                .reduce(0) { $0 + $1.cellWidth }
+            return total + painted
+        }
+    }
+
+    @Test("드래그로 만든 선택은 화면에 보인다 — 선택 배경이 실제로 칠해진다 (REQ-017 AC-3)")
+    func theSelectionIsVisibleOnScreen() async throws {
+        // 비주얼 **모드로 들어갔다**와 선택이 **보인다**는 다른 질문이다. 위의
+        // `dragCreatesSelection` 은 모드만 묻는다 — 모드가 바뀌었는데 화면이 그대로여도
+        // 통과한다. AC-3 은 사용자가 눈으로 보는 쪽이라 그리드에 색이 실렸는지를 물어야 한다.
+        let fixture = TemporaryProjectFixture()
+        makeNumberedFile(fixture, lineCount: 20)
+        let session = try await startSession(fixture)
+        defer { Task { await session.shutDown() } }
+
+        try await session.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        try await waitUntilMouseDragCreatesSelection(session)
+        // 준비 확인이 방금 같은 자리를 눌렀다. `mousetime`(기본 500ms) 안에 다시 누르면
+        // Neovim 이 더블클릭으로 읽어 드래그가 되지 않는다.
+        try await Task.sleep(for: .milliseconds(600))
+
+        let frames = await session.gridUpdates()
+        let before = try #require(
+            await firstValue(from: frames) { $0.lines.count > probeEndRow },
+            "선택 전 프레임을 못 받았다 — 증가를 잴 기준이 없다"
+        )
+        // 기준선을 단언한다. 여기가 0 이 아니면 뒤의 "칠해졌다"는 선택의 증거가 아니다.
+        #expect(
+            selectionBackgroundCellCount(in: before) == 0,
+            "선택 전에 이미 칠해져 있으면 이 테스트는 선택을 재는 게 아니다"
+        )
+
+        try await dragAcrossProbeArea(session)
+
+        let painted = await firstValue(from: frames) { selectionBackgroundCellCount(in: $0) > 0 }
+        #expect(
+            painted != nil,
+            "드래그 후에도 선택 배경이 실린 프레임이 오지 않았다 — 선택이 화면에 보이지 않는다 (AC-3)"
+        )
+    }
+
+    @Test("마우스로 만든 선택에 Vim 명령이 그대로 먹는다 — 드래그 후 d 로 지운다 (REQ-017 AC-4 · SC-12)")
+    func vimCommandsApplyToASelectionMadeWithTheMouse() async throws {
+        // 선택이 **보이는 것**과 선택이 **Vim 이 아는 선택인 것**은 다르다. 화면만 칠해 놓고
+        // 실제 비주얼 범위가 서지 않았다면 AC-3 은 통과하고 AC-4 는 깨진다 — 사용자에게는
+        // "선택은 되는데 지워지지 않는" 상태다. 그래서 버퍼를 직접 본다.
+        let fixture = TemporaryProjectFixture()
+        makeNumberedFile(fixture, lineCount: 20)
+        let session = try await startSession(fixture)
+        defer { Task { await session.shutDown() } }
+
+        try await session.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        try await waitUntilMouseDragCreatesSelection(session)
+        try await Task.sleep(for: .milliseconds(600))
+
+        // 화면 행 ↔ 버퍼 줄을 산수로 짐작하지 않고 그리드에서 읽는다. `scrolloff` 하나에
+        // 어긋나고, 어긋나면 이 단언은 실패하는 대신 **엉뚱한 줄을 보며 조용히 통과**한다.
+        let frames = await session.gridUpdates()
+        let frame = try #require(await firstValue(from: frames) { $0.lines.count > probeEndRow })
+        let draggedText = (probeStartRow...probeEndRow).map {
+            frame.lines[$0].plainText.trimmingCharacters(in: .whitespaces)
+        }
+        #expect(draggedText.count == 2, "드래그가 훑는 두 행을 못 읽었다")
+        #expect(draggedText.allSatisfy { !$0.isEmpty }, "빈 행을 드래그하면 지울 것이 없다")
+
+        let before = try await session.bufferLinesForTesting()
+        for text in draggedText {
+            #expect(before.contains(text), "\(text) 가 버퍼에 없으면 삭제를 잴 수 없다")
+        }
+
+        try await dragAcrossProbeArea(session)
+        try await session.sendKeys("d")
+        try await waitUntilQueuedInputIsConsumed(session)
+
+        let after = try await session.bufferLinesForTesting()
+        #expect(after.count < before.count, "줄 수가 그대로다 — 선택이 있었어도 d 가 먹지 않았다")
+        for text in draggedText {
+            #expect(!after.contains(text), "\(text) 가 남아 있다 — 마우스 선택에 Vim 명령이 안 먹는다")
+        }
+    }
 }

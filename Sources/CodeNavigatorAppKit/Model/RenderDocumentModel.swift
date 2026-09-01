@@ -167,17 +167,13 @@ public final class RenderDocumentModel {
 
     /// 이유를 보존한다. 셋을 한 사건으로 뭉개면 샌드박스 칩이 **무엇이 일어났는지** 말할 수
     /// 없고, "차단했다"가 남의 오타까지 자기 공으로 가져간다.
+    /// 매핑 본문은 `RenderResourceFailureMapping` 이 소유한다.
+    ///
+    /// 여기 `switch` 로 두면 뷰 모델을 세워야만 걷히고, 그래서 안 걷혔다 — `default` 가
+    /// `pathOutsideProject` 를 삼켜 **실제 INV-6 차단이 차단 목록에서 사라지는** 회귀를
+    /// 만들 뻔했다(backend-senior 실측: 되돌려도 이 매핑을 잡는 테스트 0건).
     private nonisolated static func failure(for error: NavigatorError) -> RenderResourceFailure {
-        switch error {
-        case .fileNotFound:
-            return .notFound
-        case .fileTooLarge(_, let byteSize, let limit):
-            return .tooLarge(byteSize: byteSize, limit: limit)
-        case .invalidPath:
-            return .invalidPath
-        default:
-            return .notReadable(error.errorDescription ?? "\(error)")
-        }
+        RenderResourceFailureMapping.failure(for: error)
     }
 
     private func apply(failure: NavigatorError, for path: String) {

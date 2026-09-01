@@ -67,14 +67,90 @@ public enum DesignTokens {
     public static let success = token("success", "#1B7A4B", "#4CC38A")
     public static let purple = token("purple", "#7A34B8", "#C792EA")
 
-    /// Interfaces and type aliases in the symbol-kind badges (design §4.1).
+    /// Interfaces and type aliases in the symbol-kind badges (design §4.1.1).
     ///
-    /// §4.1 lists this colour only under syntax highlighting, which it marks as "Neovim's
-    /// to own". The badges are different: the application draws them, in the search modal
-    /// and the definition picker, so the colour has to be a real token rather than a
-    /// borrowed sample. The values are the ones the prototype already uses for `--syn-type`,
-    /// so the visual reference stays accurate.
-    public static let teal = token("teal", "#0F7A6E", "#57C7B8")
+    /// The badges are drawn by the application, in the search modal and the definition picker,
+    /// so this needs to be a real token rather than a sample borrowed from the syntax list.
+    ///
+    /// ⚠ **This is the same colour as `syntaxType`, and it has to move with it.** §4.1.1 changed
+    /// the light value from `#0F7A6E` to `#0E7166` when the palette was re-measured against three
+    /// surfaces. Updating one and not the other makes one concept two colours — a type badge and
+    /// a type in code — and that difference only ever shows up in a screenshot comparison.
+    public static let teal = token("teal", "#0E7166", "#57C7B8")
+
+    // MARK: 편집기 표면 (§4.1.1)
+
+    /// The three surfaces code text can be drawn on, and therefore the three the contrast floor
+    /// has to hold across (§4.1.1).
+    ///
+    /// Both highlight backgrounds are published as **opaque** hex by the design document rather
+    /// than composited here. `nvim_set_hl` rejects an eight-digit hex outright
+    /// (`Invalid highlight color`), so a translucent token cannot reach the editor at all — and
+    /// resolving it in the design document means a person reviews the resulting colour before it
+    /// is painted, instead of it appearing only at runtime.
+    public static let backgroundSelection = token("bg-selection", "#E0EFFF", "#233043")
+    /// Every other occurrence of the symbol under the cursor, within the file (REQ-016 AC-2).
+    ///
+    /// Deliberately achromatic. The editor already carries blue for selection and the panels
+    /// carry amber for search hits; a third hue competes with those, and green sits too close to
+    /// amber under red-green colour blindness. It replaces an earlier attempt to reuse `match`,
+    /// which measured four of six syntax colours below 4.5:1 on top of it — and, decisively,
+    /// search results and the symbol under the cursor can be on screen **at the same time**.
+    public static let backgroundSameSymbol = token("bg-same-symbol", "#E8E8E8", "#343438")
+
+    /// The surfaces code text is drawn on. Contrast for the syntax family is the worst of these.
+    public static let editorSurfaces: [ColorToken] = [
+        backgroundContent, backgroundSelection, backgroundSameSymbol,
+    ]
+
+    // MARK: 구문 강조 (§4.1.1)
+
+    /// The palette the editor highlights code with (REQ-016 AC-3).
+    ///
+    /// §4.1 published these as prototype mimicry, marked "really Neovim's and the user's theme
+    /// to own", and `teal` above was promoted out of the list one colour at a time for the
+    /// badges. REQ-016 AC-6 reverses the policy wholesale: inside this application the
+    /// application's theme wins, because colour is screen consistency while keys are muscle
+    /// memory (ADR-0112). Promoting the rest is what makes AC-3 checkable — a hex in a sentence
+    /// cannot be asserted, and these are now handed to Neovim as the palette it paints with
+    /// (ADR-0010), so a wrong value here is a wrong colour on screen rather than a stale note.
+    ///
+    /// ⚠ **Contrast is measured across all three of `editorSurfaces`, worst value wins.** The
+    /// first version of this family measured against the content background alone and passed —
+    /// and four of its six colours were below 4.5:1 on the selection background, meaning the
+    /// palette broke accessibility *the moment the user dragged*. Checking one surface is how a
+    /// gap hides inside a green test.
+    ///
+    /// **Contrast is also not sufficient on its own.** The defect being fixed here is that
+    /// Neovim's keyword colour equals the plain foreground exactly, and that state has perfectly
+    /// good contrast — the text is readable, it just is not distinguishable. Readability is what
+    /// contrast answers; noticeability is what ΔE answers, and §4.1.1 sets that floor at 25.
+    public static let syntaxKeyword = token("syntax-keyword", "#A626A4", "#C792EA")
+    /// Shares its values with `teal`, which serves the same colour in the badges.
+    /// `DesignTokenTests` holds the two together so neither can drift alone.
+    public static let syntaxType = token("syntax-type", "#0E7166", "#57C7B8")
+    public static let syntaxFunction = token("syntax-function", "#1A56C4", "#82AAFF")
+    public static let syntaxString = token("syntax-string", "#2B742E", "#C3E88D")
+    public static let syntaxNumber = token("syntax-number", "#9E4F00", "#F78C6C")
+    public static let syntaxComment = token("syntax-comment", "#606570", "#9AA0AD")
+
+    /// The floor §4.1.1 sets for the colour distance between a syntax colour and plain text.
+    ///
+    /// Not an aesthetic preference: the bug this palette exists to fix measured **ΔE 0**.
+    public static let minimumSyntaxColorDistance = 25.0
+
+    /// The syntax family, in the order §4.1.1 lists it.
+    public static let syntaxTokens: [ColorToken] = [
+        syntaxKeyword, syntaxType, syntaxFunction, syntaxString, syntaxNumber, syntaxComment,
+    ]
+
+    /// Plain code — anything the palette does not colour, including `Identifier`.
+    ///
+    /// Named explicitly rather than left to Neovim. A group we decide *not* to colour is still a
+    /// group the user's colourscheme will happily fill in, which would put a seventh colour we
+    /// never chose on screen and break AC-6 quietly. Plain has to be *a chosen colour*, not the
+    /// absence of one.
+    public static let editorPlainForeground = textPrimary
 
     /// Every token that carries text and therefore has to clear the contrast floor.
     public static let textTokens: [ColorToken] = [
@@ -96,6 +172,8 @@ public enum DesignTokens {
         backgroundElevated, backgroundHover, border, borderStrong,
         textPrimary, textSecondary, textTertiary, accent, accentText,
         danger, warning, warningSolid, success, purple, teal,
+        syntaxKeyword, syntaxType, syntaxFunction, syntaxString, syntaxNumber, syntaxComment,
+        backgroundSelection, backgroundSameSymbol,
     ]
 
     /// The floor design §4.5 sets for text.

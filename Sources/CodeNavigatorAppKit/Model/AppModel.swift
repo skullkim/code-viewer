@@ -194,11 +194,52 @@ public final class AppModel {
                 self.handle(savedFile: file)
             }
         })
+        streamTasks.append(Task { [weak self] in
+            guard let self else { return }
+            for await request in await editorSession.navigationRequests() {
+                self.onNavigationRequest?(request)
+            }
+        })
     }
+
+    /// What to do when the editor asks for `gd` / `gr` (REQ-015).
+    ///
+    /// A closure rather than a direct call because answering a navigation needs both this model
+    /// and `SearchModel`, and only the composition root holds both. Routing it from here would
+    /// mean giving the editor model a reference to search just to forward one enum, and the
+    /// forwarding is the whole job (ADR-0113).
+    public var onNavigationRequest: ((EditorNavigationRequest) -> Void)?
 
     public func stop() {
         streamTasks.forEach { $0.cancel() }
         streamTasks.removeAll()
+    }
+
+    // MARK: 구문 팔레트 (REQ-016 AC-3, AC-6)
+
+    /// The appearance the palette is built for.
+    ///
+    /// The view tells the model rather than the model asking: an effective appearance belongs to
+    /// a view hierarchy, and reading `NSApp` from here would answer for the application when the
+    /// question is about the window the editor is actually in.
+    public private(set) var appearanceScheme: AppearanceScheme = .light
+
+    /// Hands the editor the application's colours.
+    ///
+    /// Failure is swallowed on purpose. Highlighting is derived (INV-8), so a palette that did
+    /// not apply must leave the file open and editable — the cost of losing it is a duller
+    /// screen, and the cost of propagating it would be a session that will not start.
+    public func applySyntaxPalette() async {
+        try? await editorSession.applySyntaxPalette(
+            SyntaxPaletteBuilder.palette(for: appearanceScheme)
+        )
+    }
+
+    /// Rebuilds and resends the palette when the system appearance changes (AC-6).
+    public func appearanceChanged(to scheme: AppearanceScheme) async {
+        guard scheme != appearanceScheme else { return }
+        appearanceScheme = scheme
+        await applySyntaxPalette()
     }
 
     // MARK: Handlers
@@ -229,7 +270,14 @@ public final class AppModel {
     }
 
     public func handle(sessionState state: EditorSessionState) {
+        let wasAlreadyConnected = sessionState == .connected
         sessionState = state
+        // A session that just attached is painted with Neovim's own colours. Re-applying on every
+        // fresh connection — not only the first — is what keeps a restart (REQ-004 AC-5) from
+        // silently dropping the theme, which would look like the highlighting "stopped working".
+        if state == .connected, !wasAlreadyConnected {
+            Task { await applySyntaxPalette() }
+        }
     }
 
     // MARK: 렌더 보기 (REQ-013 AC-3, 02b F-14)

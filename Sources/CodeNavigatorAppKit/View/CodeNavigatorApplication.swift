@@ -108,6 +108,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                 model?.tabs.activeTabID
             }
         )
+        // `gd` and `gr` enter through the same door as ⌘B and ⇧⌘B. REQ-015 AC-1 and AC-2 ask for
+        // *the same* result, and the only way to guarantee that is to run the same code — a
+        // parallel path would be similar until the day it was not. Going through the router
+        // rather than straight to `AppModel` also matters: the router is where `showReferences`
+        // resolves the word under the cursor, so a shortcut would drop that step for `gr` alone
+        // and leave a correct value with no path (ADR-0113).
+        //
+        // Installed before `start()`, which is where the subscription is made.
+        model.onNavigationRequest = { [weak model, weak search] request in
+            guard let model, let search else { return }
+            Task { await MenuCommandRouter.perform(request.menuCommand, model: model, search: search) }
+        }
         model.start()
         // Brings back the projects that were open, and lands on the one the user left in
         // front (REQ-012 AC-4). Started rather than awaited: the window should appear now,

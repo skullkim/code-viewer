@@ -77,8 +77,16 @@ final class FakeProjectSession: ProjectSession, @unchecked Sendable {
         symbolSearchResults
     }
 
+    /// Names the reference search was actually asked for, in order.
+    ///
+    /// Recorded because "no search ran" cannot be read off `SearchModel.selectedTab` — that
+    /// starts on `.references`, so asserting the tab did not change is true before the call as
+    /// well as after it. (frontend-senior 추가)
+    private(set) var referenceQueries: [String] = []
+
     func references(to symbolName: String) async throws -> ReferenceSearchResult {
-        referenceResult
+        referenceQueries.append(symbolName)
+        return referenceResult
     }
 
     func searchText(_ query: String, mode: TextSearchMode) async throws -> TextSearchResult {
@@ -106,6 +114,7 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
     private var gridContinuation: AsyncStream<EditorGridSnapshot>.Continuation?
     private var statusContinuation: AsyncStream<EditorStatus>.Continuation?
     private var savedContinuation: AsyncStream<SavedFile>.Continuation?
+    private var navigationContinuation: AsyncStream<EditorNavigationRequest>.Continuation?
 
     private(set) var sentKeys: [String] = []
     private(set) var openedFiles: [(path: String, line: Int?, recordJump: Bool)] = []
@@ -114,6 +123,12 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
     private(set) var mouseEvents: [EditorMouseEvent] = []
     var wordUnderCursorValue: String?
     var startError: Error?
+    /// REQ-015. Set by a test to describe what the session decided about `gd` / `gr`.
+    var keyMappingOutcomes: [EditorKeyMappingOutcome] = []
+    private(set) var appliedSyntaxPalettes: [EditorSyntaxPalette] = []
+    /// Makes palette application throw, for the INV-8 case — highlighting is derived, so losing
+    /// it must not take editing down with it. (frontend-senior 추가)
+    var paletteError: Error?
 
     func start(projectRoot: URL, columns: Int, rows: Int) async throws {
         if let startError {
@@ -131,6 +146,31 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return body()
+    }
+
+    // MARK: - REQ-015 / REQ-016 (backend-senior 가 계약에 추가, 최소 구현)
+
+    func navigationRequests() async -> AsyncStream<EditorNavigationRequest> {
+        AsyncStream { continuation in
+            locked { navigationContinuation = continuation }
+        }
+    }
+
+    /// Lets a test drive `gd` / `gr` without an editor.
+    func emitNavigationRequest(_ request: EditorNavigationRequest) {
+        let continuation = locked { navigationContinuation }
+        continuation?.yield(request)
+    }
+
+    func navigationKeyMappingOutcomes() async -> [EditorKeyMappingOutcome] {
+        locked { keyMappingOutcomes }
+    }
+
+    func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws {
+        if let error = locked({ paletteError }) {
+            throw error
+        }
+        locked { appliedSyntaxPalettes.append(palette) }
     }
 
     func restart() async throws {

@@ -18,6 +18,31 @@ public struct TranslucentColorToken: Sendable, Hashable {
     public func value(for scheme: AppearanceScheme) -> (color: RGBColor, opacity: Double) {
         scheme == .light ? (light, lightOpacity) : (dark, darkOpacity)
     }
+
+    /// The opaque colour this token becomes when drawn over `background`.
+    ///
+    /// Needed because Neovim highlight groups have no alpha: `nvim_set_hl` takes one packed
+    /// RGB, so a translucent token cannot be handed over as-is and has to be resolved against
+    /// the surface it sits on first (REQ-016 AC-2, ADR-0112).
+    ///
+    /// The blend is done on the sRGB components directly, which is **not** the physically
+    /// correct thing to do — compositing belongs in linear light. It is done this way because
+    /// CSS `rgba()` composites in sRGB, the prototype states these tokens as `rgba()`, and the
+    /// prototype is the reference the design-fidelity comparison is made against. Being
+    /// physically right here would put the application a visible step away from the picture it
+    /// is checked against, so the reference wins and the reason is written down.
+    public func flattened(over background: RGBColor, for scheme: AppearanceScheme) -> RGBColor {
+        let (color, opacity) = value(for: scheme)
+        let alpha = min(max(opacity, 0), 1)
+        func blend(_ source: Double, _ destination: Double) -> Double {
+            source * alpha + destination * (1 - alpha)
+        }
+        return RGBColor(
+            red: blend(color.red, background.red),
+            green: blend(color.green, background.green),
+            blue: blend(color.blue, background.blue)
+        )
+    }
 }
 
 extension DesignTokens {
