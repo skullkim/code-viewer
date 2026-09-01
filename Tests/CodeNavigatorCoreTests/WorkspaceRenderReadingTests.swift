@@ -56,7 +56,7 @@ struct WorkspaceRenderReadingTests {
         let workspace = makeWorkspace()
         let tab = try await workspace.openProject(at: fixture.rootURL)
 
-        await #expect(throws: NavigatorError.invalidPath("../escape.png")) {
+        await #expect(throws: NavigatorError.pathOutsideProject("../escape.png")) {
             try await workspace.renderResource(atRelativePath: "../escape.png", in: tab.tab.id)
         }
         await workspace.shutDown()

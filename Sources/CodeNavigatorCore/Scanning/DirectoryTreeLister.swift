@@ -76,7 +76,7 @@ struct DirectoryTreeLister {
 
         let segments = relativePath.split(separator: "/").map(String.init)
         guard !segments.contains("..") else {
-            throw NavigatorError.invalidPath(relativePath)
+            throw NavigatorError.pathOutsideProject(relativePath)
         }
 
         return segments

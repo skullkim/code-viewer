@@ -123,10 +123,12 @@ struct DirectoryTreeListerTests {
         let fixture = TemporaryProjectFixture()
         fixture.write("src/App.kt")
 
-        #expect(throws: NavigatorError.invalidPath("..")) {
+        // 거절 이유는 `invalidPath`(계약 오용)가 아니라 `pathOutsideProject`(INV-6)다.
+        // 올라가려는 경로는 잘못 쓴 경로가 아니라 밖으로 나가려는 경로다.
+        #expect(throws: NavigatorError.pathOutsideProject("..")) {
             try list(fixture, at: "..")
         }
-        #expect(throws: NavigatorError.invalidPath("src/../src")) {
+        #expect(throws: NavigatorError.pathOutsideProject("src/../src")) {
             try list(fixture, at: "src/../src")
         }
     }

@@ -279,3 +279,265 @@ gitignore 별표/앵커링/디렉토리전용/부정/중첩 · 스캐너 심링�
   이들을 `ProjectSession` 계약에 배선하는 것과, 프론트엔드 화면(F-12·15·16)이다.
 - REQ-004는 `NeovimEditorSession`(BE-16)이 코덱을 배선한 테스트가 있어야 닫힌다. REQ-010은 표준 모드가
   앱 측 번역표에서 Neovim 옵션·매핑(`NeovimStandardMode`, 시니어 소유)으로 옮겨져 그쪽 테스트가 커버한다.
+
+---
+
+# 증분 3 — REQ-015 · 016 · 017 (backend-senior, 2026-09-01)
+
+기준 트리: `c7a6bf7` + 미커밋 변경. **엔진 영역만**이다 — 프론트엔드 배선·라이브 확인은 아래 "미충족" 절에 정직하게 남긴다.
+
+## REQ-015 — Vim 모드 `gd` / `gr`
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-1 (`gd` → 정의 이동 요청) | `theNavigationKeysAskTheApplicationForTheMatchingAction` | NavigationKeyTests | PASS |
+| AC-2 (`gr` → 사용처 목록 요청) | 위 + `findingReferencesDoesNotWaitOutTheMappingTimeout` | NavigationKeyTests | PASS |
+| AC-3 (⌘B·⇧⌘B 그대로) | **엔진 미커버 — 구조로 보장, 프론트 검증 필요** (아래 참조) | — | 프론트 |
+| AC-4 (정의 여럿이면 후보 목록) | **엔진 미커버 — 같은 핸들러 재사용이라 구조로 상속** | — | 프론트 |
+| AC-5 (심볼 아니면 이유를 말한다) | **엔진 미커버 — ⌘B 핸들러 소유** | — | 프론트 |
+| AC-6 (사용자 매핑 우선) | `aUserMappingKeepsItsKey` · `aUserDefinedPrefixedMappingSurvives` · `bothKeysAreInstalledOnAStockConfiguration` | NavigationKeyTests | PASS |
+| AC-6 (판정 규칙, 순수) | `NavigationKeyMappingClassifierTests` 10건 | NavigationKeyMappingClassifierTests | PASS |
+| INV-7 (설정 파일 비수정) | `theUsersConfigurationFileIsNeverWritten` · `nothingIsWrittenIntoTheConfigurationDirectory` | NavigationKeyTests | PASS |
+| SC-10 | AC-1·AC-2 테스트가 함께 커버 | NavigationKeyTests | PASS |
+
+**AC-3·AC-4·AC-5 를 엔진이 커버하지 않는 것은 설계다.** `EditorNavigationRequest` 는 페이로드가 비어 있어서
+앱이 ⌘B·⇧⌘B 와 **같은 핸들러**를 부를 수밖에 없다. 세 AC 는 "두 경로가 같은가"인데, 경로가 하나면 질문이
+사라진다. 다만 **그 하나가 실제로 불리는지는 프론트가 검증해야 한다** — 구조가 보장하는 것은 동일성이지
+배선이 아니다.
+
+## REQ-016 — 구문 강조 + 같은 심볼 강조
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-1 (토큰별 다른 색) | `supportedLanguageTokensTakeTheirColoursFromThePalette` (색 3종이 서로 다름까지 단언) | SyntaxHighlightTests | PASS |
+| AC-2 (같은 심볼 강조·커서 추종) | `theSymbolUnderTheCursorLightsUpItsTwinsAndReleasesThemOnMoving` · `punctuationUnderTheCursorLightsUpNothing` | SyntaxHighlightTests | PASS |
+| AC-3 (디자인 토큰에서 온 색) | 위 AC-1 테스트 — 팔레트 값과 그리드 런의 색이 같음 | SyntaxHighlightTests | PASS |
+| AC-4 (미지원 언어 평문) | `anUnsupportedLanguageRendersPlain` (`.py`·`.go`) · `unsupportedLanguagesGetNoSameSymbolHighlight` | SyntaxHighlightTests | PASS |
+| AC-4 (허용목록, 순수) | `SyntaxAllowListTests` 5건 (빈 파일타입·SourceLanguage 전수 포함) | SyntaxAllowListTests | PASS |
+| AC-5 (편집을 느리게 하지 않음) | `highlightingDoesNotSlowTyping` (같은 세션에서 끄고/켜 비교) | MouseInteractionTests | PASS |
+| AC-6 (앱 테마가 이긴다) | `theApplicationPaletteWinsOverAUserColourScheme` · `aLaterColourSchemeChangeDoesNotWin` | SyntaxHighlightTests | PASS |
+| INV-8 (강조 실패가 편집을 안 막음) | `editingWorksWithoutAnyPalette` · `anUnsupportedLanguageStillEdits` | SyntaxHighlightTests | PASS |
+| SC-11 | AC-2 테스트 (5곳 강조 → 커서 이동 시 1곳으로 교체) | SyntaxHighlightTests | PASS |
+| SC-13 | AC-4 테스트 + `anUnsupportedLanguageStillEdits` (뒷문장까지) | SyntaxHighlightTests | PASS |
+
+## REQ-017 — 마우스 클릭·드래그
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-1 (클릭 → 커서, 노멀·삽입) | `clickingMovesTheCursorInNormalMode` · `clickingMovesTheCursorInInsertMode` | MouseInteractionTests | PASS |
+| AC-2 (드래그 → 비주얼 선택, 놓아도 유지) | `draggingSelectsAndTheSelectionSurvivesTheRelease` | MouseInteractionTests | PASS |
+| AC-3 (선택이 화면에 보임) | `theSelectedRangeIsVisibleOnScreen` (팔레트의 선택색 셀 수 > 0) | MouseInteractionTests | PASS |
+| AC-4 (Vim 명령이 먹음) | `vimCommandsApplyToAMouseMadeSelection` (`d`) · `copyingTakesAMouseMadeSelection` | MouseInteractionTests | PASS |
+| AC-5 (휠·더블클릭 범위 밖) | 범위 밖 — 구현하지 않음 | — | N/A |
+| 사용자가 마우스를 꺼 뒀을 때 | `theSessionTurnsTheMouseOnEvenWhenTheUserTurnedItOff` | MouseInteractionTests | PASS |
+| SC-12 | AC-4 테스트 (3줄 드래그 후 `d`, 선택 밖 줄 보존까지 단언) | MouseInteractionTests | PASS |
+
+## 환경 가정 (ADR-0010·0011·0012 의 근거)
+
+| 가정 | 테스트 | 상태 |
+|---|---|---|
+| nvim 이 3언어 구문 파일을 갖고 강조가 켜져 있다 | `neovimShipsSyntaxForEverySupportedLanguage` | PASS |
+| 색이 `EditorTextStyle` 까지 온다 | `syntaxColoursReachTheContract` | PASS |
+| 앱의 `nvim_set_hl` 이 colorscheme 을 이긴다 | `applicationPaletteWinsOverTheColourScheme` | PASS |
+| 파이썬은 기본 칠해지고 `syntax=OFF` 가 지운다 | `turningSyntaxOffMakesABufferPlain` | PASS |
+| 매핑 세 상태가 구별된다 | `userMappingsAreDistinguishableFromEditorDefaults` | PASS |
+| `gr` 접두 지연과 그 해소 | `theEditorDefaultPrefixFamilyDelaysPlainGr` | PASS |
+| `mouse=''` 의 클릭/드래그 비대칭 | `disablingMouseKillsDragButNotClick` | PASS |
+| 드래그 선택이 그리드에 도착 | `mouseSelectionReachesTheGridAsBackground` | PASS |
+
+> ⚠ **이 스위트는 반드시 `BareEditor`(우리가 설정하지 않은 nvim)로 잰다.** 처음엔 `NeovimEditorSession`
+> 으로 쟀는데, 허용목록과 `gd`/`gr` 설치가 들어오자 "파이썬이 안 칠해진다"·"`grr` 이 없다"로 깨졌다.
+> **둘 다 우리 세션에 대해서는 참이고 Neovim 에 대해서는 거짓**이었다 — 즉 환경 가정을 재는 척하며
+> 우리 자신을 재고 있었다. 그 상태로 두면 Neovim 이 진짜로 바뀌는 날 구별할 수 없다.
+
+## 게이트 상태 (증분 3, backend-senior 실행)
+
+- **`swift test` 전량: 1,486 tests / 191 suites 통과, exit 0** @ `c7a6bf7` + 미커밋 (증분 전 1,407 → +79)
+- **`gate.sh`: `GATE: PASS` (exit 0)** — 조용한 창에서 1회 실행. 빌드·테스트·실행 건수 하한(1,486 ≥ 240)·
+  프론트 시각 회귀·뷰 마운트·마운트 자체검사·입력 소스 비침범·숫자 형식·탭 범위·포커스 대칭·포커스
+  자체검사·`.app` 조립·번들 실행·번들 자체검사·고아 nvim 0·민감정보 스캔 461건 클린.
+- 격리 측정: **유휴 메모리 29MB**(예산 150MB) · **탭 여닫기 총 752KB**(인덱스 하나 5,552KB).
+- ⚠ **첫 실행은 FAIL 이었다** — 격리 측정 2건이 `다른 테스트 프로세스 2개가 돌고 있다`로 거절됐다.
+  다른 에이전트의 `swift test` 와 겹친 것이고, **게이트가 옳게 거절한 것이지 결함이 아니다.**
+  프론트 시니어와 직렬화를 합의한 뒤 조용한 창에서 재실행해 위 값을 얻었다.
+
+## 증분 3 미충족 / 범위 밖 (정직한 상태)
+
+- **REQ-015 AC-3·AC-4·AC-5 는 프론트엔드**다. 엔진은 빈 신호만 보내고 판단하지 않는다.
+  특히 AC-5("심볼이 아니면 이유를 말한다")는 ⌘B 핸들러가 이미 그러는지에 달렸다 — frontend-senior 확인 대기.
+- **REQ-017 은 엔진 경계까지만 쟀다.** 클릭·드래그·선택·Vim 명령 전부 통과하지만, **실제 앱에서 픽셀이
+  셀로 바뀌어 이 경로에 닿는지는 아무도 안 봤다.** 사용자가 요구했다는 것은 어딘가에서 안 된다는 뜻이고,
+  그 어딘가는 내가 잰 구간 밖이다. **완료 주장 안 한다.**
+- **`sameSymbolBackground` 디자인 토큰이 없다** — PD 결정 대기. 테스트는 임의 값으로 메커니즘만 검증한다.
+- **`02_design.md:289`** 의 구문 토큰에 "실제로는 Neovim/사용자 테마 소유"라는 단서가 남아 있는데
+  AC-3·AC-6 이 그 소유권을 뒤집었다 — 문서 정정 필요.
+- **`gr` 접두 해소안(Neovim 기본 `gr*` 6개 세션 삭제)은 리더 승인 대기**다. 구현은 들어가 있고 테스트도
+  통과하지만, 승인이 뒤집히면 `lhs` 상수만 바꾸면 된다.
+
+
+---
+
+# 증분 3 — 프론트엔드 (frontend-senior, 2026-09-01)
+
+기준 트리: `c7a6bf7` + 미커밋. **앱 영역만**이다. 엔진 쪽은 위 backend-senior 절이 단일 소스다.
+
+> 이 표의 PASS 도 위 리더 경고를 그대로 받는다 — **"나열된 테스트가 통과한다"** 는 뜻이고
+> **"화면에서 성립한다"** 는 뜻이 아니다. 라이브 미확인 항목은 맨 아래에 남긴다.
+
+## REQ-017 — 마우스 (앱 경계)
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-1 (클릭이 이벤트가 됨) | `clickingForwardsAPress` · `theVerticalAxisIsNotUpsideDown` · `theHorizontalAxisRunsLeftToRight` | EditorMouseForwardingTests | PASS |
+| AC-2 (누름→끌기→놓기 순서) | `aDragForwardsPressThenDragThenRelease` | EditorMouseForwardingTests | PASS |
+| AC-3·AC-4 | **엔진 절의 `MouseInteractionTests` 가 단일 소스** — 중복 회수 협의 중 | — | 백엔드 |
+
+**이 스위트가 이번 증분에서 실제 결함을 잡은 유일한 앱 계층 테스트다.** `forward()` 가 마우스
+이벤트로 `KeyStroke(event)` 를 만들어 `keyCode`(키보드 전용)를 읽었고, AppKit 이 예외를 던져
+**클릭이 `onMouse` 에 닿기 전에 죽었다.** `c7a6bf7` 에서 이 스위트는 crash 한다.
+
+## REQ-016 — 강조 (앱이 소유한 색)
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-3 (색이 02_design 토큰에서) | `syntaxTokensMatchTheDesignDocument` · `syntaxTypeAndTealStayTogether` | DesignTokenTests | PASS |
+| AC-3 (대비 바닥, REQ-011 AC-4) | `syntaxTokensClearTheContrastFloorOnTheEditorBackground` (라이트·다크 × 6종) | DesignTokenTests | PASS |
+| AC-3 (슬롯 매핑이 안 뒤집힘) | `everySyntaxSlotCarriesItsOwnToken` · `theSixColoursAreDistinct` | SyntaxPaletteBuilderTests | PASS |
+| AC-2 (같은 심볼 배경색 값) | `theBackgroundsArriveFlattened` · `TranslucentTokenFlatteningTests` 4건 | SyntaxPaletteBuilderTests · TranslucentTokenFlatteningTests | PASS |
+| AC-6 (앱 테마가 이긴다 — 전송) | `connectingSendsThePalette` · `reconnectingResendsThePalette` · `changingAppearanceResendsTheMatchingPalette` · `anUnchangedAppearanceSendsNothing` | SyntaxPaletteWiringTests | PASS |
+| AC-6 (외형 판정) | `darkAppearanceSelectsTheDarkPalette` · `lightAppearance…` · `theHighContrastDarkVariantIsStillDark` | NavigationRequestRoutingTests | PASS |
+| AC-6 (뷰가 외형을 실제로 알림) | `mountingReportsTheAppearance` · `aLightWindowReportsLight` · `aSystemAppearanceChangeIsReportedWithoutBeingAsked` | EditorAppearanceReportingTests | PASS |
+| INV-8 (강조 실패가 편집을 안 막음) | `aFailedPaletteDoesNotStopEditing` | SyntaxPaletteWiringTests | PASS |
+
+⚠ **이 값들은 PD 개정으로 대체됐다.** 내가 잰 4.60/4.69 는 `02_design.md:289` **산문**의 초판
+값이고, PD 가 그 사이 **§4.1.1 표**를 새로 발행해 5개 값을 바꿨다. 발행값 기준 최악은
+다크 `syn-cmt` **4.73**(여유 0.23)이고 전 항목이 4.5 이상이다.
+**단일 소스는 §4.1.1 표다 — §4.1 산문이 아니다.**
+
+⚠ **그리고 표면이 하나가 아니었다.** 초판 검사는 콘텐츠 배경만 걷고 통과했는데, 그 값들은
+**선택 배경 위에서 6종 중 4종이 4.5 아래**였다(type 4.46 · str 4.39 · num 3.93 · cmt 4.01).
+지금은 **6종 × 편집기 표면 3종 = 18조합**을 걷는다.
+
+## REQ-015 — `gd` / `gr` (앱 경계)
+
+| AC | 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|---|
+| AC-1·AC-2 (신호가 앱에 도착) | `navigationRequestsReachTheApplication` | SyntaxPaletteWiringTests | PASS |
+| AC-1·AC-2 (요청→명령 매핑) | `eachRequestMapsToItsOwnCommand` · `theTwoRequestsDoNotCollapse` | NavigationRequestRoutingTests | PASS |
+| AC-3 (⌘B·⇧⌘B 그대로) | 구조 — 메뉴 경로 무변경. `MenuCommandModeSafetyTests` 기존 통과 | — | 구조 |
+| AC-4 (후보 목록) | 구조 — `.goToDefinition` 재사용, `DefinitionRoutingTests` 기존 통과 | — | 구조 |
+| **AC-5 (이유를 말한다)** | `findingReferencesWithoutASymbolExplainsItself` · `noSymbolMeansNoSearch` · `aSymbolIsActuallySearchedFor` · `goingToDefinitionWithoutASymbolSaysTheSameThing` | NoSymbolUnderCursorTests | **PASS** |
+
+**AC-5 는 backend-senior 가 "frontend-senior 확인 대기"로 남긴 항목이다 — 확인 완료.** `gd` 는
+`DefinitionRouting` 이 이미 덮고 있었고 **`gr` 은 덮이지 않았다**(가드가 순수 타입이 아니라
+`MenuCommandRouter` 안에 있어 아무도 걷지 않았다). 네 테스트로 두 키 모두 고정했고, 같은 상황에
+**두 키가 같은 문구**를 내는 것까지 단언한다.
+
+## 게이트 (frontend-senior 측정)
+
+- **`swift test` 전량: 1,502 tests / 194 suites 통과** @ `c7a6bf7` + 미커밋 (최종)
+- **프론트 시각 회귀 `DesignRegression`: 16건 통과** — 구문 토큰 6종 추가가 기존 대조를 깨지 않았다
+- **`gate.sh` 는 돌리지 않았다.** 격리 스텝이 *"머신에 다른 `swift test` 가 없음"* 을 전제하는데
+  (gate.sh 61행) 팀이 작업 중이다. 지금 돌리면 **가짜 빨간불**이고 상대 작업도 깬다.
+  조용한 창은 리더가 연다 — 백엔드의 SC-8·메모리 미완 항목과 **같은 이유, 같은 창**이다.
+
+## 미충족 / 라이브 미확인 (정직한 상태)
+
+- **셋 다 라이브를 안 거쳤다.** 클릭·드래그도, `gd`/`gr` 도, 자바 파일 색도. 합성 `NSEvent` 와
+  가짜 세션까지가 잰 구간이다. **완료 주장 안 한다.**
+- **AC-3·AC-4 테스트가 백엔드와 중복**이다(`MouseInteractionTests` ↔ `NeovimMouseInputTests`).
+  백엔드 것이 더 강하다(선택색 **정확 일치** · 선택 밖 줄 보존 · `y` 까지). **내 쪽 회수 제안했고
+  합의 대기.** 합의 전까지 둘 다 통과하므로 커버리지 손실은 없다.
+- **순서 위험(미측정)**: 이벤트마다 `Task { }` — 액터 홉의 FIFO 는 언어 보장이 아니다. 다만 키
+  입력이 같은 경로를 훨씬 높은 빈도로 쓰는데 타이핑이 안 뭉개진다. **재지 않은 문제에 기계를
+  만들지 않았다.** `03f` §5 에 기록.
+
+## 인증 후 처리 1·2 (backend-senior, 2026-09-01)
+
+**1번 `bufferLines` 의 세 개의 0 — 이미 닫혀 있었다.** 목록이 낡았다. 실측:
+`MessagePackValue.textArrayValue` 가 `.string`·`.binary` 를 모두 읽고 못 읽으면 `nil` 을 준다.
+`nvim_buf_get_lines` 소비처 **2곳 전부**가 그것을 쓰고 실패 시 `editorRequestFailed` 를 던진다.
+`compactMap(\.stringValue)` 잔존 **0건**(전 소스 grep). `BufferLineDecodingTests` 가 빈 것/못 읽은 것/
+배열 아닌 것을 각각 단언한다. → 할 일 없음.
+
+**2번 `invalidPath` 오분류 — 고쳤다.** 하나의 case 가 **네 상황**을 받고 있었다:
+
+| 상황 | 발생 지점 | 새 분류 |
+|---|---|---|
+| 절대 경로 | `ProjectRelativePath:26` · `DirectoryTreeLister:74` | `invalidPath` (계약 오용) |
+| 빈 경로 | `ProjectRelativePath:38` | `invalidPath` (계약 오용) |
+| `..` 세그먼트 | `ProjectRelativePath:35` · `DirectoryTreeLister:79` · `NeovimEditorSession:435` | **`pathOutsideProject`** (INV-6) |
+| 심링크가 밖을 가리킴 | `ProjectRelativePath:57` | **`pathOutsideProject`** (INV-6) |
+
+`NavigatorError.pathOutsideProject(String)` 추가. 문장도 갈렸다 —
+"잘못된 경로입니다" vs "프로젝트 밖의 경로는 열 수 없습니다".
+
+| 커버하는 테스트 | 스위트 | 상태 |
+|---|---|---|
+| 네 상황 각각 + 정상 통과 + 없는 파일 보존 + 두 진입점(트리·편집기) + 문장 차이 | `PathRejectionClassificationTests` 9건 | PASS |
+| 기존 3건이 옛 분류를 고정하고 있어 새 분류로 갱신 | DirectoryTreeListerTests · WorkspaceRenderReadingTests · NeovimEditorSessionTests | PASS |
+
+> ⚠ **이 변경이 조용한 회귀를 하나 만들 뻔했다.** `RenderDocumentModel.failure(for:)` 의 `default` 가
+> 새 case 를 `.notReadable` 로 삼켰고, 그러면 `blockedKind` 가 `nil` 을 돌려줘 **INV-6 차단이 W-15
+> 차단 목록에서 통째로 사라진다.** 그 함수 바로 위 주석이 "셋을 한 사건으로 뭉개면 샌드박스 칩이
+> 무엇이 일어났는지 말할 수 없다"고 경고하고 있었다. `case .invalidPath, .pathOutsideProject:` 로
+> 이름을 적어 고쳤다.
+>
+> **positive control 로 확인한 것**: 고친 것을 일부러 되돌리고 전체를 돌렸더니 **그 매핑을 잡는
+> 테스트는 0건**이었다(깨진 3건은 전부 엔진 레벨 분류였다). 즉 이 회귀는 게이트를 통과했을 것이다.
+> 프론트엔드 커버리지 갭으로 frontend-senior 에 보고했다.
+
+### 게이트 (인증 후 처리 포함, 조용한 창)
+```
+GATE: PASS (exit 0)
+swift test  1,499 tests / 193 suites 통과   (증분 3 후 1,486 → +13)
+격리 측정   유휴 메모리 30MB · 탭 여닫기 1,216KB (인덱스 하나 4,624KB)
+민감정보    463건 대상 클린
+```
+
+## 증분 3 보강 (backend-senior, PD·리더 지시 반영)
+
+**PD 요청 실측 2건 (revision 기준선 적용)**
+
+| 물음 | 답 |
+|---|---|
+| `matchadd` 배경이 구문 전경색을 유지하나 덮나 | **유지(병합)** — 강조 전후 `#C792EA` 동일, 배경만 더해진다. **PD 의 "배경만 주면 된다" 전제가 맞다** |
+| 선택이 같은 심볼 강조를 이기는가 | **이긴다** — 선택 배경 69셀 / match 배경 6셀. 드래그한 자리는 선택색으로 덮인다 |
+
+**그 측정이 드러낸 AC-2 결함 1건 (고침)**
+
+`matchadd` 측정의 "강조 전" 프레임에 **이미 match 배경이 있었다** — 커서가 `const` 위에 있었고
+우리 같은 심볼 강조가 **키워드에 발화**하고 있었다. 커서를 `const` 에 두면 파일의 모든 `const` 에
+불이 켜진다. AC-2 의 낱말은 **심볼**이고 키워드는 심볼이 아니다.
+
+낱말→표준 그룹 실측(TypeScript)으로 갈랐다:
+```
+class·const·function → Statement      string → Type          (전부 키워드)
+UserService → typescriptClassName     beta → Function        (전부 심볼)
+alpha → typescriptVariableDeclaration gamma → PreProc
+```
+→ 비심볼 그룹에 키워드 계열(`Statement`·`Keyword`·`Conditional`·`Repeat`·`Label`·`Exception`·
+`Operator`·`StorageClass`·`Structure`·`Typedef`·`Type`) 추가. **사용자가 지은 이름은 언어별
+그룹이나 무그룹이라 `Type` 을 막아도 클래스 이름을 잃지 않는다.**
+
+**REQ-015 AC-7·AC-8 (리더 승인 조건)**
+
+| AC | 커버하는 테스트 | 상태 |
+|---|---|---|
+| AC-7·AC-8 (사용자 `gr*` 있으면 `gr` 미설치 + 이유를 남긴다) | `aUserPrefixMappingWithholdsOurKeyAndSaysSo` | PASS |
+| 기본 `gr*` 만 있으면 그것만 제거하고 설치 | `onlyTheEditorsOwnPrefixKeysAreRemoved` | PASS |
+
+새 판정 `withheldToKeepUserPrefixKeys` + `conflictingKeys`. `deferredToUserMapping` 과 **다른
+case** 인 이유: 그쪽은 "사용자가 *이 키*를 갖고 있다", 이쪽은 "사용자가 *이 키로 시작하는 다른
+키*를 갖고 있다". 뭉개면 앱이 정확한 이유를 말할 수 없다.
+
+**계약 3필드 추가 (PD §4.1.1 요구)**
+`keywordIsBold` · `normalForeground` · `normalBackground`. `Identifier` 와 `Normal` 을 명시해
+누르지 않으면 사용자 colorscheme 이 우리가 고르지 않은 색을 그 자리에 넣는다 (AC-6).
+
+### 게이트
+```
+swift test --no-parallel   1,522 tests / 195 suites 통과, exit 0, SIGSEGV 0   (조용한 창)
+```
+⚠ 병렬(`swift test`)은 알려진 SwiftUI `AttributedString` 해제 경쟁으로 절반이 죽는다
+(`gate.sh:397`). **이 값은 직렬 값이다.**

@@ -8,7 +8,15 @@ public enum NavigatorError: Error, Sendable, Equatable {
     case projectNotFound(path: String)
     case projectNotReadable(path: String, reason: String)
     case noProjectOpen
+    /// The caller did not supply a project-relative path at all — it was absolute, or empty.
+    /// A mistake in how this contract was called, not an attempt to reach outside it.
     case invalidPath(String)
+    /// Resolving the path would leave the open project, so it was refused (INV-6).
+    ///
+    /// Separate from `invalidPath` because the two are different events. One is a caller mistake
+    /// and the other is a boundary doing its job — and an escape that reads as a typo in a log is
+    /// an escape nobody looks at.
+    case pathOutsideProject(String)
     case fileNotFound(path: String)
     /// Too big to render. Carries both numbers because the view names them (design W-14).
     case fileTooLarge(path: String, byteSize: Int, limit: Int)
@@ -35,6 +43,8 @@ extension NavigatorError: LocalizedError {
             return "열려 있는 프로젝트가 없습니다."
         case .invalidPath(let path):
             return "잘못된 경로입니다: \(path)"
+        case .pathOutsideProject(let path):
+            return "프로젝트 밖의 경로는 열 수 없습니다: \(path)"
         case .fileNotFound(let path):
             return "파일을 찾을 수 없습니다: \(path)"
         case .fileTooLarge(_, let byteSize, let limit):

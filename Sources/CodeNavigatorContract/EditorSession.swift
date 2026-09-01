@@ -81,6 +81,32 @@ public protocol EditorSession: Sendable {
     /// Selects the whole buffer.
     func selectAll() async throws
 
+    /// `gd` and `gr` presses, one value each (REQ-015 AC-1, AC-2).
+    ///
+    /// The value says which navigation was asked for and nothing else. The application answers it
+    /// the same way it answers ⌘B and ⇧⌘B — by reading the word under the cursor itself — which is
+    /// what makes "the same result" (AC-1, AC-2) a fact about the code rather than a promise.
+    ///
+    /// Past presses are not replayed to a late subscriber: this is an event, not a state, and a
+    /// replayed jump would move the user without them touching a key.
+    func navigationRequests() async -> AsyncStream<EditorNavigationRequest>
+
+    /// What this session decided about each navigation key (REQ-015 AC-6).
+    ///
+    /// Present so that "we did not overwrite the user's mapping" can be checked from outside the
+    /// engine. Nothing in the interface has to display it.
+    func navigationKeyMappingOutcomes() async -> [EditorKeyMappingOutcome]
+
+    /// Paints the editor's highlight groups with the application's colours (REQ-016 AC-3, AC-6).
+    ///
+    /// Call after starting, and again whenever the theme changes. The session re-applies the
+    /// palette after any colourscheme change inside the editor, so the application's theme is
+    /// what stays on screen.
+    ///
+    /// Not calling this is a supported state: the editor keeps its own colours and text still
+    /// renders (INV-8).
+    func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws
+
     /// The identifier under the cursor, used as the query for go-to-definition and references.
     func wordUnderCursor() async throws -> String?
 

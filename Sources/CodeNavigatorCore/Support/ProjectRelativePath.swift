@@ -32,7 +32,7 @@ struct ProjectRelativePath {
         // `docs..old` is not an escape attempt, and refusing it would be a bug the user cannot
         // work around.
         guard !segments.contains("..") else {
-            throw NavigatorError.invalidPath(relativePath)
+            throw NavigatorError.pathOutsideProject(relativePath)
         }
         guard !segments.isEmpty else {
             throw NavigatorError.invalidPath(relativePath)
@@ -54,7 +54,7 @@ struct ProjectRelativePath {
         // with the root's name (`/repo-backup` beside `/repo`) is not mistaken for a child.
         let rootPrefix = canonicalRoot.hasSuffix("/") ? canonicalRoot : canonicalRoot + "/"
         guard canonicalFile.hasPrefix(rootPrefix) else {
-            throw NavigatorError.invalidPath(relativePath)
+            throw NavigatorError.pathOutsideProject(relativePath)
         }
 
         return ProjectRelativePath(

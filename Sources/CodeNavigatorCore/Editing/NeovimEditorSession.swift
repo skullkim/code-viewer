@@ -12,6 +12,8 @@ public actor NeovimEditorSession: EditorSession {
     private static let savedNotification = "code_navigator_saved"
     private static let statusNotification = "code_navigator_status"
     private static let dirtyNotification = "code_navigator_dirty"
+    /// `gd` / `gr`, pressed inside the editor (REQ-015).
+    private static let navigationNotification = "code_navigator_navigate"
     /// How long a jump target stays highlighted. Long enough for the eye to catch the line,
     /// short enough that it does not linger as if it were a selection.
     private static let jumpHighlightMilliseconds = 700
@@ -51,6 +53,14 @@ public actor NeovimEditorSession: EditorSession {
     private var lastPublishedStatus: EditorStatus?
     private var lastKnownMode: EditorMode = .normal
     private var startupTimeoutOverride: Duration?
+
+    /// A full environment for the editor process, for tests that need to describe a machine with
+    /// a particular user configuration.
+    ///
+    /// Set through the process environment instead, and the fixture leaks: this suite starts many
+    /// editors and they run at the same time, so an `XDG_CONFIG_HOME` meant for one test is read
+    /// by every editor another suite happens to start while it runs.
+    private var environmentOverrideForTesting: [String: String]?
     private var effectiveStartupTimeout: Duration { startupTimeoutOverride ?? NeovimChannel.startupTimeout }
 
     private var stateBroadcaster = EventBroadcaster<EditorSessionState>(initialValue: .notStarted)
@@ -58,6 +68,17 @@ public actor NeovimEditorSession: EditorSession {
     private var statusBroadcaster = EventBroadcaster<EditorStatus>()
     private var savedFileBroadcaster = EventBroadcaster<SavedFile>()
     private var dirtyChangeBroadcaster = EventBroadcaster<String>()
+
+    /// `gd` / `gr` presses. **Events, not state** — a late subscriber must not be handed the
+    /// last keypress and jump somewhere the user did not ask for just now (§3.4).
+    private var navigationRequestBroadcaster =
+        EventBroadcaster<EditorNavigationRequest>(replayPolicy: .eventsOnly)
+
+    /// What this session decided about each navigation key, in the order it decided (REQ-015 AC-6).
+    private var keyMappingOutcomes: [EditorKeyMappingOutcome] = []
+
+    /// The palette last applied, so a restart can restore it without the application asking again.
+    private var appliedSyntaxPalette: EditorSyntaxPalette?
     private var notificationTask: Task<Void, Never>?
 
     /// Creates a session. Pass `executableOverridePath` to use a specific Neovim build; by
@@ -75,6 +96,21 @@ public actor NeovimEditorSession: EditorSession {
     }
 
     // MARK: - Lifecycle
+
+    /// Starts with the user's configuration coming from a fixture directory.
+    ///
+    /// The whole current environment is carried over and only `XDG_CONFIG_HOME` replaced, so the
+    /// editor still finds its executable, its state directory, and everything else the suite has
+    /// already arranged.
+    func startWithUserConfigurationForTesting(
+        configurationHome: URL, projectRoot: URL, columns: Int, rows: Int
+    ) async throws {
+        var environment = ProcessInfo.processInfo.environment
+        environment["XDG_CONFIG_HOME"] = configurationHome.path
+        environmentOverrideForTesting = environment
+        defer { environmentOverrideForTesting = nil }
+        try await start(projectRoot: projectRoot, columns: columns, rows: rows)
+    }
 
     /// Lets a test use a short start-up budget instead of waiting out the real one.
     func startForTesting(
@@ -136,6 +172,7 @@ public actor NeovimEditorSession: EditorSession {
             try await channel.start(
                 executableURL: executableURL,
                 arguments: ["--cmd", "cd \(shellQuoted(projectRoot.path))"],
+                environment: environmentOverrideForTesting,
                 workingDirectory: projectRoot
             )
         } catch {
@@ -161,6 +198,16 @@ public actor NeovimEditorSession: EditorSession {
             recordStage("부착")
             try await installNotificationHooks(on: channel)
             recordStage("핸드셰이크")
+
+            // Everything below runs **after** the user's configuration has loaded, which
+            // `nvim_ui_attach` above is what triggers (ADR-0006). Running any of it earlier would
+            // read an editor that has not yet been configured: the user's `gd` would look absent
+            // and get overwritten (REQ-015 AC-6), and their `set mouse=` would land on top of
+            // ours (REQ-017).
+            await installSessionInteractionOptions(on: channel)
+            await installNavigationKeyMappings(on: channel)
+            await installHighlightBehaviour(on: channel)
+            recordStage("상호작용")
         } catch {
             await channel.terminate()
             self.channel = nil
@@ -385,7 +432,7 @@ public actor NeovimEditorSession: EditorSession {
             throw NavigatorError.noProjectOpen
         }
         guard !relativePath.split(separator: "/").contains("..") else {
-            throw NavigatorError.invalidPath(relativePath)
+            throw NavigatorError.pathOutsideProject(relativePath)
         }
 
         // Mark the current spot first so the Vim jump motions come back here (REQ-005 AC-4).
@@ -802,6 +849,268 @@ public actor NeovimEditorSession: EditorSession {
         ])
     }
 
+    // MARK: - Session interaction (REQ-015, REQ-016, REQ-017)
+
+    /// Options this application needs regardless of how the user configured their terminal editor.
+    ///
+    /// `mouse=a` is here because REQ-017 is not a conditional requirement. Measured, the default
+    /// is `nvi` and clicking and dragging both work — but with `mouse=` set, **clicking still
+    /// moves the cursor while dragging silently stops selecting**. Half-working is the worst
+    /// shape for this to fail in, and a user who turned the mouse off in their terminal was
+    /// making a decision about a terminal, not about a window they drag-select in.
+    ///
+    /// Like `showtabline=0`, this is a rendering-and-interaction contract for the embedded
+    /// session, not an edit to the user's configuration (INV-7).
+    private func installSessionInteractionOptions(on channel: NeovimChannel) async {
+        _ = try? await channel.request("nvim_command", [.string("set mouse=a")])
+    }
+
+    /// Installs `gd` and `gr` — except where the user's own configuration already holds them.
+    ///
+    /// Order matters and is not obvious: the ownership question is asked **now**, after the
+    /// user's configuration has run. Asked before, every key looks free.
+    private func installNavigationKeyMappings(on channel: NeovimChannel) async {
+        keyMappingOutcomes = []
+
+        guard let channelIdentifier = await requestChannelIdentifier(from: channel) else { return }
+        let editorRuntimePath = await runLua(NeovimNavigationKeyScript.runtimePathScript, on: channel) ?? ""
+
+        for (keys, request) in Self.navigationKeyAssignments {
+            guard let owner = await keyMappingOwner(
+                forKeys: keys, editorRuntimePath: editorRuntimePath, on: channel
+            ) else {
+                continue
+            }
+
+            guard NeovimKeyMappingClassifier.shouldInstall(for: owner) else {
+                keyMappingOutcomes.append(
+                    EditorKeyMappingOutcome(
+                        keys: keys,
+                        request: request,
+                        resolution: NeovimKeyMappingClassifier.resolution(for: owner),
+                        userScriptPath: NeovimKeyMappingClassifier.userScriptPath(for: owner)
+                    )
+                )
+                continue
+            }
+
+            // `gr` is a prefix of Neovim's own `gr*` family, and leaving those in place costs a
+            // full `timeoutlen` before plain `gr` fires — measured at 1,032ms.
+            let shadowed = await prefixKeysShadowing(
+                keys: keys, editorRuntimePath: editorRuntimePath, on: channel
+            )
+
+            // The user's own longer key changes the answer. Deleting it breaks AC-6; keeping it
+            // and mapping anyway makes *their* key wait a second on every press. Neither is ours
+            // to choose, so we take the third option and install nothing — recorded, not silent.
+            if !shadowed.user.isEmpty {
+                keyMappingOutcomes.append(
+                    EditorKeyMappingOutcome(
+                        keys: keys,
+                        request: request,
+                        resolution: .withheldToKeepUserPrefixKeys,
+                        userScriptPath: shadowed.userScriptPath,
+                        conflictingKeys: shadowed.user
+                    )
+                )
+                continue
+            }
+
+            for candidate in shadowed.editorDefaults {
+                _ = await runLua(
+                    NeovimNavigationKeyScript.deleteEditorDefaultScript(keys: candidate), on: channel
+                )
+            }
+
+            let installed = await runLua(
+                NeovimNavigationKeyScript.installMappingScript(
+                    keys: keys,
+                    request: request.rawValue,
+                    notificationName: Self.navigationNotification
+                ),
+                arguments: [.integer(Int64(channelIdentifier))],
+                on: channel
+            )
+            // A mapping that failed to install is left out of the outcomes rather than recorded
+            // as installed. The list is the evidence; a wrong entry is worse than a missing one.
+            guard installed != nil else { continue }
+
+            keyMappingOutcomes.append(
+                EditorKeyMappingOutcome(
+                    keys: keys,
+                    request: request,
+                    resolution: NeovimKeyMappingClassifier.resolution(for: owner)
+                )
+            )
+        }
+    }
+
+    /// Asks Neovim who holds a key and judges the answer.
+    private func keyMappingOwner(
+        forKeys keys: String, editorRuntimePath: String, on channel: NeovimChannel
+    ) async -> NeovimKeyMappingOwner? {
+        guard let answer = await runLua(
+            NeovimNavigationKeyScript.mappingReportScript(keys: keys), on: channel
+        ) else {
+            return nil
+        }
+        guard let report = Self.makeKeyMappingReport(fromLuaAnswer: answer) else { return nil }
+        return NeovimKeyMappingClassifier.owner(of: report, editorRuntimePath: editorRuntimePath)
+    }
+
+    /// The longer keys that would make `keys` ambiguous, split by who owns them.
+    ///
+    /// The split is the whole point: the editor's own can be removed, the user's cannot, and
+    /// which of the two is present decides whether we map this key at all.
+    private func prefixKeysShadowing(
+        keys: String, editorRuntimePath: String, on channel: NeovimChannel
+    ) async -> (editorDefaults: [String], user: [String], userScriptPath: String?) {
+        var editorDefaults: [String] = []
+        var user: [String] = []
+        var userScriptPath: String?
+
+        for candidate in NeovimNavigationKeyScript.editorDefaultPrefixedKeys
+        where candidate.hasPrefix(keys) && candidate != keys {
+            let owner = await keyMappingOwner(
+                forKeys: candidate, editorRuntimePath: editorRuntimePath, on: channel
+            )
+            switch owner {
+            case .editorDefault:
+                editorDefaults.append(candidate)
+            case .user(let scriptPath):
+                user.append(candidate)
+                userScriptPath = userScriptPath ?? scriptPath
+            case .nobody, .none:
+                continue
+            }
+        }
+
+        return (editorDefaults, user, userScriptPath)
+    }
+
+    /// Installs the allow-list and the same-symbol highlight, and restores any palette the
+    /// application already gave us (a restart must not come back colourless).
+    private func installHighlightBehaviour(on channel: NeovimChannel) async {
+        let allowedFileTypes = NeovimSyntaxAllowList.highlightedFileTypes.sorted()
+
+        _ = await runLua(
+            NeovimHighlightScript.installAllowListScript(allowedFileTypes: allowedFileTypes),
+            on: channel
+        )
+        _ = await runLua(
+            NeovimHighlightScript.installSameSymbolHighlightScript(allowedFileTypes: allowedFileTypes),
+            on: channel
+        )
+
+        if let palette = appliedSyntaxPalette {
+            _ = await runLua(
+                NeovimHighlightScript.applyPaletteScript(notificationName: "applied"),
+                arguments: [Self.makePaletteValue(from: palette)],
+                on: channel
+            )
+        }
+    }
+
+    public func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws {
+        let channel = try requireChannel()
+        appliedSyntaxPalette = palette
+        _ = try await channel.request("nvim_exec_lua", [
+            .string(NeovimHighlightScript.applyPaletteScript(notificationName: "applied")),
+            .array([Self.makePaletteValue(from: palette)]),
+        ])
+    }
+
+    public func navigationRequests() async -> AsyncStream<EditorNavigationRequest> {
+        navigationRequestBroadcaster.subscribe { [weak self] identifier in
+            Task { await self?.removeNavigationRequestSubscriber(identifier) }
+        }
+    }
+
+    private func removeNavigationRequestSubscriber(_ identifier: Int) {
+        navigationRequestBroadcaster.unsubscribe(identifier)
+    }
+
+    public func navigationKeyMappingOutcomes() async -> [EditorKeyMappingOutcome] {
+        keyMappingOutcomes
+    }
+
+    /// Which key means which request. One place, so the two never drift apart.
+    private static let navigationKeyAssignments: [(keys: String, request: EditorNavigationRequest)] = [
+        ("gd", .goToDefinition),
+        ("gr", .findReferences),
+    ]
+
+    /// Parses `present|scriptIdentifier|scriptPath`.
+    ///
+    /// Split with `maxSplits` so a path containing `|` survives — an odd file name should not
+    /// quietly turn a user's mapping into an unowned one.
+    private static func makeKeyMappingReport(fromLuaAnswer answer: String) -> NeovimKeyMappingReport? {
+        let parts = answer.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+
+        let scriptPath = String(parts[2])
+        return NeovimKeyMappingReport(
+            isPresent: parts[0] == "true",
+            scriptIdentifier: Int(parts[1]) ?? 0,
+            scriptPath: scriptPath.isEmpty ? nil : scriptPath
+        )
+    }
+
+    private static func makePaletteValue(from palette: EditorSyntaxPalette) -> MessagePackValue {
+        // `function` is a Lua keyword, so the field it lands in cannot share the contract's name.
+        .map([
+            MessagePackKeyValuePair(key: .string("keyword"), value: packed(palette.keyword)),
+            MessagePackKeyValuePair(key: .string("type"), value: packed(palette.type)),
+            MessagePackKeyValuePair(key: .string("functionName"), value: packed(palette.function)),
+            MessagePackKeyValuePair(key: .string("string"), value: packed(palette.string)),
+            MessagePackKeyValuePair(key: .string("number"), value: packed(palette.number)),
+            MessagePackKeyValuePair(key: .string("comment"), value: packed(palette.comment)),
+            MessagePackKeyValuePair(
+                key: .string("keywordIsBold"), value: .boolean(palette.keywordIsBold)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("normalForeground"), value: packed(palette.normalForeground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("normalBackground"), value: packed(palette.normalBackground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("sameSymbolBackground"), value: packed(palette.sameSymbolBackground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("selectionBackground"), value: packed(palette.selectionBackground)
+            ),
+        ])
+    }
+
+    private static func packed(_ colour: EditorColor) -> MessagePackValue {
+        .integer(Int64(colour.red) << 16 | Int64(colour.green) << 8 | Int64(colour.blue))
+    }
+
+    // MARK: - Small RPC helpers
+
+    private func requestChannelIdentifier(from channel: NeovimChannel) async -> Int? {
+        guard let info = try? await channel.request("nvim_get_api_info", []) else { return nil }
+        return info.arrayValue?.first?.integerValue.map { Int($0) }
+    }
+
+    /// Runs a Lua chunk and returns the string it produced, or `nil` if the call failed.
+    ///
+    /// These call sites are all derived behaviour — highlighting, convenience keys — and INV-8
+    /// says their failure must not stop the user editing. What it must not do is *lie*: a
+    /// failure returns `nil` and the caller leaves the corresponding evidence out.
+    @discardableResult
+    private func runLua(
+        _ script: String, arguments: [MessagePackValue] = [], on channel: NeovimChannel
+    ) async -> String? {
+        guard let value = try? await channel.request(
+            "nvim_exec_lua", [.string(script), .array(arguments)]
+        ) else {
+            return nil
+        }
+        return value.stringValue
+    }
+
     private func flushQueuedKeys() async {
         let keys = queuedKeys
         queuedKeys.removeAll()
@@ -833,6 +1142,13 @@ public actor NeovimEditorSession: EditorSession {
             if let fields = notification.parameters.first?.mapValue,
                let path = fields.first(where: { $0.key.stringValue == "path" })?.value.stringValue {
                 dirtyChangeBroadcaster.send(path)
+            }
+        case Self.navigationNotification:
+            if let fields = notification.parameters.first?.mapValue,
+               let rawRequest = fields
+                   .first(where: { $0.key.stringValue == "request" })?.value.stringValue,
+               let request = EditorNavigationRequest(rawValue: rawRequest) {
+                navigationRequestBroadcaster.send(request)
             }
         case Self.statusNotification:
             if let fields = notification.parameters.first?.mapValue {
@@ -1142,6 +1458,20 @@ public actor NeovimEditorSession: EditorSession {
         let channel = try requireChannel()
         let value = try await channel.request("nvim_eval", [.string(expression)])
         return value.stringValue ?? ""
+    }
+
+    /// Runs a Lua chunk and returns whatever it stringifies, for spikes and tests that need to
+    /// ask Neovim something an expression cannot express. Returns the string Lua produced, so an
+    /// answer of `"0"` stays distinguishable from "the call produced nothing" — `nvim_eval` folds
+    /// both into an empty string here, which is exactly the ambiguity these measurements cannot
+    /// afford. Not part of the contract.
+    func executeLuaForTesting(_ script: String) async throws -> String {
+        let channel = try requireChannel()
+        let value = try await channel.request("nvim_exec_lua", [.string(script), .array([])])
+        guard let text = value.stringValue else {
+            throw NavigatorError.editorUnavailable(reason: "Lua 가 문자열을 돌려주지 않았습니다: \(value)")
+        }
+        return text
     }
 
     func currentWorkingDirectoryForTesting() async throws -> String {

@@ -131,7 +131,7 @@ struct NeovimEditorSessionTests {
         let session = try await startSession(fixture)
         defer { Task { await session.shutDown() } }
 
-        await #expect(throws: NavigatorError.invalidPath("../outside.kt")) {
+        await #expect(throws: NavigatorError.pathOutsideProject("../outside.kt")) {
             try await session.openFile(atRelativePath: "../outside.kt", line: nil, recordJump: false)
         }
     }
