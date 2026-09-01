@@ -31,8 +31,10 @@
   --purple: #7A34B8;
   --purple-dim: rgba(122, 52, 184, 0.12);
   --match: rgba(224, 162, 27, 0.30);
-  --syn-kw: #A626A4; --syn-type: #0F7A6E; --syn-fn: #1A56C4;
-  --syn-str: #2E7D32; --syn-num: #B85C00; --syn-cmt: #6E7481;
+  --syn-kw: #A626A4; --syn-type: #0E7166; --syn-fn: #1A56C4;
+  --syn-str: #2B742E; --syn-num: #9E4F00; --syn-cmt: #606570;
+  /* 편집기 표면 — 불투명 (nvim_set_hl 은 알파를 안 받는다, 02_design.md §4.1.1) */
+  --bg-selection: #E0EFFF; --bg-same-symbol: #E8E8E8;
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.18);
   --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.30);
   --scrim: rgba(0, 0, 0, 0.22);
@@ -68,7 +70,8 @@
   --purple-dim: rgba(199, 146, 234, 0.16);
   --match: rgba(232, 179, 61, 0.26);
   --syn-kw: #C792EA; --syn-type: #57C7B8; --syn-fn: #82AAFF;
-  --syn-str: #C3E88D; --syn-num: #F78C6C; --syn-cmt: #8B92A0;
+  --syn-str: #C3E88D; --syn-num: #F78C6C; --syn-cmt: #9AA0AD;
+  --bg-selection: #233043; --bg-same-symbol: #343438;
   --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.50);
   --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.55);
   --scrim: rgba(0, 0, 0, 0.45);
@@ -88,7 +91,8 @@
     --purple: #C792EA; --purple-dim: rgba(199, 146, 234, 0.16);
     --match: rgba(232, 179, 61, 0.26);
     --syn-kw: #C792EA; --syn-type: #57C7B8; --syn-fn: #82AAFF;
-    --syn-str: #C3E88D; --syn-num: #F78C6C; --syn-cmt: #8B92A0;
+    --syn-str: #C3E88D; --syn-num: #F78C6C; --syn-cmt: #9AA0AD;
+    --bg-selection: #233043; --bg-same-symbol: #343438;
     --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.50);
     --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.55);
     --scrim: rgba(0, 0, 0, 0.45);
@@ -191,7 +195,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .cl.hl { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
 .cl.cur .ln { color: var(--text-1); font-weight: 600; }
 .caret-block { background: var(--text-1); color: var(--bg-content); }
-.k { color: var(--syn-kw); } .t { color: var(--syn-type); } .f { color: var(--syn-fn); }
+.k { color: var(--syn-kw); font-weight: 700; } .t { color: var(--syn-type); } .f { color: var(--syn-fn); }
 .s { color: var(--syn-str); } .n { color: var(--syn-num); } .c { color: var(--syn-cmt); }
 .tilde { color: var(--text-3); }
 /* 사용자 Neovim 상태줄 — 앱이 아니라 Neovim(사용자 설정)이 그린다. 앱은 가로채지 않는다(INV-4) */
@@ -342,7 +346,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 /* 심볼 종류 배지 */
 .kind { width: 18px; height: 18px; border-radius: var(--radius-s); flex: none; display: inline-flex; align-items: center; justify-content: center; font: 700 11px var(--font-code); }
 .kind-C, .kind-O { color: var(--accent-text); background: var(--accent-dim); }
-.kind-I, .kind-T { color: var(--syn-type); background: rgba(15, 122, 110, 0.14); }
+.kind-I, .kind-T { color: var(--syn-type); background: rgba(14, 113, 102, 0.14); }
 .kind-E, .kind-F { color: var(--purple); background: var(--purple-dim); }
 .kind-P { color: var(--warning); background: var(--warning-dim); }
 

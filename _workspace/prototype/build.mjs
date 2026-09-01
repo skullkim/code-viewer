@@ -70,7 +70,7 @@ const CODE = (hl, dirtyLine) => {
     [4, `<span class="k">final class</span> <span class="t">SymbolIndex</span> {`],
     [5, `    <span class="k">private var</span> byFile: [<span class="t">String</span>: [<span class="t">Symbol</span>]] = [:]`],
     [6, `    <span class="k">private var</span> byName: [<span class="t">String</span>: [<span class="t">Location</span>]] = [:]`],
-    [7, ''],
+    [7, `    <span class="k">private let</span> skip: <span class="t">Set</span>&lt;<span class="t">String</span>&gt; = [<span class="s">".git"</span>, <span class="s">"build"</span>]`],
     [8, `    <span class="k">func</span> <span class="f">buildIndex</span>(files: [<span class="t">URL</span>]) {`],
     [9, `        <span class="k">for</span> file <span class="k">in</span> files { <span class="f">indexFile</span>(file) }`],
     [10, `    }`],
@@ -85,7 +85,7 @@ const CODE = (hl, dirtyLine) => {
     [19, `    }`],
     [20, ''],
     [21, `    <span class="k">func</span> <span class="f">definitions</span>(of name: <span class="t">String</span>) -> [<span class="t">Location</span>] {`],
-    [22, `        byName[name] ?? []`],
+    [22, `        <span class="t">Array</span>((byName[name] ?? []).<span class="f">prefix</span>(<span class="n">20</span>))`],
     [23, `    }`],
     [24, `}`],
   ];

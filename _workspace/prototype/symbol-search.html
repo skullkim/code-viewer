@@ -49,7 +49,7 @@
         <div class="cl"><span class="ln">4</span><span class="lc"><span class="k">final class</span> <span class="t">SymbolIndex</span> {</span></div>
         <div class="cl"><span class="ln">5</span><span class="lc">    <span class="k">private var</span> byFile: [<span class="t">String</span>: [<span class="t">Symbol</span>]] = [:]</span></div>
         <div class="cl"><span class="ln">6</span><span class="lc">    <span class="k">private var</span> byName: [<span class="t">String</span>: [<span class="t">Location</span>]] = [:]</span></div>
-        <div class="cl"><span class="ln">7</span><span class="lc"></span></div>
+        <div class="cl"><span class="ln">7</span><span class="lc">    <span class="k">private let</span> skip: <span class="t">Set</span>&lt;<span class="t">String</span>&gt; = [<span class="s">".git"</span>, <span class="s">"build"</span>]</span></div>
         <div class="cl hl"><span class="ln">8</span><span class="lc">    <span class="k">func</span> <span class="f">buildIndex</span>(files: [<span class="t">URL</span>]) {</span></div>
         <div class="cl"><span class="ln">9</span><span class="lc">        <span class="k">for</span> file <span class="k">in</span> files { <span class="f">indexFile</span>(file) }</span></div>
         <div class="cl"><span class="ln">10</span><span class="lc">    }</span></div>
@@ -64,7 +64,7 @@
         <div class="cl"><span class="ln">19</span><span class="lc">    }</span></div>
         <div class="cl"><span class="ln">20</span><span class="lc"></span></div>
         <div class="cl"><span class="ln">21</span><span class="lc">    <span class="k">func</span> <span class="f">definitions</span>(of name: <span class="t">String</span>) -> [<span class="t">Location</span>] {</span></div>
-        <div class="cl"><span class="ln">22</span><span class="lc">        byName[name] ?? []</span></div>
+        <div class="cl"><span class="ln">22</span><span class="lc">        <span class="t">Array</span>((byName[name] ?? []).<span class="f">prefix</span>(<span class="n">20</span>))</span></div>
         <div class="cl"><span class="ln">23</span><span class="lc">    }</span></div>
         <div class="cl"><span class="ln">24</span><span class="lc">}</span></div>
         <div class="cl"><span class="ln tilde">~</span><span class="lc"></span></div>
