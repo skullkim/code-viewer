@@ -243,27 +243,66 @@ struct NeovimMouseInputTests {
     /// 행을 좁히는 것이 이 함수의 요점이다. 화면 전체를 세면 상태줄처럼 늘 배경을 가진 것이
     /// 섞여 들어와 단언이 **선택과 무관한 이유로 참**이 된다 — 빈 집합에서 저절로 참이 되는
     /// 단언과 같은 종류의 거짓 통과다.
-    private func selectionBackgroundCellCount(in snapshot: EditorGridSnapshot) -> Int {
+    private func selectionBackgroundCellCount(
+        in snapshot: EditorGridSnapshot,
+        matching colour: EditorColor? = nil
+    ) -> Int {
         (probeStartRow...probeEndRow).reduce(0) { total, row in
             guard snapshot.lines.count > row else { return total }
             let painted = snapshot.lines[row].runs
-                .filter { $0.style.background != nil }
+                .filter { run in
+                    guard let background = run.style.background else { return false }
+                    // 색을 지정하면 그 색만 센다 — "배경이 있다"가 아니라 "**우리가 준 색**이다".
+                    return colour.map { background == $0 } ?? true
+                }
                 .reduce(0) { $0 + $1.cellWidth }
             return total + painted
         }
     }
 
-    @Test("드래그로 만든 선택은 화면에 보인다 — 선택 배경이 실제로 칠해진다 (REQ-017 AC-3)")
+    /// 선택색을 특정할 수 있게 앱이 주는 팔레트를 심는다.
+    ///
+    /// 값은 눈에 띄는 아무 색이어도 되지만 **다른 강조와 겹치지 않아야** 한다 — 겹치면 이
+    /// 테스트가 무엇을 세고 있는지 다시 모호해진다.
+    private func applyPaletteWithDistinctSelection(
+        _ session: NeovimEditorSession
+    ) async throws -> EditorColor {
+        let selection = EditorColor(packedRGB: 0x233043)
+        try await session.applySyntaxPalette(
+            EditorSyntaxPalette(
+                keyword: EditorColor(packedRGB: 0xC792EA),
+                type: EditorColor(packedRGB: 0x57C7B8),
+                function: EditorColor(packedRGB: 0x82AAFF),
+                string: EditorColor(packedRGB: 0xC3E88D),
+                number: EditorColor(packedRGB: 0xF78C6C),
+                comment: EditorColor(packedRGB: 0x9AA0AD),
+                keywordIsBold: true,
+                normalForeground: EditorColor(packedRGB: 0xE8E8ED),
+                normalBackground: EditorColor(packedRGB: 0x1B1B1F),
+                sameSymbolBackground: EditorColor(packedRGB: 0x343438),
+                selectionBackground: selection
+            )
+        )
+        return selection
+    }
+
+    @Test("드래그로 만든 선택은 화면에 보인다 — 앱이 준 선택색으로 (REQ-017 AC-3 · REQ-016 AC-3)")
     func theSelectionIsVisibleOnScreen() async throws {
         // 비주얼 **모드로 들어갔다**와 선택이 **보인다**는 다른 질문이다. 위의
         // `dragCreatesSelection` 은 모드만 묻는다 — 모드가 바뀌었는데 화면이 그대로여도
         // 통과한다. AC-3 은 사용자가 눈으로 보는 쪽이라 그리드에 색이 실렸는지를 물어야 한다.
+        //
+        // 그리고 **아무 배경**이 아니라 **앱이 준 색**인지까지 묻는다. 두 요구가 여기서
+        // 만난다 — REQ-017 AC-3 은 "선택 배경이 보인다", REQ-016 AC-3 은 "색은 디자인
+        // 토큰에서 온다". 색을 특정하지 않으면 nvim 기본색으로도 통과하고, 그러면 팔레트가
+        // 끊긴 날 이 테스트는 아무 말도 하지 않는다. (backend-senior 와 중복 정리하며 합침)
         let fixture = TemporaryProjectFixture()
         makeNumberedFile(fixture, lineCount: 20)
         let session = try await startSession(fixture)
         defer { Task { await session.shutDown() } }
 
         try await session.openFile(atRelativePath: "src/App.kt", line: 1, recordJump: false)
+        let selectionColour = try await applyPaletteWithDistinctSelection(session)
         try await waitUntilMouseDragCreatesSelection(session)
         // 준비 확인이 방금 같은 자리를 눌렀다. `mousetime`(기본 500ms) 안에 다시 누르면
         // Neovim 이 더블클릭으로 읽어 드래그가 되지 않는다.
@@ -276,16 +315,18 @@ struct NeovimMouseInputTests {
         )
         // 기준선을 단언한다. 여기가 0 이 아니면 뒤의 "칠해졌다"는 선택의 증거가 아니다.
         #expect(
-            selectionBackgroundCellCount(in: before) == 0,
+            selectionBackgroundCellCount(in: before, matching: selectionColour) == 0,
             "선택 전에 이미 칠해져 있으면 이 테스트는 선택을 재는 게 아니다"
         )
 
         try await dragAcrossProbeArea(session)
 
-        let painted = await firstValue(from: frames) { selectionBackgroundCellCount(in: $0) > 0 }
+        let painted = await firstValue(from: frames) {
+            selectionBackgroundCellCount(in: $0, matching: selectionColour) > 0
+        }
         #expect(
             painted != nil,
-            "드래그 후에도 선택 배경이 실린 프레임이 오지 않았다 — 선택이 화면에 보이지 않는다 (AC-3)"
+            "드래그 후에도 **앱이 준 선택색**이 실린 프레임이 오지 않았다 — 선택이 안 보이거나 우리 색이 아니다"
         )
     }
 
