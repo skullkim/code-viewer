@@ -15,15 +15,41 @@ SwiftUI + AppKit · Neovim --embed (MessagePack-RPC) · tree-sitter · macOS 14+
 - **사용자의 `~/.config/nvim` 설정을 침범하지 않는다.**
 - **조용히 비우지 않는다** — 화면이 비면 이유를 말한다. 못 읽은 것과 막은 것과 빈 것은 다른 사건이다.
 
-## 만들고 실행하기
+## 설치
+
+**[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 5.3MB
+
+1. `.dmg`를 열고 **CodeNavigator.app을 Applications로 드래그**
+2. 처음 열 때 **우클릭 → 열기 → 열기**
+
+**필요한 것**: macOS 14+ · `nvim` 0.9.0 이상 (`brew install neovim`)
+
+### ⚠ 처음 열 때 경고가 뜬다
+
+이 앱은 **공증(notarize)되지 않았다.** 유료 Developer ID가 없어서다. 그래서 더블클릭하면 macOS가 막는다 — **우클릭 → 열기**를 한 번 하면 그 뒤로는 그냥 열린다.
+
+그래도 막히면:
+```bash
+xattr -d com.apple.quarantine /Applications/CodeNavigator.app
+```
+
+### 처음 실행하면 권한을 묻는다
+
+프로젝트를 문서·데스크탑·다운로드 폴더에서 열면 macOS가 접근 권한을 묻는다. **여는 프로젝트 폴더 안에서만 읽고 쓴다** — 대화상자에 그 문장이 그대로 나온다.
+
+이 대화상자는 한때 결함으로 오해받았다. 답을 기다리는 동안 앱이 `Neovim이 응답하지 않습니다`로 보고했고, 하루가 nvim을 의심하는 데 갔다. 그래서 지금은 문구가 이유를 말한다.
+
+## 소스에서 빌드하기
 
 ```bash
 swift build -c release            # 빌드
-./scripts/bundle.sh               # .app 번들 조립 (권한 대화상자 문구 검증 포함)
+./scripts/bundle.sh               # .app 조립 (권한 문구 검증 + 번들 매니페스트)
 open .build/CodeNavigator.app
+
+./scripts/package-dmg.sh          # 배포용 유니버설 .dmg
 ```
 
-**필요한 것**: macOS 14+ · Swift 6 · `nvim` 0.9.0 이상 (`brew install neovim`)
+**필요한 것**: 위에 더해 Swift 6
 
 맨 실행 파일에는 번들 신원이 없어 창이 키 윈도우가 되지 않는다 — 그래서 `.app`으로 감싼다 ([ADR-0105](docs/adr/0105-app-bundle-and-target-split.md)).
 
