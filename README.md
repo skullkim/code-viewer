@@ -20,18 +20,21 @@ SwiftUI + AppKit · Neovim --embed (MessagePack-RPC) · tree-sitter · macOS 14+
 **[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 5.3MB
 
 1. `.dmg`를 열고 **CodeNavigator.app을 Applications로 드래그**
-2. 처음 열 때 **우클릭 → 열기 → 열기**
+2. 아래 한 줄을 실행하고 더블클릭
 
-**필요한 것**: macOS 14+ · `nvim` 0.9.0 이상 (`brew install neovim`)
-
-### ⚠ 처음 열 때 경고가 뜬다
-
-이 앱은 **공증(notarize)되지 않았다.** 유료 Developer ID가 없어서다. 그래서 더블클릭하면 macOS가 막는다 — **우클릭 → 열기**를 한 번 하면 그 뒤로는 그냥 열린다.
-
-그래도 막히면:
 ```bash
 xattr -d com.apple.quarantine /Applications/CodeNavigator.app
 ```
+
+**필요한 것**: macOS 14+ · `nvim` 0.9.0 이상 (`brew install neovim`)
+
+### ⚠ 왜 그 한 줄이 필요한가
+
+이 앱은 **공증(notarize)되지 않았다.** 유료 Developer ID가 없어서다. 그래서 macOS가 *"Apple은 사용자 맥에 손상을 입히거나 개인 정보를 침해하지 않는지 확인할 수 없습니다"* 로 막는다.
+
+**⚠ 흔히 안내되는 "우클릭 → 열기"는 macOS 15(Sequoia)부터 통하지 않는다.** 그 우회가 제거됐다. 오래된 안내를 그대로 따라가면 같은 경고만 다시 본다.
+
+터미널을 쓰기 싫으면 GUI로도 된다: 한 번 열어서 경고를 띄운 뒤 → **시스템 설정 → 개인정보 보호 및 보안** → 아래로 스크롤 → **"확인 없이 열기"**.
 
 ### 처음 실행하면 권한을 묻는다
 
