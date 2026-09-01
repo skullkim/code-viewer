@@ -235,6 +235,34 @@ struct NavigationKeyTests {
         #expect(referenceOutcome.conflictingKeys.isEmpty)
     }
 
+    /// 계약이 "빈 문자열을 돌려주지 않는다"고 적었으니 그것을 고정한다.
+    ///
+    /// 프론트의 참조 검색 가드가 이 보증 위에 서 있다 — 라우터의 `if let` 만으로는 `""` 가
+    /// 통과해 **빈 이름으로 검색이 돌아간다**(결과 0건, 에러 없음, 사용자에게는 침묵).
+    /// 계약에 적히지 않은 의존이던 것을 적었으니, 이제 테스트가 지킨다.
+    @Test("커서 아래가 비어 있으면 빈 문자열이 아니라 nil 이다")
+    func theWordUnderTheCursorIsNeverAnEmptyString() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("blank.ts", contents: "\n\n\n")
+        let session = NeovimEditorSession()
+        try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 12)
+        defer { Task { await session.shutDown() } }
+        try await session.openFile(atRelativePath: "blank.ts", line: 1, recordJump: false)
+        _ = try await session.currentLineForTesting()
+
+        let word = try await session.wordUnderCursor()
+        #expect(word == nil, "빈 줄에서 '\(word ?? "")' 를 돌려줬다")
+
+        // 반대 방향 — 심볼이 있으면 그것을 돌려준다. 항상 nil 이어도 위 단언은 통과한다.
+        fixture.write("named.ts", contents: "const alpha = 1;\n")
+        try await session.openFile(atRelativePath: "named.ts", line: 1, recordJump: false)
+        _ = try await session.currentLineForTesting()
+        _ = try await session.executeLuaForTesting(
+            "vim.api.nvim_win_set_cursor(0, { 1, 6 }) return 'moved'"
+        )
+        #expect(try await session.wordUnderCursor() == "alpha")
+    }
+
     // MARK: - INV-7
 
     @Test("사용자 설정 파일을 수정하지 않는다")

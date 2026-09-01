@@ -108,6 +108,12 @@ public protocol EditorSession: Sendable {
     func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws
 
     /// The identifier under the cursor, used as the query for go-to-definition and references.
+    ///
+    /// **Never an empty string** — an empty result is `nil`. Callers guard with `if let` and would
+    /// otherwise let `""` through as a valid query, which is a reference search for nothing that
+    /// returns nothing and reports no error. The normalisation is here rather than in each caller
+    /// because "there is no symbol here" is one fact and every caller needs the same answer to it
+    /// (REQ-015 AC-5).
     func wordUnderCursor() async throws -> String?
 
     /// Files Neovim reports as written, one per `:w`. The engine re-indexes each of them, so an
