@@ -108,7 +108,7 @@ struct WorkspaceQueryAcceptanceTests {
         let workspace = makeWorkspace()
         let session = try await openedSession(fixture, in: workspace)
 
-        let result = try await session.references(to: "addSymbol")
+        let result = try await session.references(to: "addSymbol", from: nil)
         #expect(result.references.contains { $0.isDefinition })
         #expect(result.references.contains { $0.isDefinition == false })
         await workspace.shutDown()

@@ -41,7 +41,7 @@ struct CertificationFixtureTests {
     func lookalikeSymbolDoesNotContaminateResults() async throws {
         let engine = try await openedEngine()
 
-        let references = try await engine.references(to: "SymbolIndex")
+        let references = try await engine.references(to: "SymbolIndex", from: nil)
 
         // SymbolIndexHolder 선언 줄은 부분 단어라 결과에 없어야 한다.
         let holderDeclarations = references.references.filter {
@@ -97,14 +97,14 @@ struct CertificationFixtureTests {
     func hangulGluedIdentifierIsNotAReference() async throws {
         let engine = try await openedEngine()
 
-        let references = try await engine.references(to: "Index")
+        let references = try await engine.references(to: "Index", from: nil)
 
         // 이 픽스처에서 `Index` 는 `사용자Index` 안에만 있다. 경계 규칙이 살아 있으면 0건이다.
         #expect(references.references.isEmpty)
 
         // 0건이 "검색이 고장나서 0건"이 아님을 같은 자리에서 확인한다 — 음성 단언에는
         // 반드시 양성 대조가 붙어야 한다.
-        let positiveControl = try await engine.references(to: "SymbolIndex")
+        let positiveControl = try await engine.references(to: "SymbolIndex", from: nil)
         #expect(!positiveControl.references.isEmpty)
     }
 }

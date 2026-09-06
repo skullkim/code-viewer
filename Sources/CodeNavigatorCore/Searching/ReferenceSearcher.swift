@@ -3,10 +3,17 @@ import Foundation
 
 /// Finds where a symbol name is used across the project (REQ-006).
 ///
-/// This is **name-based approximation**: there is no type resolution, so two unrelated classes
-/// with the same name land in one list. What the search does guarantee is that a hit is a whole
-/// identifier — searching `Index` must not surface `buildIndex` or `AlphaIndexer`, or the list
-/// stops being usable.
+/// Matching is by name, and a name is not a symbol. Measured on a 463-file Java repository,
+/// `getId` occurs on 670 lines across 15 unrelated receiver types — a reader standing on a
+/// `Member` was handed every `Organization` and `Coupon` in the project. So when the caller says
+/// where the cursor was, Java hits are narrowed to the receiver type in hand (`JavaReceiverType`).
+///
+/// **A hit we cannot judge stays in the list.** Dropping it would delete a real reference with no
+/// way for the reader to notice; keeping it costs one line of noise. Those two mistakes are not
+/// the same size. The same rule covers files the resolver does not handle at all.
+///
+/// What the search guarantees regardless is that a hit is a whole identifier — searching `Index`
+/// must not surface `buildIndex` or `AlphaIndexer`, or the list stops being usable.
 ///
 /// Definition sites are included and flagged rather than filtered out (REQ-006 AC-2).
 struct ReferenceSearcher {
@@ -19,7 +26,8 @@ struct ReferenceSearcher {
         symbolName: String,
         filePaths: [String],
         rootPath: URL,
-        symbolIndex: SymbolIndex
+        symbolIndex: SymbolIndex,
+        origin: ReferenceQueryOrigin? = nil
     ) async -> ReferenceSearchResult {
         guard !symbolName.isEmpty else {
             return ReferenceSearchResult(
@@ -30,7 +38,27 @@ struct ReferenceSearcher {
             )
         }
 
-        let matchedLines = collectMatchedLines(symbolName: symbolName, filePaths: filePaths, rootPath: rootPath)
+        var matchedLines = collectMatchedLines(symbolName: symbolName, filePaths: filePaths, rootPath: rootPath)
+
+        // 좁히기는 스캔이 끝난 뒤에 한다. 스캔 루프는 동기·무할당으로 두는 편이 빠르고,
+        // 무엇보다 커서 타입을 못 알아내면 좁히기 자체를 안 하므로 스캔에 조건을 섞을 이유가 없다.
+        var narrowing: ReferenceNarrowing?
+        if let origin,
+           let receiverType = cursorReceiverType(symbolName: symbolName, origin: origin, rootPath: rootPath) {
+            let narrowed = narrow(
+                matchedLines.lines,
+                toReceiverType: receiverType,
+                symbolName: symbolName,
+                rootPath: rootPath
+            )
+            matchedLines.lines = narrowed.kept
+            matchedLines.observedCount = narrowed.kept.count
+            narrowing = ReferenceNarrowing(
+                receiverType: receiverType,
+                discarded: narrowed.discarded,
+                unresolved: narrowed.unresolved
+            )
+        }
 
         // The index is consulted once per kept line, after scanning — not inside the scan loop,
         // which stays synchronous and allocation-free.
@@ -58,8 +86,78 @@ struct ReferenceSearcher {
             references: references,
             total: matchedLines.observedCount,
             truncated: matchedLines.truncated,
-            limit: Self.resultLimit
+            limit: Self.resultLimit,
+            narrowing: narrowing
         )
+    }
+
+    // MARK: - 수신자 타입으로 좁히기
+
+    /// The type the cursor was standing on, or nil when it cannot be worked out — in which case
+    /// nothing is narrowed and the list is exactly what it was before.
+    private func cursorReceiverType(
+        symbolName: String,
+        origin: ReferenceQueryOrigin,
+        rootPath: URL
+    ) -> String? {
+        guard isJava(origin.path),
+              let source = try? String(contentsOf: rootPath.appendingPathComponent(origin.path), encoding: .utf8)
+        else {
+            return nil
+        }
+        return JavaReceiverType.Resolver(source: source).receiverType(
+            line: origin.line,
+            symbolName: symbolName
+        )
+    }
+
+    private func narrow(
+        _ lines: [MatchedLine],
+        toReceiverType receiverType: String,
+        symbolName: String,
+        rootPath: URL
+    ) -> (kept: [MatchedLine], discarded: Int, unresolved: Int) {
+        var kept: [MatchedLine] = []
+        var discarded = 0
+        var unresolved = 0
+
+        // 파일별로 묶어서 파일당 한 번만 파싱한다. 히트마다 파싱하면 같은 파일을 수십 번 다시
+        // 읽는다 — 실측으로 670건에 1.59초였고, 파일당 1회로 바꾸니 0.24초였다.
+        var index = 0
+        while index < lines.count {
+            let path = lines[index].path
+            var end = index
+            while end < lines.count, lines[end].path == path { end += 1 }
+            let group = lines[index..<end]
+            index = end
+
+            guard isJava(path),
+                  let source = try? String(contentsOf: rootPath.appendingPathComponent(path), encoding: .utf8)
+            else {
+                kept.append(contentsOf: group)
+                unresolved += group.count
+                continue
+            }
+
+            let resolver = JavaReceiverType.Resolver(source: source)
+            for matched in group {
+                guard let type = resolver.receiverType(line: matched.line, symbolName: symbolName) else {
+                    kept.append(matched)
+                    unresolved += 1
+                    continue
+                }
+                if type == receiverType {
+                    kept.append(matched)
+                } else {
+                    discarded += 1
+                }
+            }
+        }
+        return (kept, discarded, unresolved)
+    }
+
+    private func isJava(_ path: String) -> Bool {
+        path.hasSuffix(".java")
     }
 
     private func collectMatchedLines(

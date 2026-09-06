@@ -73,7 +73,7 @@ public final class SearchModel {
 
     // MARK: References (REQ-006)
 
-    public func showReferences(to symbolName: String) async {
+    public func showReferences(to symbolName: String, from origin: ReferenceQueryOrigin? = nil) async {
         resultsTabID = activeTabProvider()
         storedReferenceSymbolName = symbolName
         selectedTab = .references
@@ -81,7 +81,7 @@ public final class SearchModel {
         storedReferencePhase = .searching
 
         do {
-            storedReferencePhase = .results(try await projectSession.references(to: symbolName))
+            storedReferencePhase = .results(try await projectSession.references(to: symbolName, from: origin))
         } catch let error as NavigatorError {
             storedReferencePhase = .failed(error)
         } catch {

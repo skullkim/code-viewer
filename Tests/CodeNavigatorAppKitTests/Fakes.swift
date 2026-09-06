@@ -84,7 +84,7 @@ final class FakeProjectSession: ProjectSession, @unchecked Sendable {
     /// well as after it. (frontend-senior 추가)
     private(set) var referenceQueries: [String] = []
 
-    func references(to symbolName: String) async throws -> ReferenceSearchResult {
+    func references(to symbolName: String, from origin: ReferenceQueryOrigin?) async throws -> ReferenceSearchResult {
         referenceQueries.append(symbolName)
         return referenceResult
     }

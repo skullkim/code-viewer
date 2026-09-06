@@ -37,7 +37,7 @@ struct ProjectEngineSearchScopeTests {
         let engine = ProjectEngine()
         try await engine.openProject(at: fixture.rootURL)
 
-        let result = try await engine.references(to: "Widget")
+        let result = try await engine.references(to: "Widget", from: nil)
 
         #expect(result.references.map(\.path) == ["README.md", "notes.txt", "src/App.kt"])
     }

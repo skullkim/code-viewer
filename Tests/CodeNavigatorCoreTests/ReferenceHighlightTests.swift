@@ -12,7 +12,7 @@ struct ReferenceHighlightTests {
     private func search(_ fixture: TemporaryProjectFixture, for name: String) async throws -> ReferenceSearchResult {
         let engine = ProjectEngine()
         try await engine.openProject(at: fixture.rootURL)
-        return try await engine.references(to: name)
+        return try await engine.references(to: name, from: nil)
     }
 
     @Test("강조 구간이 미리보기 안의 심볼 위치를 가리킨다")

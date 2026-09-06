@@ -549,6 +549,24 @@ public final class AppModel {
         (try? await editorSession.wordUnderCursor()) ?? nil
     }
 
+    /// 참조 검색이 "무엇에 대한 참조인가"를 풀 수 있게 커서 자리를 알려 준다.
+    ///
+    /// 이름만으로는 답이 없다 — 실측으로 463파일 레포에서 `getId` 는 서로 무관한 15개
+    /// 타입에 걸쳐 670줄에 나온다. 어느 것을 물은 것인지는 커서가 선 자리에만 적혀 있다.
+    ///
+    /// 에디터는 절대 경로로 말하고 엔진은 상대 경로를 받으므로 여기서 변환한다. 변환이
+    /// 안 되면(프로젝트 밖 파일) 원점 없이 검색한다 — 좁히지 못할 뿐 결과는 나온다.
+    public var referenceQueryOrigin: ReferenceQueryOrigin? {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root)
+        else {
+            return nil
+        }
+        return ReferenceQueryOrigin(path: relativePath, line: status.cursorLine)
+    }
+
     /// 렌더된 문서 안의 링크로 파일을 연다 (REQ-013).
     ///
     /// 연 뒤에 렌더 문서를 다시 맞춘다 — 새 파일이 `.md` 면 렌더로, 아니면 소스로 열린다.

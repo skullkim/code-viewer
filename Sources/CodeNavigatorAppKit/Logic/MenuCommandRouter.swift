@@ -53,7 +53,7 @@ public enum MenuCommandRouter {
                 model.show(StatusMessage(kind: .error, text: "✕ 커서 위치에 심볼이 없습니다"))
                 return
             }
-            await search.showReferences(to: name)
+            await search.showReferences(to: name, from: model.referenceQueryOrigin)
 
         case .symbolSearch:
             search.isShowingSymbolSearch = true

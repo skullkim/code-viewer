@@ -51,13 +51,17 @@ public actor ProjectEngine: ProjectSession {
 
     // MARK: - Search
 
-    public func references(to symbolName: String) async throws -> ReferenceSearchResult {
+    public func references(
+        to symbolName: String,
+        from origin: ReferenceQueryOrigin?
+    ) async throws -> ReferenceSearchResult {
         let context = try await searchContext()
         return await referenceSearcher.search(
             symbolName: symbolName,
             filePaths: context.scan.filePaths,
             rootPath: context.rootPath,
-            symbolIndex: context.symbolIndex
+            symbolIndex: context.symbolIndex,
+            origin: origin
         )
     }
 

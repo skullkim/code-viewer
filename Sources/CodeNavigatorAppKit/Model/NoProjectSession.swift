@@ -27,7 +27,7 @@ final class NoProjectSession: ProjectSession, @unchecked Sendable {
 
     func searchSymbols(matching query: String) async -> [SymbolSearchResult] { [] }
 
-    func references(to symbolName: String) async throws -> ReferenceSearchResult {
+    func references(to symbolName: String, from origin: ReferenceQueryOrigin?) async throws -> ReferenceSearchResult {
         ReferenceSearchResult(references: [], total: 0, truncated: false, limit: 0)
     }
 

@@ -30,6 +30,19 @@ extension ReferencePresentation {
 
     /// Shown in every phase (REQ-006 AC-3).
     static let approximationNoticeText = "이름 기반 검색 — 동명 이의어 포함 가능"
+
+    /// What the notice says once the list has been narrowed to a receiver type.
+    ///
+    /// The generic notice becomes a lie at that point — the list is no longer "every symbol with
+    /// this name". But it must not swing to claiming certainty either: the resolver reads declared
+    /// types and does not follow inheritance, so a subclass's call is dropped and an override is
+    /// not recognised. The notice says which type, and how many lines nobody could judge.
+    static func narrowedNoticeText(_ narrowing: ReferenceNarrowing) -> String {
+        guard narrowing.unresolved > 0 else {
+            return "\(narrowing.receiverType) 타입으로 좁힘 — 상속 관계는 따지지 않음"
+        }
+        return "\(narrowing.receiverType) 타입으로 좁힘 · 판정 못 한 \(narrowing.unresolved)건 포함"
+    }
     static let partialResultsNoticeText = "인덱싱 중 — 결과가 아직 부분적일 수 있습니다"
     static let placeholder = "심볼에 커서를 두고 ⇧⌘B를 누르면 참조 목록이 여기에 표시됩니다"
 
@@ -74,7 +87,7 @@ extension ReferencePresentation {
             let name = symbolName ?? ""
             return ReferencePresentation(
                 headerText: isEmpty ? name : header(name: name, references: result.references),
-                approximationNotice: approximationNoticeText,
+                approximationNotice: result.narrowing.map(narrowedNoticeText) ?? approximationNoticeText,
                 partialResultsNotice: partialNotice,
                 groups: FileGrouping.group(result.references, by: \.path),
                 placeholderText: nil,

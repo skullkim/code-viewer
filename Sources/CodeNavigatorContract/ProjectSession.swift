@@ -36,7 +36,7 @@ public protocol ProjectSession: Sendable {
     func searchSymbols(matching query: String) async -> [SymbolSearchResult]
 
     /// Usage sites of a symbol name, definitions included and flagged (REQ-006).
-    func references(to symbolName: String) async throws -> ReferenceSearchResult
+    func references(to symbolName: String, from origin: ReferenceQueryOrigin?) async throws -> ReferenceSearchResult
 
     /// Full-text search across the project (REQ-008).
     func searchText(_ query: String, mode: TextSearchMode) async throws -> TextSearchResult

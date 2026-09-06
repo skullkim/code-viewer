@@ -70,7 +70,7 @@ final class RecordingProjectSession: ProjectSession, @unchecked Sendable {
         }
     }
 
-    func references(to symbolName: String) async throws -> ReferenceSearchResult {
+    func references(to symbolName: String, from origin: ReferenceQueryOrigin?) async throws -> ReferenceSearchResult {
         locked { referenceQueries.append(symbolName) }
         if let referenceError {
             throw referenceError

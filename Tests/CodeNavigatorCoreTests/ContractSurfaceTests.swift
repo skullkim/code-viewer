@@ -52,7 +52,7 @@ struct ContractSurfaceTests {
         #expect(await session.definitions(named: "UserRepository").count == 1)
         #expect(!(await session.searchSymbols(matching: "UsrRepo")).isEmpty)
 
-        let references = try await session.references(to: "UserRepository")
+        let references = try await session.references(to: "UserRepository", from: nil)
         #expect(references.limit > 0)
         #expect(references.references.contains { $0.isDefinition })
 
@@ -79,7 +79,7 @@ struct ContractSurfaceTests {
         let session: any ProjectSession = ProjectEngine()
         try await session.openProject(at: fixture.rootURL)
 
-        let result = try await session.references(to: "UserRepository")
+        let result = try await session.references(to: "UserRepository", from: nil)
 
         #expect(!result.references.isEmpty)
         for reference in result.references {
