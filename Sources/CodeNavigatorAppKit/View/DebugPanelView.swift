@@ -18,6 +18,7 @@ public struct DebugPanelView: View {
     private let variableNotice: String?
     private let selectedFrameID: UInt64?
     private let stopReason: DebugStopReason?
+    private let watches: [DebugWatch]
     private let onSelectFrame: (JavaStackFrame) -> Void
     private let onToggleVariable: (DebugVariableRow) -> Void
     private let onResume: () -> Void
@@ -32,6 +33,7 @@ public struct DebugPanelView: View {
         variableNotice: String?,
         selectedFrameID: UInt64?,
         stopReason: DebugStopReason?,
+        watches: [DebugWatch],
         onSelectFrame: @escaping (JavaStackFrame) -> Void,
         onToggleVariable: @escaping (DebugVariableRow) -> Void,
         onResume: @escaping () -> Void,
@@ -45,6 +47,7 @@ public struct DebugPanelView: View {
         self.variableNotice = variableNotice
         self.selectedFrameID = selectedFrameID
         self.stopReason = stopReason
+        self.watches = watches
         self.onSelectFrame = onSelectFrame
         self.onToggleVariable = onToggleVariable
         self.onResume = onResume
@@ -159,7 +162,48 @@ public struct DebugPanelView: View {
             framesColumn
             Divider()
             variablesColumn
+            // Watch 는 있을 때만 자리를 준다. 빈 칸을 늘 띄워 두면 스택과 변수가 그만큼 좁아지고,
+            // Watch 를 안 쓰는 사람에게는 그 손해가 계속된다.
+            if !watches.isEmpty {
+                Divider()
+                watchesColumn
+            }
         }
+    }
+
+    private var watchesColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PanelGroupHeader(path: "Watch")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(watches) { watch in
+                        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.small) {
+                            Text(watch.expression)
+                                .font(.system(size: DesignTokens.Typography.bodySize, weight: .medium, design: .monospaced))
+                                .foregroundStyle(DesignTokens.textPrimary.dynamicColor)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: DesignTokens.Spacing.medium)
+                            // 달리는 중에는 값이 없다. 빈칸 대신 그렇다고 적는다 — 빈칸은
+                            // "값이 없는 변수" 로 읽힌다.
+                            Text(watch.value ?? "실행 중")
+                                .font(.system(size: DesignTokens.Typography.bodySize, design: .monospaced))
+                                .foregroundStyle(
+                                    watch.value == nil
+                                        ? DesignTokens.textTertiary.dynamicColor
+                                        : DesignTokens.textSecondary.dynamicColor
+                                )
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .padding(.horizontal, DesignTokens.Spacing.large)
+                        .padding(.vertical, DesignTokens.Spacing.small)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 200, maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var framesColumn: some View {

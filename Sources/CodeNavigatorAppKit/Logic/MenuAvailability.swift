@@ -18,6 +18,7 @@ public struct MenuAvailability: Sendable, Hashable {
     public let appearance: AppearancePreference
     public let debugConnection: DebugConnection
     public let exceptionRule: ExceptionBreakpointRule
+    public let capabilities: DebugCapabilities
 
     public init(
         inputMode: InputMode,
@@ -25,7 +26,8 @@ public struct MenuAvailability: Sendable, Hashable {
         hasOpenProject: Bool,
         appearance: AppearancePreference = .system,
         debugConnection: DebugConnection = .detached,
-        exceptionRule: ExceptionBreakpointRule = .off
+        exceptionRule: ExceptionBreakpointRule = .off,
+        capabilities: DebugCapabilities = .none
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
@@ -33,6 +35,7 @@ public struct MenuAvailability: Sendable, Hashable {
         self.appearance = appearance
         self.debugConnection = debugConnection
         self.exceptionRule = exceptionRule
+        self.capabilities = capabilities
     }
 
     private var isSessionRunning: Bool {
@@ -68,8 +71,13 @@ public struct MenuAvailability: Sendable, Hashable {
         // 멈춰 있을 때만 풀 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
         // 멈춰 있을 때만 걸을 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
         // 멈춰 있을 때만 걸을 수 있고, 물어볼 수 있다.
-        case .resumeDebuggee, .stepOver, .stepInto, .stepOut, .evaluateExpression:
+        case .resumeDebuggee, .stepOver, .stepInto, .stepOut, .evaluateExpression, .addWatch:
             return debugConnection.isStopped
+
+        // 이 JVM 이 핫스왑을 안 받으면 켜 두지 않는다 — 눌러 보고 알 수 없는 오류를 보느니
+        // 회색으로 있는 편이 낫다.
+        case .hotSwapCurrentFile:
+            return debugConnection.isAttached && capabilities.canRedefineClasses
 
         case .closeProject, .toggleFileTree:
             return hasOpenProject

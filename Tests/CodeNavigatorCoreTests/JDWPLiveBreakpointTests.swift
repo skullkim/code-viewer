@@ -256,6 +256,47 @@ struct JDWPLiveBreakpointTests {
         try await session.resume()
     }
 
+    /// 핫스왑 — 멈춘 채로 코드를 갈아 끼운다.
+    @Test("클래스를 다시 넣는다")
+    func hotSwapsAClass() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 핫스왑 검증을 건너뛴다")
+            return
+        }
+        guard let classPath = ProcessInfo.processInfo.environment["JDWP_CLASS_FILE"] else {
+            print("SKIP: JDWP_CLASS_FILE 이 없다 — 넣을 바이트코드가 필요하다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        defer { Task { await session.close() } }
+
+        let capabilities = try await session.capabilities()
+        print("LIVE(swap) 핫스왑=\(capabilities.canRedefineClasses) popFrames=\(capabilities.canPopFrames)")
+        guard capabilities.canRedefineClasses else {
+            print("SKIP: 이 JVM 이 핫스왑을 안 받는다")
+            return
+        }
+
+        let bytecode = try [UInt8](Data(contentsOf: URL(fileURLWithPath: classPath)))
+        #expect(bytecode.starts(with: [0xCA, 0xFE, 0xBA, 0xBE]), "클래스 파일이 아니다")
+
+        // 같은 바이트코드를 다시 넣는다. 내용이 같아도 JVM 은 실제로 갈아 끼운다 — 여기서
+        // 재려는 것은 "우리 요청이 받아들여지는가" 이지 "코드가 바뀌는가" 가 아니다.
+        try await session.redefineClass(named: "Probe", bytecode: bytecode)
+        print("LIVE(swap) 다시 넣기 성공")
+
+        // 갈아 끼운 뒤에도 브레이크포인트가 걸려야 한다 — 캐시를 안 버리면 옛 위치에 건다.
+        let requestID = try await session.setBreakpoint(className: "Probe", line: 29)
+        let stop = try await session.waitForBreakpoint()
+        let top = try #require(try await session.stackFrames(threadID: stop.threadID).first)
+        print("LIVE(swap) 갈아 끼운 뒤 멈춤 \(top.className).\(top.methodName):\(top.line)")
+        #expect(top.line == 29)
+
+        try await session.clearBreakpoint(requestID: requestID)
+        try await session.resume()
+    }
+
     /// 앱이 실제로 하는 순서다 — 이벤트 리스너를 먼저 띄워 두고, 그 **와중에** 사용자가
     /// 브레이크포인트를 건다.
     ///

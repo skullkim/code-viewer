@@ -490,6 +490,41 @@ public final class AppModel {
         try? await editorSession.sendMouse(event)
     }
 
+    /// 지금 열린 파일의 컴파일된 클래스를 JVM 에 다시 넣는다.
+    ///
+    /// `.class` 파일을 **찾아서** 넣는다 — 우리는 컴파일하지 않는다. 컴파일까지 하려면
+    /// 빌드 도구(gradle·maven)를 알아야 하고, 그건 이 앱이 하려는 일이 아니다. 사용자가
+    /// 자기 빌드로 만든 `.class` 를 그대로 쓴다.
+    public func hotSwapCurrentFile() async {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root),
+              let source = try? String(contentsOfFile: absolutePath, encoding: .utf8),
+              let className = JavaTypeName.forFile(atPath: relativePath, source: source)
+        else {
+            show(StatusMessage(kind: .error, text: "✕ Java 파일에서만 핫스왑할 수 있습니다"))
+            return
+        }
+        guard let classFile = ClassFileLocator.find(forClassNamed: className, projectRoot: root) else {
+            show(StatusMessage(
+                kind: .error,
+                text: "✕ \(className) 의 .class 파일을 못 찾았습니다 — 먼저 빌드하세요"
+            ))
+            return
+        }
+        guard let bytecode = try? [UInt8](Data(contentsOf: classFile)) else {
+            show(StatusMessage(kind: .error, text: "✕ .class 파일을 읽지 못했습니다"))
+            return
+        }
+        await debug.hotSwap(className: className, bytecode: bytecode)
+        if let error = debug.lastError {
+            show(StatusMessage(kind: .error, text: "✕ \(error)"))
+        } else {
+            show(StatusMessage(kind: .success, text: "핫스왑 완료 — \(className)"))
+        }
+    }
+
     /// 커서 아래 낱말을 필드로 보고 지켜보기를 토글한다.
     ///
     /// 클래스는 열린 파일에서 만든다 — 다른 클래스의 필드를 지켜보려면 그 파일을 열어야 한다.
@@ -1000,7 +1035,8 @@ public final class AppModel {
             hasOpenProject: projectRootPath != nil,
             appearance: shell.appearance,
             debugConnection: debug.connection,
-            exceptionRule: debug.exceptionRule
+            exceptionRule: debug.exceptionRule,
+            capabilities: debug.capabilities
         )
     }
 

@@ -77,6 +77,11 @@ public final class DebugModel {
     public private(set) var stoppedLine: Int?
     /// 왜 멈췄는지. 화면이 브레이크포인트와 예외를 다르게 말해야 한다.
     public private(set) var stopReason: DebugStopReason?
+    /// 사용자가 계속 보고 싶어 하는 식들. 멈출 때마다 다시 푼다 — IntelliJ 의 Watches 다.
+    public private(set) var watches: [DebugWatch] = []
+    /// 이 JVM 이 무엇을 허용하는지. 못 하는 것을 메뉴에 켜 두지 않기 위한 것이다.
+    public private(set) var capabilities: DebugCapabilities = .none
+
     /// 지켜보는 필드들. 이름은 `클래스.필드`, 값은 지울 때 쓸 요청 id.
     public private(set) var watchedFields: [String: Int32] = [:]
 
@@ -167,6 +172,9 @@ public final class DebugModel {
         self.session = session
         connection = .attached(host: host, port: port)
         lastError = nil
+        // 이 JVM 이 무엇을 허용하는지 먼저 묻는다. 못 하는 것을 메뉴에 켜 두면 사용자는
+        // 눌러 보고 알 수 없는 오류를 본다.
+        capabilities = (try? await session.capabilities()) ?? .none
         startListening(host: host, port: port)
     }
 
@@ -187,7 +195,9 @@ public final class DebugModel {
         session = nil
         connection = .detached
         breakpoints = []
+        watches = []
         watchedFields = [:]
+        capabilities = .none
         exceptionRule = .off
         clearStoppedState()
     }
@@ -319,6 +329,51 @@ public final class DebugModel {
         }
     }
 
+    /// Watch 목록에 식을 더한다. 이미 있으면 뺀다.
+    public func toggleWatch(_ text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        if let index = watches.firstIndex(where: { $0.expression == trimmed }) {
+            watches.remove(at: index)
+            return
+        }
+        guard DebugExpression(text: trimmed) != nil else {
+            lastError = "읽을 수 없는 식입니다 — 변수·필드·배열 첨자만 됩니다 (메서드 호출 불가)"
+            return
+        }
+        watches.append(DebugWatch(expression: trimmed, value: nil))
+        await refreshWatches()
+    }
+
+    /// 모든 Watch 를 다시 푼다. 멈출 때마다 부른다 — 값이 바뀌었는데 옛 값이 떠 있으면
+    /// 사용자는 그것을 지금 값으로 읽는다.
+    public func refreshWatches() async {
+        guard connection.isStopped else {
+            // 달리는 중에는 값이 없다. **옛 값을 남기지 않는다.**
+            watches = watches.map { DebugWatch(expression: $0.expression, value: nil) }
+            return
+        }
+        var refreshed: [DebugWatch] = []
+        for watch in watches {
+            await evaluate(watch.expression)
+            refreshed.append(DebugWatch(expression: watch.expression, value: lastExpressionResult))
+        }
+        watches = refreshed
+    }
+
+    /// 컴파일된 클래스를 멈춘 채로 갈아 끼운다.
+    public func hotSwap(className: String, bytecode: [UInt8]) async {
+        guard let session else { return }
+        do {
+            try await session.redefineClass(named: className, bytecode: bytecode)
+            lastError = nil
+        } catch let error as JavaDebugError {
+            lastError = Self.notice(for: error)
+        } catch {
+            lastError = "핫스왑에 실패했습니다: \(error)"
+        }
+    }
+
     public func selectFrame(_ frame: JavaStackFrame) async {
         selectedFrameID = frame.frameID
         await loadVariables(for: frame)
@@ -385,6 +440,9 @@ public final class DebugModel {
             stoppedBreakpointPath = nil
             stoppedLine = nil
         }
+        // Watch 는 멈춘 뒤에 다시 푼다. 조건 판정보다 **뒤**여야 한다 — 조건에 안 맞아
+        // 그냥 지나갈 회차에서 Watch 를 풀면 왕복만 늘고 화면에는 안 보인다.
+        await refreshWatches()
         await onStopped?()
 
         notifyStopHandled()
@@ -418,6 +476,10 @@ public final class DebugModel {
             return "디버기가 멈춰 있지 않습니다"
         case .fieldNotFound(let className, let fieldName):
             return "\(className) 에 \(fieldName) 필드가 없습니다"
+        case .redefinitionNotSupported:
+            return "이 JVM 은 핫스왑을 지원하지 않습니다"
+        case .redefinitionRejected(let reason):
+            return "핫스왑 거절 — \(reason)"
         }
     }
 

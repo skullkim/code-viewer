@@ -48,4 +48,6 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case editBreakpointCondition
     case evaluateExpression
     case toggleFieldWatch
+    case addWatch
+    case hotSwapCurrentFile
 }

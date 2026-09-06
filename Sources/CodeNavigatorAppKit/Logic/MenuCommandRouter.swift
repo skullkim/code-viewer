@@ -144,6 +144,16 @@ public enum MenuCommandRouter {
                 model.show(StatusMessage(kind: .error, text: "✕ \(error)"))
             }
 
+        case .addWatch:
+            guard let text = environment.askBreakpointCondition("") else { return }
+            await model.debug.toggleWatch(text)
+            if let error = model.debug.lastError {
+                model.show(StatusMessage(kind: .error, text: "✕ \(error)"))
+            }
+
+        case .hotSwapCurrentFile:
+            await model.hotSwapCurrentFile()
+
         case .toggleFieldWatch:
             await model.toggleFieldWatchAtCursor()
 

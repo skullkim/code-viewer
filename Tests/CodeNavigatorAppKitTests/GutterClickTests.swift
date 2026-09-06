@@ -119,5 +119,13 @@ private final class GutterFakeDebugSession: DebugSession, @unchecked Sendable {
         return Int32(watchedFields.count)
     }
     func clearWatchpoint(requestID: Int32) async throws {}
+    var capabilitiesForTests = DebugCapabilities(
+        canRedefineClasses: true, canPopFrames: false, canGetInstanceInfo: true
+    )
+    private(set) var redefinedClasses: [String] = []
+    func capabilities() async throws -> DebugCapabilities { capabilitiesForTests }
+    func redefineClass(named className: String, bytecode: [UInt8]) async throws {
+        redefinedClasses.append(className)
+    }
     func close() async {}
 }

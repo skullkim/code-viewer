@@ -111,6 +111,10 @@ public enum AppMenuBuilder {
             MenuItemDescriptor(title: "브레이크포인트 조건…", command: .editBreakpointCondition, keyEquivalent: "b", modifiers: [.command, .option, .shift]),
             MenuItemDescriptor(title: "이 필드 지켜보기", command: .toggleFieldWatch, keyEquivalent: "w", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "식 평가…", command: .evaluateExpression, keyEquivalent: "e", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "Watch 에 더하기…", command: .addWatch, keyEquivalent: "e", modifiers: [.command, .option, .shift]),
+            // ⌘⌥H 는 macOS 의 "다른 항목 가리기" 다. 표준 단축키를 빼앗으면 사용자가
+            // 시스템 전체에서 쓰던 손버릇 하나를 이 앱에서만 잃는다.
+            MenuItemDescriptor(title: "이 파일 핫스왑", command: .hotSwapCurrentFile, keyEquivalent: "y", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "계속 실행", command: .resumeDebuggee, keyEquivalent: "r", modifiers: [.command, .option]),
             .separator,
             // IntelliJ 는 F8 / F7 / ⇧F8 이지만 여기서는 ⌘ 조합을 쓴다.

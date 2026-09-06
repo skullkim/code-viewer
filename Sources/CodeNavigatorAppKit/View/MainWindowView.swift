@@ -236,6 +236,7 @@ public struct MainWindowView: View {
             variableNotice: model.debug.variableNotice,
             selectedFrameID: model.debug.selectedFrameID,
             stopReason: model.debug.stopReason,
+            watches: model.debug.watches,
             onSelectFrame: { frame in Task { await model.debug.selectFrame(frame) } },
             onToggleVariable: { row in Task { await model.debug.toggleExpansion(of: row) } },
             onResume: { Task { await model.debug.resume() } },

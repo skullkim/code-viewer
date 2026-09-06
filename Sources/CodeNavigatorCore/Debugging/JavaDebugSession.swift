@@ -9,6 +9,8 @@ private enum Command {
     static let allThreads: UInt8 = 4
     static let vmSuspend: UInt8 = 8
     static let vmResume: UInt8 = 9
+    static let capabilitiesNew: UInt8 = 17
+    static let redefineClasses: UInt8 = 18
 
     static let referenceType: UInt8 = 2
     static let signature: UInt8 = 1
@@ -284,6 +286,63 @@ public actor JavaDebugSession: DebugSession {
         )
         var reader = JDWPReader(bytes: reply)
         exceptionRequestID = try reader.readInt32()
+    }
+
+    // MARK: - 능력과 핫스왑
+
+    public func capabilities() async throws -> DebugCapabilities {
+        let reply = try await connection.request(
+            commandSet: Command.virtualMachine, command: Command.capabilitiesNew, payload: []
+        )
+        let raw = try JDWPCapabilities(payload: reply)
+        return DebugCapabilities(
+            canRedefineClasses: raw.canRedefineClasses,
+            canPopFrames: raw.canPopFrames,
+            canGetInstanceInfo: raw.canGetInstanceInfo
+        )
+    }
+
+    public func redefineClass(named className: String, bytecode: [UInt8]) async throws {
+        // 먼저 물어본다. 못 하는 JVM 에 보내면 알 수 없는 오류 코드가 돌아오고, 그건
+        // "이 JVM 은 핫스왑을 안 받는다" 보다 훨씬 나쁜 안내다.
+        guard try await capabilities().canRedefineClasses else {
+            throw JavaDebugError.redefinitionNotSupported
+        }
+        guard let classID = try await loadedClassID(named: className) else {
+            throw JavaDebugError.classNotLoaded(className)
+        }
+
+        do {
+            _ = try await connection.request(
+                commandSet: Command.virtualMachine,
+                command: Command.redefineClasses,
+                payload: JDWPRedefineRequest.payload(
+                    classes: [(classID: classID, bytes: bytecode)],
+                    referenceTypeIDSize: sizes.referenceTypeID
+                )
+            )
+        } catch JDWPConnectionError.commandFailed(_, _, let errorCode) {
+            // 거절 이유를 그대로 옮긴다. 뭉개면 사용자는 자기가 뭘 잘못했는지 모른 채
+            // 디버거를 의심한다.
+            throw JavaDebugError.redefinitionRejected(reason: Self.redefinitionReason(errorCode))
+        }
+
+        // 바뀐 클래스의 캐시를 버린다. 메서드 id 와 라인 테이블이 다 낡았다 — 안 버리면
+        // 다음 브레이크포인트가 옛 바이트코드 위치에 걸린다.
+        lineTablesByMethod.removeAll()
+    }
+
+    /// JDWP 가 돌려주는 핫스왑 거절 코드들. 숫자만 보여 주면 사용자가 할 수 있는 일이 없다.
+    private static func redefinitionReason(_ errorCode: UInt16) -> String {
+        switch errorCode {
+        case 63: return "메서드를 더하거나 지웠습니다 — 본문만 바꿀 수 있습니다"
+        case 64: return "클래스 계층이 바뀌었습니다"
+        case 66: return "메서드 시그니처가 바뀌었습니다"
+        case 67: return "클래스 파일 형식이 다릅니다"
+        case 68: return "필드 구성이 바뀌었습니다"
+        case 71: return "이 클래스는 다시 넣을 수 없습니다"
+        default: return "JVM 이 거절했습니다 (코드 \(errorCode))"
+        }
     }
 
     // MARK: - 필드 watchpoint

@@ -4,6 +4,10 @@ public enum JavaDebugError: Error, Sendable {
     case notSuspended
     /// 그 클래스에 그 이름의 필드가 없다. 오타이거나 상속 관계를 잘못 짚은 것이다.
     case fieldNotFound(className: String, fieldName: String)
+    /// 이 JVM 이 핫스왑을 안 받는다.
+    case redefinitionNotSupported
+    /// 받긴 하는데 이 변경은 거절했다. 표준 JVM 은 본문만 바꿀 수 있다.
+    case redefinitionRejected(reason: String)
     /// 클래스가 `javac -g` 없이 컴파일돼 지역 변수 이름표가 없다.
     ///
     /// 흔한 일이고 우리 잘못이 아니지만, **빈 목록으로 넘기면 안 된다** — 사용자는 "이 자리에
@@ -120,6 +124,38 @@ public struct ExceptionBreakpointRule: Sendable, Hashable {
     public static let uncaughtOnly = ExceptionBreakpointRule(breakOnCaught: false, breakOnUncaught: true)
 }
 
+/// 계속 보고 싶은 식 하나. 멈출 때마다 다시 푼다.
+public struct DebugWatch: Sendable, Hashable, Identifiable {
+    public let expression: String
+    /// 마지막으로 푼 값. 달리는 중에는 nil — **옛 값을 남기지 않는다.** 남기면 사용자는
+    /// 그것을 지금 값으로 읽는다.
+    public let value: String?
+
+    public var id: String { expression }
+
+    public init(expression: String, value: String?) {
+        self.expression = expression
+        self.value = value
+    }
+}
+
+/// 이 JVM 이 허용하는 것들.
+public struct DebugCapabilities: Sendable, Hashable {
+    public let canRedefineClasses: Bool
+    public let canPopFrames: Bool
+    public let canGetInstanceInfo: Bool
+
+    public init(canRedefineClasses: Bool, canPopFrames: Bool, canGetInstanceInfo: Bool) {
+        self.canRedefineClasses = canRedefineClasses
+        self.canPopFrames = canPopFrames
+        self.canGetInstanceInfo = canGetInstanceInfo
+    }
+
+    public static let none = DebugCapabilities(
+        canRedefineClasses: false, canPopFrames: false, canGetInstanceInfo: false
+    )
+}
+
 /// 멈춘 이유. 화면이 "왜 여기서 멈췄지" 에 답할 수 있어야 한다.
 public enum DebugStopReason: Sendable, Hashable {
     case breakpoint
@@ -156,6 +192,14 @@ public protocol DebugSession: Sendable {
     /// getter 한 번에도 멈춘다.
     func watchField(named name: String, inClass className: String) async throws -> Int32
     func clearWatchpoint(requestID: Int32) async throws
+    /// 이 JVM 이 무엇을 허용하는지. 못 하는 것을 메뉴에 켜 두면 사용자는 눌러 보고 알 수 없는
+    /// 오류를 본다.
+    func capabilities() async throws -> DebugCapabilities
+    /// 컴파일된 클래스를 멈춘 채로 갈아 끼운다 (핫스왑).
+    ///
+    /// 표준 JVM 은 **본문만** 바꿀 수 있다. 메서드를 더하거나 시그니처를 바꾸면 거절하고,
+    /// 그 거절은 그대로 사용자에게 보여야 한다.
+    func redefineClass(named className: String, bytecode: [UInt8]) async throws
     func close() async
 }
 
