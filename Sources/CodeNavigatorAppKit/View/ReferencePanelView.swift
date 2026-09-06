@@ -74,7 +74,7 @@ public struct ReferencePanelView: View {
     }
 
     private var referenceList: some View {
-        ScrollView {
+        BidirectionalScrollView(contentWidth: widestRowWidth) {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                 ForEach(panel.groups, id: \.path) { group in
                     Section {
@@ -87,6 +87,23 @@ public struct ReferencePanelView: View {
                 }
             }
             .padding(.bottom, DesignTokens.Spacing.medium)
+        }
+    }
+
+    /// The width the longest preview line needs (see `BidirectionalScrollView.contentWidth`).
+    ///
+    /// A source line is the part worth scrolling to here: the reference list exists to show
+    /// *where* a symbol is used, and the usage is often past the panel's right edge.
+    private var widestRowWidth: CGFloat {
+        let font = NSFont.monospacedSystemFont(
+            ofSize: DesignTokens.Typography.previewSize, weight: .regular
+        )
+        let chrome = Metrics.rowLeadingPadding + Metrics.rowSpacing * 2
+            + DesignTokens.Spacing.large + Metrics.lineNumberWidth
+        return panel.groups.flatMap(\.items).reduce(0) { widest, reference in
+            let text = (reference.previewText as NSString)
+                .size(withAttributes: [.font: font]).width
+            return max(widest, text + chrome)
         }
     }
 
@@ -107,15 +124,16 @@ public struct ReferencePanelView: View {
                         ranges: reference.matchRanges
                     )
                 )
+                // 소스 줄도 자기 폭을 갖는다 — 잘리는 쪽이 대개 실제 사용처다.
                 .lineLimit(1)
-                .truncationMode(.tail)
+                .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 0)
             }
             .padding(.leading, Metrics.rowLeadingPadding)
             .padding(.trailing, DesignTokens.Spacing.large)
             .padding(.vertical, Metrics.rowVerticalPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fillsScrollViewportWidth()
             .background(rowBackground(for: reference))
             .overlay(alignment: .leading) {
                 if reference.id == selectedReferenceID {
@@ -158,5 +176,7 @@ public struct ReferencePanelView: View {
         static let rowVerticalPadding: CGFloat = 3
         static let rowLeadingPadding = DesignTokens.Spacing.large + 10
         static let selectionBarWidth: CGFloat = 2
+        /// Matches `PanelLineNumberLabel`'s fixed column.
+        static let lineNumberWidth: CGFloat = 34
     }
 }

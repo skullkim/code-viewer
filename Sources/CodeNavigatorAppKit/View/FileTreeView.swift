@@ -99,7 +99,7 @@ public struct FileTreeView: View {
 
     private var rowList: some View {
         ScrollViewReader { scroll in
-            ScrollView {
+            BidirectionalScrollView(contentWidth: widestRowWidth) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(tree.rows) { row in
                         rowView(row)
@@ -118,6 +118,23 @@ public struct FileTreeView: View {
         }
     }
 
+    /// The width the widest row needs, so the scroll view knows there is something to scroll to.
+    ///
+    /// Measured from the strings with the font they are drawn in. The alternative — letting
+    /// SwiftUI report it — gives back the viewport width, because a lazy stack takes what it is
+    /// offered.
+    private var widestRowWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: DesignTokens.Typography.bodySize)
+        let chrome = Metrics.iconWidth + Metrics.rowSpacing * 2
+            + DesignTokens.Spacing.large * 2
+        return tree.rows.reduce(0) { widest, row in
+            let text = (row.name as NSString)
+                .size(withAttributes: [.font: font]).width
+            let indent = Metrics.indentPerDepth * CGFloat(row.depth)
+            return max(widest, text + indent + chrome)
+        }
+    }
+
     private func rowView(_ row: FileTreeRow) -> some View {
         HStack(spacing: Metrics.rowSpacing) {
             disclosureIndicator(row)
@@ -127,10 +144,13 @@ public struct FileTreeView: View {
                 .frame(width: Metrics.iconWidth)
                 .opacity(Metrics.iconOpacity)
 
+            // 자기 폭을 갖는다. 잘라내면 이름의 **구별되는 부분**이 사라지고
+            // (`SlackAlarm...dEvent` 와 `SlackAlarm...Listener`), 가로 스크롤이 있는 지금은
+            // 잘라낼 이유도 없다.
             Text(row.name)
                 .font(.system(size: DesignTokens.Typography.bodySize))
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: true, vertical: false)
 
             Spacer(minLength: 0)
 
@@ -145,7 +165,7 @@ public struct FileTreeView: View {
         .padding(.vertical, Metrics.rowVerticalPadding)
         .padding(.trailing, DesignTokens.Spacing.large)
         .padding(.leading, DesignTokens.Spacing.large + Metrics.indentPerDepth * CGFloat(row.depth))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .fillsScrollViewportWidth()
         .background(background(for: row))
         .overlay(selectionRing(for: row))
         .contentShape(Rectangle())
