@@ -17,7 +17,7 @@ SwiftUI + AppKit · Neovim --embed (MessagePack-RPC) · tree-sitter · macOS 14+
 
 ## 설치
 
-**[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 27MB
+**[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 31MB
 
 1. `.dmg`를 열고 **CodeNavigator.app을 Applications로 드래그**
 2. 아래 한 줄을 실행하고 더블클릭
