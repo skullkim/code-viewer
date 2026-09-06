@@ -31,4 +31,7 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case togglePanel
     case toggleRenderView
     case toggleFullScreen
+    case selectAppearanceSystem
+    case selectAppearanceLight
+    case selectAppearanceDark
 }

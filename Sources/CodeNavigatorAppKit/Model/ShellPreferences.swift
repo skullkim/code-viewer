@@ -37,6 +37,11 @@ public final class ShellPreferences {
         didSet { write(isPanelVisible, forKey: Self.panelVisibleKey) }
     }
 
+    /// 밝게 볼지 어둡게 볼지, 아니면 시스템을 따를지.
+    public var appearance: AppearancePreference {
+        didSet { storage.setData(Data(appearance.rawValue.utf8), forKey: Self.appearanceKey) }
+    }
+
     private let storage: KeyValueStore
 
     static let treeWidthKey = "shell.treeWidth"
@@ -46,6 +51,7 @@ public final class ShellPreferences {
     static let windowFrameKey = "shell.windowFrame"
     static let openTabsKey = "shell.openTabs"
     static let activeTabKey = "shell.activeTab"
+    static let appearanceKey = "shell.appearance"
 
     public init(storage: KeyValueStore) {
         self.storage = storage
@@ -59,6 +65,18 @@ public final class ShellPreferences {
         // not like a window somebody had already tidied away.
         self.isTreeVisible = Self.readFlag(storage, forKey: Self.treeVisibleKey) ?? true
         self.isPanelVisible = Self.readFlag(storage, forKey: Self.panelVisibleKey) ?? true
+        // 못 읽는 값은 시스템 따름으로 떨어진다. 설정 파일 한 줄이 깨졌다고 창이 안 열리면
+        // 사용자는 무엇이 잘못됐는지 알 방법이 없다 (REQ-NF-004).
+        self.appearance = Self.readAppearance(storage) ?? .system
+    }
+
+    private static func readAppearance(_ storage: KeyValueStore) -> AppearancePreference? {
+        guard let data = storage.data(forKey: appearanceKey),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+        return AppearancePreference(rawValue: text)
     }
 
     /// Applies a splitter drag, clamped to what the design allows.

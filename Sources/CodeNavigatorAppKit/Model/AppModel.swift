@@ -811,8 +811,20 @@ public final class AppModel {
         MenuAvailability(
             inputMode: inputMode,
             sessionState: sessionState,
-            hasOpenProject: projectRootPath != nil
+            hasOpenProject: projectRootPath != nil,
+            appearance: shell.appearance
         )
+    }
+
+    /// Records the choice. Putting it into effect is `AppearanceApplier`'s job — the model does
+    /// not reach for `NSApp`, so it stays buildable twice in one test process.
+    ///
+    /// The editor's own colours are not repainted here. Changing the application appearance makes
+    /// AppKit tell the editor view its effective appearance changed, and that path already rebuilds
+    /// the palette and resends it (AC-6). Repainting here as well would send it twice, and the
+    /// second send would be the one that had to be kept correct.
+    public func setAppearancePreference(_ preference: AppearancePreference) {
+        shell.appearance = preference
     }
 
     public var editSessionOverlay: EditSessionOverlay? {

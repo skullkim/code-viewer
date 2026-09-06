@@ -1,4 +1,5 @@
 import CodeNavigatorContract
+import AppKit
 
 /// Decides which menu commands are available for the current state.
 ///
@@ -14,11 +15,18 @@ public struct MenuAvailability: Sendable, Hashable {
     public let inputMode: InputMode
     public let sessionState: EditorSessionState
     public let hasOpenProject: Bool
+    public let appearance: AppearancePreference
 
-    public init(inputMode: InputMode, sessionState: EditorSessionState, hasOpenProject: Bool) {
+    public init(
+        inputMode: InputMode,
+        sessionState: EditorSessionState,
+        hasOpenProject: Bool,
+        appearance: AppearancePreference = .system
+    ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
         self.hasOpenProject = hasOpenProject
+        self.appearance = appearance
     }
 
     private var isSessionRunning: Bool {
@@ -27,8 +35,10 @@ public struct MenuAvailability: Sendable, Hashable {
 
     public func isEnabled(_ command: MenuCommand) -> Bool {
         switch command {
-        // Always available: the way in, and the window itself.
-        case .openProject, .openRecentProject, .closeWindow, .toggleFullScreen:
+        // Always available: the way in, the window itself, and how it is lit. 화면을 못
+        // 읽겠다는 것은 프로젝트가 열렸는지와 무관한 문제다 — 빈 창에서도 바꿀 수 있어야 한다.
+        case .openProject, .openRecentProject, .closeWindow, .toggleFullScreen,
+             .selectAppearanceSystem, .selectAppearanceLight, .selectAppearanceDark:
             return true
 
         case .closeProject, .toggleFileTree:
@@ -70,6 +80,9 @@ public struct MenuAvailability: Sendable, Hashable {
         switch command {
         case .selectVimMode: return inputMode == .vim
         case .selectStandardMode: return inputMode == .standard
+        case .selectAppearanceSystem: return appearance == .system
+        case .selectAppearanceLight: return appearance == .light
+        case .selectAppearanceDark: return appearance == .dark
         default: return false
         }
     }

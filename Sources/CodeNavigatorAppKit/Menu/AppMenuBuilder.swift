@@ -91,6 +91,11 @@ public enum AppMenuBuilder {
             // 이유를 말할 자리가 없다.
             MenuItemDescriptor(title: "렌더 보기 전환", command: .toggleRenderView, keyEquivalent: "v", modifiers: [.command, .shift]),
             .separator,
+            // 편집 메뉴의 Vim/표준과 같은 라디오 모양이다 — 셋 중 하나에만 체크가 붙는다.
+            MenuItemDescriptor(title: "시스템 설정 따름", command: .selectAppearanceSystem),
+            MenuItemDescriptor(title: "밝게", command: .selectAppearanceLight),
+            MenuItemDescriptor(title: "어둡게", command: .selectAppearanceDark),
+            .separator,
             MenuItemDescriptor(title: "전체 화면 시작", command: .toggleFullScreen, keyEquivalent: "f", modifiers: [.command, .control]),
         ])
     }

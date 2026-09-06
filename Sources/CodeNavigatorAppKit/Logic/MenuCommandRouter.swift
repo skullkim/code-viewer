@@ -70,6 +70,13 @@ public enum MenuCommandRouter {
         case .restartEditSession:
             await model.restartEditSession()
 
+        case .selectAppearanceSystem:
+            model.setAppearancePreference(.system)
+        case .selectAppearanceLight:
+            model.setAppearancePreference(.light)
+        case .selectAppearanceDark:
+            model.setAppearancePreference(.dark)
+
         // Every editing command goes through the engine, never as a raw key string. A
         // normal-mode key means something else in standard mode, where Neovim is held in
         // insert: `u` would type the letter u and `:w<CR>` would not save. The engine wraps

@@ -143,6 +143,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         menuBar.install()
         self.menuBar = menuBar
 
+        // 저장된 외관을 창을 만들기 전에 건다. 창이 뜬 뒤에 걸면 사용자가 고른 값과 다른
+        // 색으로 한 프레임이 그려지고, 그 깜빡임은 "설정이 안 먹었다"로 읽힌다.
+        AppearanceApplier.apply(Self.storedAppearance(), to: NSApplication.shared)
+
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -167,6 +171,15 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The saved appearance, read before any model exists.
+    ///
+    /// Launch has to apply this before the window is built, and the model graph is assembled
+    /// afterwards (it crosses an actor boundary). Reading storage directly here is the smaller
+    /// price: the alternative is a window that flashes the wrong colour first.
+    static func storedAppearance() -> AppearancePreference {
+        ShellPreferences(storage: UserDefaults.standard).appearance
+    }
+
     /// Builds the menu bar against whatever models exist.
     ///
     /// Shared with the self-check so the gate installs the same menu the user gets.
@@ -178,7 +191,13 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             },
             perform: { command in
                 guard let model = sharedModel, let search = sharedSearch else { return }
-                Task { await MenuCommandRouter.perform(command, model: model, search: search) }
+                Task {
+                    await MenuCommandRouter.perform(command, model: model, search: search)
+                    // 외관 명령만 골라 걸지 않는다. 같은 값을 다시 거는 것은 무해하고,
+                    // 골라 거는 쪽은 나중에 외관을 바꾸는 경로가 하나 늘 때마다 여기를
+                    // 같이 고쳐야 한다 — 안 고치면 설정이 조용히 안 먹는다.
+                    AppearanceApplier.apply(model.shell.appearance, to: NSApplication.shared)
+                }
             },
             recentProjects: { sharedModel?.recentProjects.projects() ?? [] },
             openRecentProject: { path in
