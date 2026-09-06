@@ -217,6 +217,54 @@ struct DebugModelTests {
         #expect(session.steps.isEmpty)
     }
 
+    /// 조건에 안 맞으면 **화면을 건드리기 전에** 다시 보낸다. 먼저 그리면 조건에 안 맞는
+    /// 회차마다 화면이 깜빡이고, 사용자는 "멈췄다 말았다" 로 읽는다.
+    @Test("조건에 안 맞으면 화면을 안 건드리고 다시 보낸다")
+    func resumesQuietlyWhenTheConditionDoesNotMatch() async throws {
+        let session = FakeSession()
+        session.variables = [JavaVariable(name: "i", typeSignature: "I", value: "3")]
+        let model = await attached(session)
+        await model.toggleBreakpoint(path: "src/Probe.java", line: 6, className: "Probe")
+        let id = try #require(model.breakpoints.first?.id)
+        model.setCondition("i == 500", forBreakpointWithID: id)
+
+        session.letItStop()
+        await model.waitForNextStopForTesting()
+
+        #expect(!model.connection.isStopped, "조건에 안 맞는데 멈춘 채로 뒀다")
+        #expect(model.frames.isEmpty, "낡은 스택이 화면에 남았다")
+        #expect(session.resumeCount == 1, "다시 안 보냈다 — 프로그램이 그대로 서 있다")
+    }
+
+    @Test("조건에 맞으면 평소대로 멈춘다")
+    func stopsWhenTheConditionMatches() async throws {
+        let session = FakeSession()
+        session.variables = [JavaVariable(name: "i", typeSignature: "I", value: "500")]
+        let model = await attached(session)
+        await model.toggleBreakpoint(path: "src/Probe.java", line: 6, className: "Probe")
+        let id = try #require(model.breakpoints.first?.id)
+        model.setCondition("i == 500", forBreakpointWithID: id)
+
+        session.letItStop()
+        await model.waitForNextStopForTesting()
+
+        #expect(model.connection.isStopped)
+        #expect(session.resumeCount == 0)
+    }
+
+    /// 읽을 수 없는 조건을 조용히 버리면 사용자는 조건이 걸린 줄 알고 기다린다.
+    @Test("읽을 수 없는 조건은 그렇다고 말한다")
+    func reportsAnUnreadableCondition() async throws {
+        let session = FakeSession()
+        let model = await attached(session)
+        await model.toggleBreakpoint(path: "src/Probe.java", line: 6, className: "Probe")
+        let id = try #require(model.breakpoints.first?.id)
+
+        model.setCondition("그냥 말", forBreakpointWithID: id)
+        #expect(model.lastError != nil)
+        #expect(model.breakpoints.first?.condition == nil)
+    }
+
     @Test("떼면 세션을 닫고 모든 것을 비운다")
     func detaches() async throws {
         let session = FakeSession()

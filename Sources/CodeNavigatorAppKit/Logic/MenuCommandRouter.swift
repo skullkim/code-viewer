@@ -20,6 +20,9 @@ public enum MenuCommandRouter {
     /// 라우터 안에 박혀 있으면 라우팅을 테스트할 때마다 창이 뜬다.
     public typealias DebugTargetChooser = @MainActor () -> (host: String, port: UInt16)?
 
+    /// 브레이크포인트 조건을 묻는다. 현재 조건을 받아 새 조건을 준다.
+    public typealias ConditionEditor = @MainActor (String) -> String?
+
     /// 사용자에게 무언가를 묻는 모든 자리를 한 곳에 모은 것.
     ///
     /// 훅마다 인자를 하나씩 늘리다가 실제로 당했다. 명령 전체를 도는 테스트가 폴더 대화상자만
@@ -32,20 +35,32 @@ public enum MenuCommandRouter {
     public struct Environment: Sendable {
         public var chooseFolder: FolderChooser
         public var askDebugTarget: DebugTargetChooser
+        public var askBreakpointCondition: ConditionEditor
 
-        public init(chooseFolder: @escaping FolderChooser, askDebugTarget: @escaping DebugTargetChooser) {
+        public init(
+            chooseFolder: @escaping FolderChooser,
+            askDebugTarget: @escaping DebugTargetChooser,
+            askBreakpointCondition: @escaping ConditionEditor
+        ) {
             self.chooseFolder = chooseFolder
             self.askDebugTarget = askDebugTarget
+            self.askBreakpointCondition = askBreakpointCondition
         }
 
         /// 사람이 앉아 있는 실행.
         public static var interactive: Environment {
-            Environment(chooseFolder: presentFolderPanel, askDebugTarget: presentDebugTargetPrompt)
+            Environment(
+                chooseFolder: presentFolderPanel,
+                askDebugTarget: presentDebugTargetPrompt,
+                askBreakpointCondition: presentConditionPrompt
+            )
         }
 
         /// 사람이 없는 실행(테스트·자동화). 모든 물음이 "취소" 로 답한다.
         public static var headless: Environment {
-            Environment(chooseFolder: { nil }, askDebugTarget: { nil })
+            Environment(
+                chooseFolder: { nil }, askDebugTarget: { nil }, askBreakpointCondition: { _ in nil }
+            )
         }
     }
 
@@ -118,6 +133,17 @@ public enum MenuCommandRouter {
             await model.debug.step(.into)
         case .stepOut:
             await model.debug.step(.out)
+        case .editBreakpointCondition:
+            guard let breakpoint = model.breakpointAtCursor() else {
+                model.show(StatusMessage(kind: .error, text: "✕ 이 줄에 브레이크포인트가 없습니다"))
+                return
+            }
+            guard let text = environment.askBreakpointCondition(breakpoint.condition?.text ?? "") else { return }
+            model.debug.setCondition(text, forBreakpointWithID: breakpoint.id)
+            if let error = model.debug.lastError {
+                model.show(StatusMessage(kind: .error, text: "✕ \(error)"))
+            }
+
         case .toggleBreakOnUncaughtException:
             await model.debug.setExceptionRule(ExceptionBreakpointRule(
                 breakOnCaught: model.debug.exceptionRule.breakOnCaught,
@@ -208,6 +234,24 @@ public enum MenuCommandRouter {
         let parts = field.stringValue.split(separator: ":")
         guard parts.count == 2, let port = UInt16(parts[1]) else { return nil }
         return (host: String(parts[0]), port: port)
+    }
+
+    /// 조건을 묻는다. 비우면 조건을 뗀다.
+    @MainActor
+    public static func presentConditionPrompt(current: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = "브레이크포인트 조건"
+        alert.informativeText = "`변수 == 값` 형태만 됩니다 (예: i == 500, name == \"probe\").\n비우면 조건을 뗍니다."
+        alert.addButton(withTitle: "적용")
+        alert.addButton(withTitle: "취소")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = current
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
     }
 
     public static func presentFolderPanel() -> URL? {

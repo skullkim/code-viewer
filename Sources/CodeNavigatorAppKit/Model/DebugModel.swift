@@ -11,6 +11,8 @@ public struct DebugBreakpoint: Sendable, Hashable, Identifiable {
     public let line: Int
     public let className: String
     public let requestID: Int32
+    /// "i == 500" 같은 조건. 없으면 항상 멈춘다.
+    public var condition: BreakpointCondition?
 
     public var id: String { "\(path):\(line)" }
 }
@@ -199,9 +201,10 @@ public final class DebugModel {
 
         do {
             let requestID = try await session.setBreakpoint(className: className, line: line)
-            breakpoints.append(
-                DebugBreakpoint(path: path, line: line, className: className, requestID: requestID)
-            )
+            breakpoints.append(DebugBreakpoint(
+                path: path, line: line, className: className,
+                requestID: requestID, condition: nil
+            ))
             lastError = nil
         } catch {
             // 걸리지 않은 것을 목록에 넣지 않는다. 넣으면 사용자는 걸린 줄 알고, 안 멈추는
@@ -219,6 +222,20 @@ public final class DebugModel {
             lastError = nil
         } catch {
             lastError = "예외 중단 설정을 바꾸지 못했습니다: \(error)"
+        }
+    }
+
+    /// 브레이크포인트에 조건을 붙이거나 뗀다.
+    ///
+    /// JDWP 에는 식 조건이 없어서 JVM 에는 아무것도 안 보낸다 — 멈춘 뒤 우리가 판정한다.
+    public func setCondition(_ text: String, forBreakpointWithID id: String) {
+        guard let index = breakpoints.firstIndex(where: { $0.id == id }) else { return }
+        breakpoints[index].condition = BreakpointCondition(text: text)
+        if breakpoints[index].condition == nil, !text.trimmingCharacters(in: .whitespaces).isEmpty {
+            // 읽을 수 없는 조건을 조용히 버리면 사용자는 조건이 걸린 줄 알고 기다린다.
+            lastError = "조건을 읽지 못했습니다: \(text) — `변수 == 값` 형태만 됩니다"
+        } else {
+            lastError = nil
         }
     }
 
@@ -264,6 +281,19 @@ public final class DebugModel {
         selectedFrameID = frames.first?.frameID
         if let top = frames.first {
             await loadVariables(for: top)
+        }
+
+        // 조건이 붙어 있으면 여기서 판정한다. JDWP 에는 식 조건이 없어서, 일단 멈춘 뒤
+        // 값을 읽고 아니면 다시 보낸다. **화면을 건드리기 전에** 판정해야 한다 — 먼저
+        // 그리면 조건에 안 맞는 회차마다 화면이 깜빡이고, 사용자는 "멈췄다 말았다" 로 읽는다.
+        if let matched = breakpoints.first(where: { $0.requestID == stop.requestID }),
+           let condition = matched.condition,
+           !condition.matches(variables: variables) {
+            clearStoppedState()
+            connection = .attached(host: host, port: port)
+            try? await session?.resume()
+            notifyStopHandled()
+            return
         }
 
         // 우리가 건 브레이크포인트를 requestID 로 되짚는다. 못 찾으면 비운다 — 모르는

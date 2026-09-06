@@ -490,6 +490,18 @@ public final class AppModel {
         try? await editorSession.sendMouse(event)
     }
 
+    /// 커서가 선 줄의 브레이크포인트. 없으면 nil.
+    public func breakpointAtCursor() -> DebugBreakpoint? {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root)
+        else {
+            return nil
+        }
+        return debug.breakpoints.first { $0.path == relativePath && $0.line == status.cursorLine }
+    }
+
     /// 줄 번호를 받아 그 줄의 브레이크포인트를 토글한다. 커서 위치와 무관하다.
     public func toggleBreakpoint(atLine line: Int) async {
         guard let status = editorStatus,

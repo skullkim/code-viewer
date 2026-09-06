@@ -62,7 +62,7 @@ public struct MenuAvailability: Sendable, Hashable {
             return debugConnection.isAttached
 
         // 브레이크포인트는 붙어 있어야 걸 수 있다. JVM 이 없으면 걸 곳이 없다.
-        case .toggleBreakpoint:
+        case .toggleBreakpoint, .editBreakpointCondition:
             return debugConnection.isAttached && isSessionRunning
 
         // 멈춰 있을 때만 풀 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
