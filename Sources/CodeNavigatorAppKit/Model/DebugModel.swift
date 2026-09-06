@@ -77,6 +77,13 @@ public final class DebugModel {
     public private(set) var stoppedLine: Int?
     /// 왜 멈췄는지. 화면이 브레이크포인트와 예외를 다르게 말해야 한다.
     public private(set) var stopReason: DebugStopReason?
+    /// 지켜보는 필드들. 이름은 `클래스.필드`, 값은 지울 때 쓸 요청 id.
+    public private(set) var watchedFields: [String: Int32] = [:]
+
+    /// 마지막으로 물어본 식과 그 답. 화면이 되돌려 보여 준다.
+    public private(set) var lastExpression: String?
+    public private(set) var lastExpressionResult: String?
+
     /// 예외에서 멈추는 규칙. 기본은 안 잡히는 예외만 — caught 를 켜면 프레임워크가 예외로
     /// 흐름을 제어하는 코드에서 초당 수십 번 멈춘다.
     public private(set) var exceptionRule: ExceptionBreakpointRule = .off
@@ -180,6 +187,7 @@ public final class DebugModel {
         session = nil
         connection = .detached
         breakpoints = []
+        watchedFields = [:]
         exceptionRule = .off
         clearStoppedState()
     }
@@ -236,6 +244,78 @@ public final class DebugModel {
             lastError = "조건을 읽지 못했습니다: \(text) — `변수 == 값` 형태만 됩니다"
         } else {
             lastError = nil
+        }
+    }
+
+    /// 멈춘 자리에서 식을 푼다.
+    ///
+    /// 변수에서 시작해 필드와 배열 첨자로 내려간다. 메서드는 안 부른다 — 물어보는 것만으로
+    /// 프로그램이 바뀌면 그건 관찰이 아니다.
+    public func evaluate(_ text: String) async {
+        lastExpression = text
+        guard connection.isStopped else {
+            lastExpressionResult = "멈춰 있을 때만 물어볼 수 있습니다"
+            return
+        }
+        guard let expression = DebugExpression(text: text) else {
+            lastExpressionResult = "읽을 수 없는 식입니다 — 변수·필드·배열 첨자만 됩니다 (메서드 호출 불가)"
+            return
+        }
+        guard let session else { return }
+
+        guard var current = variables.first(where: { $0.name == expression.root }) else {
+            // **없는 변수를 조용히 넘기지 않는다.** 값이 안 나오면 사용자는 우리가 못 읽은
+            // 것인지 그 자리에 없는 것인지 구별할 수 없다.
+            lastExpressionResult = "\(expression.root) 이(가) 이 자리에 없습니다"
+            return
+        }
+
+        for step in expression.steps {
+            guard let objectID = current.objectID else {
+                lastExpressionResult = "\(current.name) 은(는) 더 들어갈 수 없는 값입니다 (\(current.value))"
+                return
+            }
+            let children = (try? await session.fields(
+                ofObject: objectID, typeSignature: current.typeSignature
+            )) ?? []
+
+            switch step {
+            case .field(let name):
+                guard let next = children.first(where: { $0.name == name }) else {
+                    lastExpressionResult = "\(name) 필드가 없습니다"
+                    return
+                }
+                current = next
+            case .index(let index):
+                // 배열 원소는 `[0]` 같은 이름으로 온다.
+                guard let next = children.first(where: { $0.name == "[\(index)]" }) else {
+                    lastExpressionResult = "\(index)번 원소가 없습니다"
+                    return
+                }
+                current = next
+            }
+        }
+        lastExpressionResult = current.value
+    }
+
+    /// 필드가 바뀔 때 멈추게 하거나, 이미 지켜보고 있으면 그만둔다.
+    public func toggleFieldWatch(named name: String, inClass className: String) async {
+        guard let session else { return }
+        let key = "\(className).\(name)"
+
+        if let existing = watchedFields[key] {
+            try? await session.clearWatchpoint(requestID: existing)
+            watchedFields[key] = nil
+            return
+        }
+        do {
+            watchedFields[key] = try await session.watchField(named: name, inClass: className)
+            lastError = nil
+        } catch let error as JavaDebugError {
+            // 걸리지 않은 것을 목록에 넣지 않는다 — 넣으면 사용자는 지켜보는 줄 알고 기다린다.
+            lastError = Self.notice(for: error)
+        } catch {
+            lastError = "필드를 지켜보지 못했습니다: \(error)"
         }
     }
 
@@ -336,6 +416,8 @@ public final class DebugModel {
             return "\(className) \(line)행에는 실행 코드가 없습니다"
         case .notSuspended:
             return "디버기가 멈춰 있지 않습니다"
+        case .fieldNotFound(let className, let fieldName):
+            return "\(className) 에 \(fieldName) 필드가 없습니다"
         }
     }
 
@@ -378,6 +460,10 @@ public final class DebugModel {
         stoppedBreakpointPath = nil
         stoppedLine = nil
         stopReason = nil
+        // 물어본 답도 버린다. 멈춘 자리가 바뀌면 그 답은 다른 자리의 값이고, 남겨 두면
+        // 사용자는 지금 자리의 값으로 읽는다.
+        lastExpression = nil
+        lastExpressionResult = nil
         frames = []
         variables = []
         variableNotice = nil

@@ -110,6 +110,9 @@ public struct DebugPanelView: View {
                     : "예외에서 멈춤 (잡히지 않음) — \(host):\(port)"
             case .step:
                 return "한 걸음 뒤 — \(host):\(port)"
+            case .fieldChanged(let name, let newValue):
+                // 무엇이 무엇으로 바뀌었는지 한 줄에 담는다. 이게 watchpoint 를 켠 이유다.
+                return "\(name) 이(가) \(newValue) 로 바뀜 — \(host):\(port)"
             case .breakpoint, .none:
                 return "멈춤 — \(host):\(port)"
             }

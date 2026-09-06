@@ -223,6 +223,39 @@ struct JDWPLiveBreakpointTests {
         print("LIVE(exception) 끄고 재개")
     }
 
+    /// 필드가 바뀌는 순간 멈춘다. 값이 이상해졌는데 어디서 바뀌었는지 모를 때 쓰는 기능이다.
+    @Test("지켜보던 필드가 바뀌면 멈추고 새 값을 안다")
+    func stopsWhenAWatchedFieldChanges() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 watchpoint 검증을 건너뛴다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        defer { Task { await session.close() } }
+
+        // `counter += doubled` 가 매 회차 이 필드를 바꾼다.
+        let requestID = try await session.watchField(named: "counter", inClass: "Probe")
+        print("LIVE(watch) request=\(requestID)")
+
+        let stop = try await session.waitForBreakpoint()
+        guard case .fieldChanged(let name, let newValue) = stop.reason else {
+            Issue.record("필드 변경이 아니라 \(stop.reason) 로 멈췄다")
+            return
+        }
+        print("LIVE(watch) \(name) → \(newValue)")
+        #expect(name == "counter")
+        #expect(Int(newValue) != nil, "새 값이 숫자가 아니다: \(newValue)")
+
+        // 멈춘 자리도 알아야 한다 — 어디서 바뀌었는지가 이 기능의 절반이다.
+        let top = try #require(try await session.stackFrames(threadID: stop.threadID).first)
+        print("LIVE(watch) 바뀐 자리 \(top.className).\(top.methodName):\(top.line)")
+        #expect(top.className == "Probe")
+
+        try await session.clearWatchpoint(requestID: requestID)
+        try await session.resume()
+    }
+
     /// 앱이 실제로 하는 순서다 — 이벤트 리스너를 먼저 띄워 두고, 그 **와중에** 사용자가
     /// 브레이크포인트를 건다.
     ///

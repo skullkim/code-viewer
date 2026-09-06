@@ -150,6 +150,13 @@ private final class MarkerFakeSession: DebugSession, @unchecked Sendable {
     func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws {
         exceptionRule = rule
     }
+    /// 지켜보는 필드를 기록한다.
+    private(set) var watchedFields: [String] = []
+    func watchField(named name: String, inClass className: String) async throws -> Int32 {
+        watchedFields.append("\(className).\(name)")
+        return Int32(watchedFields.count)
+    }
+    func clearWatchpoint(requestID: Int32) async throws {}
     func close() async {}
 }
 

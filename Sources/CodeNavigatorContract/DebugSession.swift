@@ -2,6 +2,8 @@ public enum JavaDebugError: Error, Sendable {
     case classNotLoaded(String)
     case noExecutableCodeOnLine(className: String, line: Int)
     case notSuspended
+    /// 그 클래스에 그 이름의 필드가 없다. 오타이거나 상속 관계를 잘못 짚은 것이다.
+    case fieldNotFound(className: String, fieldName: String)
     /// 클래스가 `javac -g` 없이 컴파일돼 지역 변수 이름표가 없다.
     ///
     /// 흔한 일이고 우리 잘못이 아니지만, **빈 목록으로 넘기면 안 된다** — 사용자는 "이 자리에
@@ -122,6 +124,9 @@ public struct ExceptionBreakpointRule: Sendable, Hashable {
 public enum DebugStopReason: Sendable, Hashable {
     case breakpoint
     case step
+    /// 지켜보던 필드가 바뀌었다. 새 값을 함께 준다 — 어디서 바뀌었는지와 무엇으로 바뀌었는지를
+    /// 같이 봐야 쓸모가 있다.
+    case fieldChanged(name: String, newValue: String)
     /// 예외로 멈췄다. 잡히는지 여부와 예외 객체를 함께 준다.
     case exception(isCaught: Bool, objectID: UInt64)
 }
@@ -145,6 +150,12 @@ public protocol DebugSession: Sendable {
     /// 예외에서 멈추는 규칙을 갈아 끼운다. 이전 규칙은 지운다 — 안 지우면 규칙이 쌓여
     /// 껐다고 생각한 것에서 계속 멈춘다.
     func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws
+    /// 필드가 바뀔 때 멈춘다. 값이 이상해졌는데 어디서 바뀌었는지 모를 때 쓴다.
+    ///
+    /// 돌려주는 id 로 지운다. 읽기(access)가 아니라 쓰기(modification)만 건다 — 읽기를 켜면
+    /// getter 한 번에도 멈춘다.
+    func watchField(named name: String, inClass className: String) async throws -> Int32
+    func clearWatchpoint(requestID: Int32) async throws
     func close() async
 }
 

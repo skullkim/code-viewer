@@ -144,6 +144,13 @@ public enum MenuCommandRouter {
                 model.show(StatusMessage(kind: .error, text: "✕ \(error)"))
             }
 
+        case .toggleFieldWatch:
+            await model.toggleFieldWatchAtCursor()
+
+        case .evaluateExpression:
+            guard let text = environment.askBreakpointCondition(model.debug.lastExpression ?? "") else { return }
+            await model.debug.evaluate(text)
+
         case .toggleBreakOnUncaughtException:
             await model.debug.setExceptionRule(ExceptionBreakpointRule(
                 breakOnCaught: model.debug.exceptionRule.breakOnCaught,

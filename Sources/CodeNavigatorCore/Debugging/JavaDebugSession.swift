@@ -286,6 +286,38 @@ public actor JavaDebugSession: DebugSession {
         exceptionRequestID = try reader.readInt32()
     }
 
+    // MARK: - 필드 watchpoint
+
+    /// 걸어 둔 watchpoint 의 필드 이름. 이벤트가 왔을 때 어느 필드인지 말해 주려면 필요하다 —
+    /// JDWP 는 fieldID 만 주고, 숫자는 화면에서 아무 뜻도 없다.
+    private var watchedFieldNames: [UInt64: String] = [:]
+
+    public func watchField(named name: String, inClass className: String) async throws -> Int32 {
+        guard let classID = try await loadedClassID(named: className) else {
+            throw JavaDebugError.classNotLoaded(className)
+        }
+        let fields = try await fieldsIncludingInherited(ofClass: classID)
+        guard let field = fields.first(where: { $0.name == name }) else {
+            throw JavaDebugError.fieldNotFound(className: className, fieldName: name)
+        }
+
+        let reply = try await connection.request(
+            commandSet: Command.eventRequest,
+            command: Command.eventSet,
+            payload: JDWPWatchpointRequest.payload(
+                kind: .modification, classID: classID, fieldID: field.id,
+                referenceTypeIDSize: sizes.referenceTypeID, fieldIDSize: sizes.fieldID
+            )
+        )
+        var reader = JDWPReader(bytes: reply)
+        watchedFieldNames[field.id] = name
+        return try reader.readInt32()
+    }
+
+    public func clearWatchpoint(requestID: Int32) async throws {
+        try await clear(kind: JDWPWatchpointRequest.Kind.modification.rawValue, requestID: requestID)
+    }
+
     // MARK: - 멈춤과 재개
 
     /// Waits until the debuggee stops at a breakpoint.
@@ -321,6 +353,29 @@ public actor JavaDebugSession: DebugSession {
                     methodID: thrown.methodID,
                     codeIndex: thrown.codeIndex,
                     reason: .exception(isCaught: thrown.isCaught, objectID: thrown.exceptionObjectID)
+                )
+            }
+
+            // 필드가 바뀐 이벤트. 페이로드에 필드와 새 값이 더 붙어서 브레이크포인트와
+            // 같은 모양으로 읽으면 어긋난다.
+            if let change = try JDWPWatchpointRequest.parse(
+                event: event,
+                referenceTypeIDSize: sizes.referenceTypeID,
+                methodIDSize: sizes.methodID,
+                objectIDSize: sizes.objectID,
+                fieldIDSize: sizes.fieldID
+            ) {
+                await clearPendingStepRequest()
+                return JavaStopEvent(
+                    threadID: change.threadID,
+                    requestID: change.requestID,
+                    classID: change.classID,
+                    methodID: change.methodID,
+                    codeIndex: change.codeIndex,
+                    reason: .fieldChanged(
+                        name: watchedFieldNames[change.fieldID] ?? "필드",
+                        newValue: change.newValue?.displayText ?? "?"
+                    )
                 )
             }
 

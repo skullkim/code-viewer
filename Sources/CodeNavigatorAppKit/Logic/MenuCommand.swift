@@ -46,4 +46,6 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case toggleBreakOnUncaughtException
     case toggleBreakOnCaughtException
     case editBreakpointCondition
+    case evaluateExpression
+    case toggleFieldWatch
 }

@@ -109,6 +109,8 @@ public enum AppMenuBuilder {
             .separator,
             MenuItemDescriptor(title: "브레이크포인트 토글", command: .toggleBreakpoint, keyEquivalent: "b", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "브레이크포인트 조건…", command: .editBreakpointCondition, keyEquivalent: "b", modifiers: [.command, .option, .shift]),
+            MenuItemDescriptor(title: "이 필드 지켜보기", command: .toggleFieldWatch, keyEquivalent: "w", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "식 평가…", command: .evaluateExpression, keyEquivalent: "e", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "계속 실행", command: .resumeDebuggee, keyEquivalent: "r", modifiers: [.command, .option]),
             .separator,
             // IntelliJ 는 F8 / F7 / ⇧F8 이지만 여기서는 ⌘ 조합을 쓴다.

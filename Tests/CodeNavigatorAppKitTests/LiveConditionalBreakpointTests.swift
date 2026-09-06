@@ -16,6 +16,52 @@ struct LiveConditionalBreakpointTests {
     private static var isEnabled: Bool { ProcessInfo.processInfo.environment["JDWP_LIVE"] == "1" }
     private static var port: UInt16 { UInt16(ProcessInfo.processInfo.environment["JDWP_PORT"] ?? "") ?? 5005 }
 
+    @Test("멈춘 자리에서 식을 푼다 — 필드와 배열 첨자까지")
+    func evaluatesExpressionsAtTheStop() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 라이브 식 평가를 건너뛴다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        let model = DebugModel()
+        await model.attach(session: session, host: "127.0.0.1", port: Self.port)
+        defer { Task { await model.detach() } }
+
+        await model.toggleBreakpoint(path: "Probe.java", line: 29, className: "Probe")
+        await model.waitForNextStopForTesting()
+        #expect(model.connection.isStopped)
+
+        // 변수 하나
+        await model.evaluate("input")
+        print("LIVE(eval) input = \(model.lastExpressionResult ?? "없음")")
+        #expect(Int(model.lastExpressionResult ?? "") != nil, "숫자가 안 나왔다")
+
+        // 필드 따라가기
+        await model.evaluate("this.inner.depth")
+        print("LIVE(eval) this.inner.depth = \(model.lastExpressionResult ?? "없음")")
+        #expect(model.lastExpressionResult == "7")
+
+        // 배열 첨자
+        await model.evaluate("this.numbers[1]")
+        print("LIVE(eval) this.numbers[1] = \(model.lastExpressionResult ?? "없음")")
+        #expect(model.lastExpressionResult == "20")
+
+        // 문자열 필드
+        await model.evaluate("this.label")
+        print("LIVE(eval) this.label = \(model.lastExpressionResult ?? "없음")")
+        #expect(model.lastExpressionResult?.contains("String@") == true)
+
+        // 없는 것은 없다고 말한다 — 조용히 비우지 않는다
+        await model.evaluate("this.nope")
+        print("LIVE(eval) this.nope → \(model.lastExpressionResult ?? "없음")")
+        #expect(model.lastExpressionResult?.contains("없습니다") == true)
+
+        // 메서드 호출은 거절한다
+        await model.evaluate("this.toString()")
+        #expect(model.lastExpressionResult?.contains("메서드 호출 불가") == true)
+    }
+
     @Test("조건에 맞는 회차에서만 멈춘다")
     func stopsOnlyOnTheMatchingIteration() async throws {
         guard Self.isEnabled else {

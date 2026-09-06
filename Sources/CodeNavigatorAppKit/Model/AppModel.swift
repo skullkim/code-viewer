@@ -490,6 +490,31 @@ public final class AppModel {
         try? await editorSession.sendMouse(event)
     }
 
+    /// 커서 아래 낱말을 필드로 보고 지켜보기를 토글한다.
+    ///
+    /// 클래스는 열린 파일에서 만든다 — 다른 클래스의 필드를 지켜보려면 그 파일을 열어야 한다.
+    /// 커서 아래 낱말이 필드가 아니면 세션이 "그런 필드 없다" 로 답하고, 그 말을 그대로 보인다.
+    public func toggleFieldWatchAtCursor() async {
+        guard let name = await wordUnderCursor(), !name.isEmpty else {
+            show(StatusMessage(kind: .error, text: "✕ 커서 위치에 이름이 없습니다"))
+            return
+        }
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root),
+              let source = try? String(contentsOfFile: absolutePath, encoding: .utf8),
+              let className = JavaTypeName.forFile(atPath: relativePath, source: source)
+        else {
+            show(StatusMessage(kind: .error, text: "✕ Java 파일에서만 필드를 지켜볼 수 있습니다"))
+            return
+        }
+        await debug.toggleFieldWatch(named: name, inClass: className)
+        if let error = debug.lastError {
+            show(StatusMessage(kind: .error, text: "✕ \(error)"))
+        }
+    }
+
     /// 커서가 선 줄의 브레이크포인트. 없으면 nil.
     public func breakpointAtCursor() -> DebugBreakpoint? {
         guard let status = editorStatus,
