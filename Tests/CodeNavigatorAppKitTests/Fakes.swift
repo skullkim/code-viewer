@@ -121,6 +121,12 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
     private(set) var resizeRequests: [(columns: Int, rows: Int)] = []
     private(set) var restartCount = 0
     private(set) var mouseEvents: [EditorMouseEvent] = []
+    /// 거터 클릭 판정의 답. nil 이면 본문 클릭이다.
+    var gutterLineForClick: Int?
+
+    func gutterLine(atRow row: Int, column: Int) async throws -> Int? {
+        gutterLineForClick
+    }
     var wordUnderCursorValue: String?
     var startError: Error?
     /// REQ-015. Set by a test to describe what the session decided about `gd` / `gr`.

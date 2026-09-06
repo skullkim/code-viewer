@@ -38,6 +38,14 @@ public protocol EditorSession: Sendable {
     /// Forwards a mouse event, which key notation cannot express because it carries no position.
     func sendMouse(_ event: EditorMouseEvent) async throws
 
+    /// 그 자리를 눌렀을 때 거터라면 버퍼 줄 번호를, 본문이면 nil 을 준다.
+    ///
+    /// **편집기에게 묻는다, 우리가 계산하지 않는다.** 거터 폭은 `signcolumn`·`number`·
+    /// `numberwidth` 와 파일의 줄 수에 따라 달라지고, 줄바꿈과 접힘 때문에 화면 행과 버퍼
+    /// 줄이 1:1 이 아니다. 우리가 산수로 짐작하면 대개 맞다가 긴 줄에서 조용히 어긋난다 —
+    /// 그러면 사용자는 누른 줄이 아닌 곳에 브레이크포인트가 걸리는 것을 본다.
+    func gutterLine(atRow row: Int, column: Int) async throws -> Int?
+
     /// Switches the key-interpretation layer. Buffer state is untouched (REQ-010 AC-4).
     func setInputMode(_ mode: InputMode) async throws
 

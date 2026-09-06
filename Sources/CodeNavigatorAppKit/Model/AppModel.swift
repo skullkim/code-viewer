@@ -473,7 +473,48 @@ public final class AppModel {
         guard !isEditorInputBlocked else {
             return
         }
+        // 디버거가 붙어 있을 때만 거터를 가로챈다. 아니면 줄 번호를 누를 때마다 아무 일도
+        // 안 일어나는 것을 디버깅 안 하는 사람이 겪는다.
+        //
+        // **누를 때만** 토글한다. 뗄 때도 하면 한 번 눌러 두 번 토글돼 아무 일도 안 일어난
+        // 것처럼 보인다.
+        if debug.connection.isAttached, event.action == .press, event.button == .left,
+           // `try?` 가 옵셔널을 두 겹으로 감싸므로 한 번에 푼다. 안 풀면 "거터가 아님"과
+           // "물어보다 실패함"이 같은 값이 되고, 실패를 거터 클릭으로 읽는다.
+           let line = (try? await editorSession.gutterLine(atRow: event.row, column: event.column)) ?? nil {
+            await toggleBreakpoint(atLine: line)
+            // 편집기로 넘기지 않는다. 넘기면 커서가 그 줄로 뛰고, 사용자는 브레이크포인트를
+            // 걸었을 뿐인데 보던 자리를 잃는다.
+            return
+        }
         try? await editorSession.sendMouse(event)
+    }
+
+    /// 줄 번호를 받아 그 줄의 브레이크포인트를 토글한다. 커서 위치와 무관하다.
+    public func toggleBreakpoint(atLine line: Int) async {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root)
+        else {
+            return
+        }
+        guard let source = try? String(contentsOfFile: absolutePath, encoding: .utf8),
+              let className = JavaTypeName.forFile(atPath: relativePath, source: source)
+        else {
+            show(StatusMessage(kind: .error, text: "✕ Java 파일에서만 브레이크포인트를 걸 수 있습니다"))
+            return
+        }
+        await debug.toggleBreakpoint(path: relativePath, line: line, className: className)
+        if let error = debug.lastError {
+            show(StatusMessage(kind: .error, text: "✕ \(error)"))
+        }
+        await refreshDebugMarkers()
+    }
+
+    /// 테스트가 프로젝트 루트를 놓기 위한 것.
+    func setProjectRootForTesting(_ path: String) {
+        projectRootPath = path
     }
 
     /// Tells the editor how many cells it now has.
@@ -635,17 +676,8 @@ public final class AppModel {
             show(StatusMessage(kind: .error, text: "✕ 브레이크포인트를 걸 파일이 없습니다"))
             return
         }
-        guard let source = try? String(contentsOfFile: absolutePath, encoding: .utf8),
-              let className = JavaTypeName.forFile(atPath: relativePath, source: source)
-        else {
-            show(StatusMessage(kind: .error, text: "✕ Java 파일에서만 브레이크포인트를 걸 수 있습니다"))
-            return
-        }
-        await debug.toggleBreakpoint(path: relativePath, line: status.cursorLine, className: className)
-        if let error = debug.lastError {
-            show(StatusMessage(kind: .error, text: "✕ \(error)"))
-        }
-        await refreshDebugMarkers()
+        _ = relativePath
+        await toggleBreakpoint(atLine: status.cursorLine)
     }
 
     /// 참조 검색이 "무엇에 대한 참조인가"를 풀 수 있게 커서 자리를 알려 준다.

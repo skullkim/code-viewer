@@ -767,6 +767,48 @@ public actor NeovimEditorSession: EditorSession {
         ])
     }
 
+    /// 그 자리가 거터인지, 거터라면 어느 줄인지 (REQ-016).
+    ///
+    /// 화면 행 → 버퍼 줄은 `screenpos` 로 역추적한다. 산수(`line('w0') + row`)로 하면
+    /// 줄바꿈과 접힘에서 어긋나고, 어긋난 것은 예외가 아니라 **다른 줄에 걸리는 것**으로만
+    /// 드러난다. 텍스트 시작 열도 `screenpos` 가 알려 주므로 거터 폭을 우리가 셀 필요가 없다.
+    public func gutterLine(atRow row: Int, column: Int) async throws -> Int? {
+        guard let channel else { return nil }
+        let script = """
+        local arguments = ...
+        local screenRow = arguments.row + 1      -- Lua 는 1-based
+        local screenColumn = arguments.column + 1
+
+        local last = vim.fn.line('$')
+        local line = vim.fn.line('w0')
+        while line <= last do
+          local position = vim.fn.screenpos(0, line, 1)
+          if position.row == 0 then
+            -- 접혀 있거나 화면 밖이다. 다음 줄로.
+          elseif position.row == screenRow then
+            -- 텍스트가 시작하는 열보다 왼쪽이면 거터다.
+            if screenColumn < position.col then
+              return line
+            end
+            return nil
+          elseif position.row > screenRow then
+            return nil
+          end
+          line = line + 1
+        end
+        return nil
+        """
+        let value = try? await channel.request("nvim_exec_lua", [
+            .string(script),
+            .array([.map([
+                MessagePackKeyValuePair(key: .string("row"), value: .integer(Int64(row))),
+                MessagePackKeyValuePair(key: .string("column"), value: .integer(Int64(column))),
+            ])]),
+        ])
+        guard let line = value?.integerValue else { return nil }
+        return Int(line)
+    }
+
     public func wordUnderCursor() async throws -> String? {
         let channel = try requireChannel()
         let value = try await channel.request("nvim_eval", [.string("expand('<cword>')")])
