@@ -36,6 +36,21 @@ public enum DebugConnection: Sendable, Hashable {
     }
 }
 
+/// 변수 패널의 한 줄. 평평한 목록을 나무처럼 그리기 위한 것이다.
+///
+/// 뷰가 재귀 구조를 다루지 않게 **평평하게 펴서** 준다. SwiftUI 의 `OutlineGroup` 을 쓰면
+/// 재귀 타입이 필요하고, 그러면 "누가 누구의 자식인가" 가 모델과 뷰 두 곳에 살게 된다.
+public struct DebugVariableRow: Sendable, Hashable, Identifiable {
+    public let variable: JavaVariable
+    /// 들여쓰기 단. 0 이 최상위.
+    public let depth: Int
+    public let isExpanded: Bool
+    /// 부모까지의 경로. 같은 이름의 필드가 여러 객체에 있으므로 이름만으로는 줄을 못 가른다.
+    public let path: [UInt64]
+
+    public var id: String { path.map(String.init).joined(separator: ".") + "/" + variable.name }
+}
+
 /// 디버거 화면의 상태.
 ///
 /// 세션은 프로토콜로 받는다 — 화면 상태 기계를 재는 데 진짜 JVM 이 필요하면 아무도 그
@@ -70,7 +85,63 @@ public final class DebugModel {
     /// 테스트가 멈춤 처리를 기다리기 위한 것. 잠으로 기다리면 느리고 흔들린다.
     private var stopHandled: [CheckedContinuation<Void, Never>] = []
 
+    /// 펼친 객체들. 키는 객체 id.
+    private var expandedObjectIDs: Set<UInt64> = []
+    /// 이미 읽어 온 자식들. 디버기가 멈춰 있는 동안 값은 안 변하므로 다시 묻지 않는다 —
+    /// 매번 왕복하면 큰 객체에서 패널이 눈에 띄게 느려진다.
+    private var childrenByObjectID: [UInt64: [JavaVariable]] = [:]
+
     public init() {}
+
+    /// 화면이 그릴 줄들. 펼친 것만 자식이 끼어든다.
+    public var variableRows: [DebugVariableRow] {
+        var rows: [DebugVariableRow] = []
+        appendRows(for: variables, depth: 0, path: [], into: &rows)
+        return rows
+    }
+
+    private func appendRows(
+        for variables: [JavaVariable], depth: Int, path: [UInt64], into rows: inout [DebugVariableRow]
+    ) {
+        for variable in variables {
+            let isExpanded = variable.objectID.map { expandedObjectIDs.contains($0) } ?? false
+            rows.append(DebugVariableRow(
+                variable: variable, depth: depth, isExpanded: isExpanded, path: path
+            ))
+            guard isExpanded, let objectID = variable.objectID else { continue }
+            let children = childrenByObjectID[objectID] ?? []
+            if children.isEmpty {
+                // 필드가 없는 객체도 열 수는 있다. 아무것도 안 나오면 사용자는 눌리지
+                // 않았다고 읽는다.
+                rows.append(DebugVariableRow(
+                    variable: JavaVariable(name: "필드 없음", typeSignature: "", value: ""),
+                    depth: depth + 1, isExpanded: false, path: path + [objectID]
+                ))
+            } else {
+                appendRows(for: children, depth: depth + 1, path: path + [objectID], into: &rows)
+            }
+        }
+    }
+
+    /// Opens or closes one row.
+    public func toggleExpansion(of row: DebugVariableRow) async {
+        guard let objectID = row.variable.objectID else { return }
+
+        if expandedObjectIDs.contains(objectID) {
+            expandedObjectIDs.remove(objectID)
+            return
+        }
+        expandedObjectIDs.insert(objectID)
+        // 이미 읽었으면 다시 묻지 않는다.
+        guard childrenByObjectID[objectID] == nil, let session else { return }
+        childrenByObjectID[objectID] =
+            (try? await session.fields(ofObject: objectID, typeSignature: row.variable.typeSignature)) ?? []
+    }
+
+    /// 테스트가 변수 목록을 직접 놓기 위한 것. 실제로는 멈춤이 채운다.
+    func setVariablesForTesting(_ variables: [JavaVariable]) {
+        self.variables = variables
+    }
 
     public var selectedFrame: JavaStackFrame? {
         frames.first { $0.frameID == selectedFrameID } ?? frames.first
@@ -251,6 +322,10 @@ public final class DebugModel {
     }
 
     private func clearStoppedState() {
+        // 객체 id 는 멈춘 순간에만 뜻이 있다. 들고 있으면 다음 멈춤에서 **다른 객체의 값을
+        // 옛 이름으로** 보여 준다.
+        expandedObjectIDs = []
+        childrenByObjectID = [:]
         stoppedBreakpointPath = nil
         stoppedLine = nil
         frames = []

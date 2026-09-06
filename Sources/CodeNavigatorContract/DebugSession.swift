@@ -40,13 +40,21 @@ public struct JavaVariable: Sendable, Hashable, Identifiable {
     /// JVM 시그니처 그대로 (`I`, `Ljava/lang/String;`). 화면용 축약은 표현 계층의 몫이다.
     public let typeSignature: String
     public let value: String
+    /// 안을 열어 볼 수 있는 객체면 그 id. `null` 과 기본형은 nil 이다.
+    ///
+    /// **펼칠 수 있는지와 자식이 있는지는 다르다.** 필드가 하나도 없는 객체도 열 수는 있고,
+    /// 그때 화면은 "필드 없음" 이라고 말해야 한다 — 삼각형이 아예 없으면 사용자는 이 값이
+    /// 객체가 아니라고 읽는다.
+    public let objectID: UInt64?
 
     public var id: String { name }
+    public var isExpandable: Bool { objectID != nil }
 
-    public init(name: String, typeSignature: String, value: String) {
+    public init(name: String, typeSignature: String, value: String, objectID: UInt64? = nil) {
         self.name = name
         self.typeSignature = typeSignature
         self.value = value
+        self.objectID = objectID
     }
 }
 
@@ -96,6 +104,11 @@ public protocol DebugSession: Sendable {
     /// 한 걸음 나아가고 다시 멈춘다. 멈춤은 `waitForBreakpoint` 로 도착한다 — 브레이크포인트와
     /// 같은 통로다. 화면이 둘을 다르게 다루면 "왜 여기서 멈췄지" 가 두 가지 답을 갖게 된다.
     func step(_ step: DebugStep, threadID: UInt64) async throws
+    /// Reads the fields inside one object — what the user sees when they open a variable.
+    ///
+    /// 배열이면 원소를, 문자열이면 내용을 준다. 못 여는 것이면 빈 배열이다 — **던지지
+    /// 않는다.** 변수 하나를 못 열었다고 패널 전체가 사라지면 안 된다.
+    func fields(ofObject objectID: UInt64, typeSignature: String) async throws -> [JavaVariable]
     func close() async
 }
 

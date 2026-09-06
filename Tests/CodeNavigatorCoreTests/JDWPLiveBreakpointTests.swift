@@ -93,6 +93,99 @@ struct JDWPLiveBreakpointTests {
         print("LIVE(step) 재개")
     }
 
+    /// **아직 로드되지 않은 클래스에 건다.** `suspend=y` 로 띄운 JVM 이 그 상태다 — 처음부터
+    /// 디버깅하려는 사람의 정상 상태이고, 예전에는 여기서 `classNotLoaded` 로 그냥 실패했다.
+    ///
+    /// 별도 포트를 쓴다. 다른 라이브 테스트가 쓰는 5005 는 `suspend=n` 이라 이미 로드돼 있고,
+    /// 그러면 이 테스트가 재려는 상황이 성립하지 않는다.
+    @Test("로드 전 클래스에 건 브레이크포인트가 로드 뒤에 걸린다")
+    func placesABreakpointOnAClassThatHasNotLoadedYet() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 로드 대기 검증을 건너뛴다")
+            return
+        }
+        guard let port = UInt16(ProcessInfo.processInfo.environment["JDWP_SUSPENDED_PORT"] ?? "") else {
+            print("SKIP: JDWP_SUSPENDED_PORT 가 없다 — suspend=y 로 띄운 JVM 이 필요하다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: port)
+        defer { Task { await session.close() } }
+
+        // 이 시점에 Probe 는 아직 로드 전이다. 그것부터 확인한다 — 이미 로드돼 있으면 이
+        // 테스트는 예약 경로를 밟지 않고 통과해 아무것도 지키지 않는다.
+        let loaded = try await session.loadedClassID(named: "Probe")
+        #expect(loaded == nil, "Probe 가 이미 로드돼 있다 — suspend=y 가 아니었다")
+
+        let requestID = try await session.setBreakpoint(className: "Probe", line: 6)
+        print("LIVE(prepare) 예약 request=\(requestID)")
+
+        // 이제 달리게 한다. 로드되면 우리가 걸고, 그 뒤 6행에서 멈춰야 한다.
+        try await session.resume()
+        let stop = try await session.waitForBreakpoint()
+        let top = try #require(try await session.stackFrames(threadID: stop.threadID).first)
+        print("LIVE(prepare) 멈춤 \(top.className).\(top.methodName):\(top.line)")
+        #expect(top.className == "Probe")
+        #expect(top.line == 6)
+
+        try await session.clearBreakpoint(requestID: requestID)
+        try await session.resume()
+    }
+
+    /// 변수 안을 연다 — 실제 디버깅에서 가장 많이 하는 동작이다.
+    @Test("객체·문자열·배열의 안을 읽는다")
+    func opensWhatIsInsideAValue() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 객체 그래프 검증을 건너뛴다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        defer { Task { await session.close() } }
+
+        let requestID = try await session.setBreakpoint(className: "Probe", line: 22)
+        let stop = try await session.waitForBreakpoint()
+        let top = try #require(try await session.stackFrames(threadID: stop.threadID).first)
+        let locals = try await session.localVariables(
+            frame: top, threadID: stop.threadID, codeIndex: stop.codeIndex
+        )
+
+        // `this` 를 연다 — 필드가 넷이어야 한다.
+        let this = try #require(locals.first { $0.name == "this" })
+        let objectID = try #require(this.objectID, "this 를 펼칠 손잡이가 없다")
+        let fields = try await session.fields(ofObject: objectID, typeSignature: this.typeSignature)
+        let byName = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, $0) })
+        print("LIVE(fields) this → \(fields.map { "\($0.name)=\($0.value)" }.joined(separator: " · "))")
+        #expect(byName["counter"] != nil, "인스턴스 필드가 안 보인다")
+        #expect(byName["label"] != nil)
+        #expect(byName["numbers"] != nil)
+        #expect(byName["inner"] != nil)
+
+        // 문자열은 내용이 나와야 한다 — `String@7` 이 아니라.
+        let label = try #require(byName["label"])
+        let labelID = try #require(label.objectID)
+        let labelInside = try await session.fields(ofObject: labelID, typeSignature: label.typeSignature)
+        print("LIVE(fields) label → \(labelInside.map(\.value).joined())")
+        #expect(labelInside.first?.value.contains("probe") == true)
+
+        // 배열은 원소가 나와야 한다.
+        let numbers = try #require(byName["numbers"])
+        let numbersID = try #require(numbers.objectID)
+        let elements = try await session.fields(ofObject: numbersID, typeSignature: numbers.typeSignature)
+        print("LIVE(fields) numbers → \(elements.map(\.value).joined(separator: ","))")
+        #expect(elements.map(\.value) == ["10", "20", "30"])
+
+        // 중첩 객체도 한 겹 더 열린다.
+        let inner = try #require(byName["inner"])
+        let innerID = try #require(inner.objectID)
+        let innerFields = try await session.fields(ofObject: innerID, typeSignature: inner.typeSignature)
+        print("LIVE(fields) inner → \(innerFields.map { "\($0.name)=\($0.value)" }.joined(separator: " · "))")
+        #expect(innerFields.contains { $0.name == "depth" && $0.value == "7" })
+
+        try await session.clearBreakpoint(requestID: requestID)
+        try await session.resume()
+    }
+
     /// 앱이 실제로 하는 순서다 — 이벤트 리스너를 먼저 띄워 두고, 그 **와중에** 사용자가
     /// 브레이크포인트를 건다.
     ///

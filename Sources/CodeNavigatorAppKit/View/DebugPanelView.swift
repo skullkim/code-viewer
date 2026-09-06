@@ -14,10 +14,11 @@ public struct DebugPanelView: View {
     private let connection: DebugConnection
     private let breakpoints: [DebugBreakpoint]
     private let frames: [JavaStackFrame]
-    private let variables: [JavaVariable]
+    private let variableRows: [DebugVariableRow]
     private let variableNotice: String?
     private let selectedFrameID: UInt64?
     private let onSelectFrame: (JavaStackFrame) -> Void
+    private let onToggleVariable: (DebugVariableRow) -> Void
     private let onResume: () -> Void
     private let onAttach: () -> Void
     private let onDetach: () -> Void
@@ -26,10 +27,11 @@ public struct DebugPanelView: View {
         connection: DebugConnection,
         breakpoints: [DebugBreakpoint],
         frames: [JavaStackFrame],
-        variables: [JavaVariable],
+        variableRows: [DebugVariableRow],
         variableNotice: String?,
         selectedFrameID: UInt64?,
         onSelectFrame: @escaping (JavaStackFrame) -> Void,
+        onToggleVariable: @escaping (DebugVariableRow) -> Void,
         onResume: @escaping () -> Void,
         onAttach: @escaping () -> Void,
         onDetach: @escaping () -> Void
@@ -37,10 +39,11 @@ public struct DebugPanelView: View {
         self.connection = connection
         self.breakpoints = breakpoints
         self.frames = frames
-        self.variables = variables
+        self.variableRows = variableRows
         self.variableNotice = variableNotice
         self.selectedFrameID = selectedFrameID
         self.onSelectFrame = onSelectFrame
+        self.onToggleVariable = onToggleVariable
         self.onResume = onResume
         self.onAttach = onAttach
         self.onDetach = onDetach
@@ -194,8 +197,8 @@ public struct DebugPanelView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(variables) { variable in
-                            variableRow(variable)
+                        ForEach(variableRows) { row in
+                            variableRow(row)
                         }
                     }
                 }
@@ -204,8 +207,30 @@ public struct DebugPanelView: View {
         .frame(minWidth: 260, maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private func variableRow(_ variable: JavaVariable) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.small) {
+    private func variableRow(_ row: DebugVariableRow) -> some View {
+        let variable = row.variable
+        return HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.small) {
+            // 들여쓰기로 부모-자식을 보인다. 선을 긋지 않는 것은 IntelliJ 와 같다 — 깊이가
+            // 깊어져도 화면이 조용하다.
+            if row.depth > 0 {
+                Spacer().frame(width: CGFloat(row.depth) * Metrics.indentPerDepth)
+            }
+            // 삼각형은 **열 수 있는 것에만** 준다. 기본형에 그리면 사용자가 눌러 보고
+            // 아무 일도 안 일어나는 것을 겪는다.
+            if variable.isExpandable {
+                Button {
+                    onToggleVariable(row)
+                } label: {
+                    Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: Metrics.disclosureSize))
+                        .foregroundStyle(DesignTokens.textTertiary.dynamicColor)
+                        .frame(width: Metrics.disclosureWidth)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(row.isExpanded ? "\(variable.name) 접기" : "\(variable.name) 펼치기")
+            } else {
+                Spacer().frame(width: Metrics.disclosureWidth)
+            }
             Text(variable.name)
                 .font(.system(size: DesignTokens.Typography.bodySize, weight: .medium, design: .monospaced))
                 .foregroundStyle(DesignTokens.textPrimary.dynamicColor)
@@ -222,5 +247,14 @@ public struct DebugPanelView: View {
         .padding(.horizontal, DesignTokens.Spacing.large)
         .padding(.vertical, DesignTokens.Spacing.small)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        // 줄 아무 데나 눌러도 열린다. 삼각형만 눌러야 하면 표적이 너무 작다.
+        .onTapGesture { if variable.isExpandable { onToggleVariable(row) } }
+    }
+
+    private enum Metrics {
+        static let indentPerDepth: CGFloat = 14
+        static let disclosureWidth: CGFloat = 14
+        static let disclosureSize: CGFloat = 9
     }
 }

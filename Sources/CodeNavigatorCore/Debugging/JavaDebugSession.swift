@@ -12,7 +12,19 @@ private enum Command {
 
     static let referenceType: UInt8 = 2
     static let signature: UInt8 = 1
+    static let fields: UInt8 = 4
     static let methods: UInt8 = 5
+
+    static let objectReference: UInt8 = 9
+    static let referenceTypeOfObject: UInt8 = 1
+    static let objectGetValues: UInt8 = 2
+
+    static let stringReference: UInt8 = 10
+    static let stringValue: UInt8 = 1
+
+    static let arrayReference: UInt8 = 13
+    static let arrayLength: UInt8 = 1
+    static let arrayGetValues: UInt8 = 2
 
     static let method: UInt8 = 6
     static let lineTable: UInt8 = 1
@@ -161,8 +173,42 @@ public actor JavaDebugSession: DebugSession {
     @discardableResult
     public func setBreakpoint(className: String, line: Int) async throws -> Int32 {
         guard let classID = try await loadedClassID(named: className) else {
-            throw JavaDebugError.classNotLoaded(className)
+            // 아직 로드 전이다. **실패로 끝내지 않는다** — `suspend=y` 로 띄운 JVM 은 우리
+            // 클래스를 전부 로드 전이고, 그게 처음부터 디버깅하려는 사람의 정상 상태다.
+            // 로드되면 걸도록 예약하고, 예약했다는 사실을 id 로 돌려준다.
+            return try await deferBreakpoint(className: className, line: line)
         }
+        return try await placeBreakpoint(classID: classID, className: className, line: line)
+    }
+
+    /// 아직 로드되지 않은 클래스에 걸어 달라는 요청. `ClassPrepare` 를 걸어 두고 기다린다.
+    ///
+    /// 돌려주는 id 는 **ClassPrepare 요청의 id** 다. 사용자가 그 브레이크포인트를 지우면
+    /// 이 대기도 같이 지워져야 하고, 그러려면 지울 수 있는 손잡이가 하나여야 한다.
+    private func deferBreakpoint(className: String, line: Int) async throws -> Int32 {
+        let reply = try await connection.request(
+            commandSet: Command.eventRequest,
+            command: Command.eventSet,
+            payload: JDWPClassPrepareRequest.payload(className: className)
+        )
+        var reader = JDWPReader(bytes: reply)
+        let requestID = try reader.readInt32()
+        deferredBreakpoints[requestID] = DeferredBreakpoint(className: className, line: line)
+        return requestID
+    }
+
+    private struct DeferredBreakpoint: Sendable, Hashable {
+        let className: String
+        let line: Int
+    }
+
+    /// 로드를 기다리는 브레이크포인트들. 키는 ClassPrepare 요청 id.
+    private var deferredBreakpoints: [Int32: DeferredBreakpoint] = [:]
+
+    /// 예약된 브레이크포인트를 실제로 건 뒤의 요청 id. 지울 때 이 둘을 같이 지운다.
+    private var placedForDeferred: [Int32: Int32] = [:]
+
+    private func placeBreakpoint(classID: UInt64, className: String, line: Int) async throws -> Int32 {
 
         for method in try await methods(ofClass: classID) {
             let table = try await lineTable(classID: classID, methodID: method.id)
@@ -189,7 +235,21 @@ public actor JavaDebugSession: DebugSession {
     }
 
     public func clearBreakpoint(requestID: Int32) async throws {
-        var payload: [UInt8] = [EventKind.breakpoint]
+        // 예약이었다면 ClassPrepare 대기와, 이미 걸린 실제 브레이크포인트를 **둘 다** 지운다.
+        // 하나만 지우면 사용자는 지웠는데 계속 멈추거나, 다음 로드에 되살아나는 것을 본다.
+        if let deferred = deferredBreakpoints.removeValue(forKey: requestID) {
+            _ = deferred
+            try await clear(kind: JDWPClassPrepareRequest.eventKind, requestID: requestID)
+            if let placed = placedForDeferred.removeValue(forKey: requestID) {
+                try await clear(kind: EventKind.breakpoint, requestID: placed)
+            }
+            return
+        }
+        try await clear(kind: EventKind.breakpoint, requestID: requestID)
+    }
+
+    private func clear(kind: UInt8, requestID: Int32) async throws {
+        var payload: [UInt8] = [kind]
         payload += withUnsafeBytes(of: requestID.bigEndian, Array.init)
         _ = try await connection.request(
             commandSet: Command.eventRequest, command: Command.eventClear, payload: payload
@@ -202,6 +262,19 @@ public actor JavaDebugSession: DebugSession {
     public func waitForBreakpoint() async throws -> JavaStopEvent {
         while true {
             let event = try await connection.nextEvent()
+
+            // 기다리던 클래스가 로드됐다. 이제 진짜로 걸고, **다시 달리게 한다** — 여기서
+            // 멈춰 있으면 사용자는 자기가 걸지도 않은 자리에서 멈춘 화면을 본다.
+            if let prepared = try JDWPClassPrepareRequest.parse(
+                event: event,
+                referenceTypeIDSize: sizes.referenceTypeID,
+                objectIDSize: sizes.objectID
+            ) {
+                await placeDeferredBreakpoint(for: prepared)
+                try? await resume()
+                continue
+            }
+
             guard let stop = try parseStop(event) else { continue }
             // 스텝으로 멈췄든 브레이크포인트로 멈췄든, 살아 있는 스텝 요청은 여기서 거둔다.
             // 안 거두면 그 다음부터 매 줄 멈춘다.
@@ -279,6 +352,24 @@ public actor JavaDebugSession: DebugSession {
     private var pendingStepRequestID: Int32?
 
     /// 스텝으로 멈춘 뒤 그 요청을 거둔다. 안 거두면 매 줄 멈춘다.
+    /// 로드된 클래스에 예약된 브레이크포인트를 건다.
+    ///
+    /// 실패해도 던지지 않는다 — 이벤트 루프 한가운데다. 던지면 리스너가 끝나고, 그러면
+    /// **그 뒤의 모든 멈춤이 사라진다.** 브레이크포인트 하나를 못 건 것보다 훨씬 크다.
+    private func placeDeferredBreakpoint(for prepared: JDWPPreparedClass) async {
+        guard let deferred = deferredBreakpoints[prepared.requestID],
+              deferred.className == prepared.className
+        else {
+            return
+        }
+        classIDsBySignature[signature(forClassName: prepared.className)] = prepared.classID
+        if let placed = try? await placeBreakpoint(
+            classID: prepared.classID, className: prepared.className, line: deferred.line
+        ) {
+            placedForDeferred[prepared.requestID] = placed
+        }
+    }
+
     func clearPendingStepRequest() async {
         guard let requestID = pendingStepRequestID else { return }
         pendingStepRequestID = nil
@@ -429,10 +520,143 @@ public actor JavaDebugSession: DebugSession {
             variables.append(JavaVariable(
                 name: slots[index].name,
                 typeSignature: slots[index].signature,
-                value: value.displayText
+                value: value.displayText,
+                objectID: Self.expandableID(of: value)
             ))
         }
         return variables
+    }
+
+    // MARK: - 객체 안 들여다보기
+
+    /// What is inside one object.
+    ///
+    /// 세 갈래다. 문자열은 내용을, 배열은 원소를, 나머지는 필드를 준다. 못 여는 것이면 빈
+    /// 배열이다 — **던지지 않는다.** 변수 하나를 못 열었다고 패널 전체가 사라지면 안 된다.
+    public func fields(ofObject objectID: UInt64, typeSignature: String) async throws -> [JavaVariable] {
+        guard objectID != 0 else { return [] }
+
+        if typeSignature == "Ljava/lang/String;" {
+            guard let text = try? await stringValue(ofObject: objectID) else { return [] }
+            return [JavaVariable(name: "value", typeSignature: typeSignature, value: "\"\(text)\"")]
+        }
+        if typeSignature.hasPrefix("[") {
+            return (try? await arrayElements(ofArray: objectID, elementSignature: String(typeSignature.dropFirst()))) ?? []
+        }
+        return (try? await instanceFields(ofObject: objectID)) ?? []
+    }
+
+    private func stringValue(ofObject objectID: UInt64) async throws -> String {
+        let reply = try await connection.request(
+            commandSet: Command.stringReference,
+            command: Command.stringValue,
+            payload: JDWPObjectFields.stringValuePayload(objectID: objectID, objectIDSize: sizes.objectID)
+        )
+        var reader = JDWPReader(bytes: reply)
+        return try reader.readString()
+    }
+
+    private func arrayElements(ofArray arrayID: UInt64, elementSignature: String) async throws -> [JavaVariable] {
+        let lengthReply = try await connection.request(
+            commandSet: Command.arrayReference,
+            command: Command.arrayLength,
+            payload: identifierBytes(arrayID, size: sizes.objectID)
+        )
+        var lengthReader = JDWPReader(bytes: lengthReply)
+        let length = try lengthReader.readInt32()
+        guard length > 0 else { return [] }
+
+        // 앞의 것만 읽는다. 백만 개짜리 배열을 통째로 가져오면 화면이 멈추고, 사용자가
+        // 보려던 것은 대개 앞쪽 몇 개다.
+        let shown = min(length, Self.maximumArrayElementsShown)
+        let reply = try await connection.request(
+            commandSet: Command.arrayReference,
+            command: Command.arrayGetValues,
+            payload: JDWPObjectFields.arrayValuesPayload(
+                arrayID: arrayID, firstIndex: 0, length: shown, objectIDSize: sizes.objectID
+            )
+        )
+
+        var reader = JDWPReader(bytes: reply)
+        // 배열 값은 **한 번만** 태그가 온다 — 원소마다가 아니라 배열 전체에 하나다.
+        let tag = Character(UnicodeScalar(try reader.readByte()))
+        let count = Int(try reader.readInt32())
+        var elements: [JavaVariable] = []
+        for index in 0..<count {
+            // 객체 배열은 원소마다 태그가 다시 붙는다(`[` 나 `L` 로 시작하는 태그).
+            let value = "[L".contains(tag)
+                ? try reader.readTaggedValue(objectIDSize: sizes.objectID)
+                : try reader.readValue(tag: tag, objectIDSize: sizes.objectID)
+            elements.append(JavaVariable(
+                name: "[\(index)]",
+                typeSignature: elementSignature,
+                value: value.displayText,
+                objectID: Self.expandableID(of: value)
+            ))
+        }
+        if length > shown {
+            elements.append(JavaVariable(
+                name: "…", typeSignature: "", value: "\(length - shown)개 더", objectID: nil
+            ))
+        }
+        return elements
+    }
+
+    /// 배열에서 한 번에 보여 주는 원소 수.
+    static let maximumArrayElementsShown: Int32 = 100
+
+    private func instanceFields(ofObject objectID: UInt64) async throws -> [JavaVariable] {
+        // 객체의 **실제 타입**을 묻는다. 선언 타입으로 필드를 물으면 하위 타입의 필드가
+        // 통째로 빠진다 — 사용자는 있는 값을 없다고 읽는다.
+        let typeReply = try await connection.request(
+            commandSet: Command.objectReference,
+            command: Command.referenceTypeOfObject,
+            payload: identifierBytes(objectID, size: sizes.objectID)
+        )
+        var typeReader = JDWPReader(bytes: typeReply)
+        _ = try typeReader.readByte()   // refTypeTag
+        let classID = try typeReader.readIdentifier(size: sizes.referenceTypeID)
+
+        let fieldsReply = try await connection.request(
+            commandSet: Command.referenceType,
+            command: Command.fields,
+            payload: identifierBytes(classID, size: sizes.referenceTypeID)
+        )
+        let allFields = try JDWPField.parseList(payload: fieldsReply, fieldIDSize: sizes.fieldID)
+        // 정적 필드는 인스턴스에 없다. 섞어서 물으면 JVM 이 거절하고 **필드가 하나도 안
+        // 보인다** — 하나 때문에 전부를 잃는다.
+        let instanceOnly = allFields.filter { !$0.isStatic }
+        guard !instanceOnly.isEmpty else { return [] }
+
+        let valuesReply = try await connection.request(
+            commandSet: Command.objectReference,
+            command: Command.objectGetValues,
+            payload: JDWPObjectFields.getValuesPayload(
+                objectID: objectID,
+                fieldIDs: instanceOnly.map(\.id),
+                objectIDSize: sizes.objectID,
+                fieldIDSize: sizes.fieldID
+            )
+        )
+        var reader = JDWPReader(bytes: valuesReply)
+        let count = Int(try reader.readInt32())
+        var variables: [JavaVariable] = []
+        for index in 0..<min(count, instanceOnly.count) {
+            let value = try reader.readTaggedValue(objectIDSize: sizes.objectID)
+            variables.append(JavaVariable(
+                name: instanceOnly[index].name,
+                typeSignature: instanceOnly[index].signature,
+                value: value.displayText,
+                objectID: Self.expandableID(of: value)
+            ))
+        }
+        return variables
+    }
+
+    /// 열 수 있는 값이면 그 id. `null`(id 0)과 기본형은 nil 이다.
+    static func expandableID(of value: JDWPValue) -> UInt64? {
+        guard case .object(_, let id) = value, id != 0 else { return nil }
+        return id
     }
 
     // MARK: - 도구

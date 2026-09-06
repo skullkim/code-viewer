@@ -232,10 +232,11 @@ public struct MainWindowView: View {
             connection: model.debug.connection,
             breakpoints: model.debug.breakpoints,
             frames: model.debug.frames,
-            variables: model.debug.variables,
+            variableRows: model.debug.variableRows,
             variableNotice: model.debug.variableNotice,
             selectedFrameID: model.debug.selectedFrameID,
             onSelectFrame: { frame in Task { await model.debug.selectFrame(frame) } },
+            onToggleVariable: { row in Task { await model.debug.toggleExpansion(of: row) } },
             onResume: { Task { await model.debug.resume() } },
             onAttach: { Task { await perform(.attachDebugger) } },
             onDetach: { Task { await perform(.detachDebugger) } }
