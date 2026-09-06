@@ -20,7 +20,9 @@ struct SyntaxHighlightTests {
         normalForeground: EditorColor(packedRGB: 0xE8E8ED),
         normalBackground: EditorColor(packedRGB: 0x1B1B1F),
         sameSymbolBackground: EditorColor(packedRGB: 0x264F78),
-        selectionBackground: EditorColor(packedRGB: 0x0A84FF)
+        selectionBackground: EditorColor(packedRGB: 0x0A84FF),
+        lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
+        currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
     )
 
     // MARK: - 그리드 관측
@@ -331,4 +333,38 @@ struct SyntaxHighlightTests {
 
         #expect(try await session.currentLineForTesting() == "const b = 2;")
     }
+
+    // MARK: - 라인번호 거터
+
+    /// 프로토타입은 46px 거터에 줄 번호를 그리는데(`styles.css:193`) 앱은 `number` 를 켜지
+    /// 않아 거터가 아예 없었다. 인증 라이브에서 사용자가 눈으로 찾았다 — 이 빌드에서
+    /// 세 번째다. 테스트가 초록인데 화면에 없던 것이고, 그리드에 없으니 그리드를 본다.
+    @Test("줄 번호가 화면에 그려지고, 우리 토큰 색을 갖는다")
+    func theGutterIsOnScreenAndTakesItsColourFromThePalette() async throws {
+        let fixture = TemporaryProjectFixture()
+        fixture.write("sample.ts", contents: """
+        const alpha = 1;
+        const bravo = 2;
+        const MARKERGUTTER = 3;
+        """)
+        let session = try await startedSession(fixture)
+        defer { Task { await session.shutDown() } }
+
+        let baseline = await currentRevision(session)
+        let snapshot = try await freshSnapshot(session, containing: "MARKERGUTTER", newerThan: baseline) {
+            try await session.openFile(atRelativePath: "sample.ts", line: nil, recordJump: false)
+        }
+
+        // 커서는 1행에 있다. 3행 번호는 평범한 `LineNr`, 1행 번호는 `CursorLineNr` 이다.
+        //
+        // 둘을 함께 재는 이유: `LineNr` 만 확인하면 `cursorline` 이 꺼져 있어도 통과한다.
+        // 실제로 그렇게 통과했고, 화면에서는 현재 줄 번호가 나머지와 같은 색이었다.
+        func gutterColour(ofScreenRow row: Int) -> EditorColor? {
+            snapshot.lines[row].runs.first?.style.foreground
+        }
+
+        #expect(gutterColour(ofScreenRow: 2) == Self.palette.lineNumberForeground)
+        #expect(gutterColour(ofScreenRow: 0) == Self.palette.currentLineNumberForeground)
+    }
+
 }

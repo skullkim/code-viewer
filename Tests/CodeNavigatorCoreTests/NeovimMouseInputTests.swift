@@ -56,15 +56,15 @@ struct NeovimMouseInputTests {
     /// Neovim 이 드래그로 읽지 않는다(실측: 붙여 보내면 4회 중 3회 실패, 80ms 를 두면 안정).
     private func dragAcrossProbeArea(_ session: NeovimEditorSession) async throws {
         try await session.sendMouse(
-            EditorMouseEvent(button: .left, action: .press, row: probeStartRow, column: 0)
+            EditorMouseEvent(button: .left, action: .press, row: probeStartRow, column: gutterColumns)
         )
         try await waitUntilQueuedInputIsConsumed(session)
         try await session.sendMouse(
-            EditorMouseEvent(button: .left, action: .drag, row: probeEndRow, column: 3)
+            EditorMouseEvent(button: .left, action: .drag, row: probeEndRow, column: gutterColumns + 3)
         )
         try await waitUntilQueuedInputIsConsumed(session)
         try await session.sendMouse(
-            EditorMouseEvent(button: .left, action: .release, row: probeEndRow, column: 3)
+            EditorMouseEvent(button: .left, action: .release, row: probeEndRow, column: gutterColumns + 3)
         )
     }
 
@@ -173,8 +173,8 @@ struct NeovimMouseInputTests {
 
         // 맨 윗줄이 더 이상 1번 줄이 아니어야 한다 — 커서가 아니라 화면이 움직였다는 뜻이다.
         let scrolled = await firstValue(from: frames) { snapshot in
-            guard let topLine = snapshot.lines.first?.plainText else { return false }
-            return topLine.hasPrefix("line ") && !topLine.hasPrefix("line 1 text")
+            guard let topLine = snapshot.lines.first.map(codeText(of:)) else { return false }
+            return topLine.hasPrefix("line ") && topLine != "line 1 text"
         }
         #expect(scrolled != nil)
     }
@@ -217,11 +217,13 @@ struct NeovimMouseInputTests {
         try await waitUntilMouseDragCreatesSelection(session)
 
         let frames = await session.gridUpdates()
-        try await session.sendMouse(EditorMouseEvent(button: .left, action: .press, row: 3, column: 2))
+        try await session.sendMouse(
+            EditorMouseEvent(button: .left, action: .press, row: 3, column: gutterColumns + 2)
+        )
 
         let frame = try #require(await firstValue(from: frames) { $0.rows > 0 })
         let cursorLine = try #require(await session.currentLineForTesting())
-        let screenRow3 = frame.lines[3].plainText.trimmingCharacters(in: .whitespaces)
+        let screenRow3 = codeText(of: frame.lines[3])
 
         // 커서는 화면 3행에 보이던 줄로 가야 한다.
         #expect(cursorLine == screenRow3)
@@ -280,7 +282,9 @@ struct NeovimMouseInputTests {
                 normalForeground: EditorColor(packedRGB: 0xE8E8ED),
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: EditorColor(packedRGB: 0x343438),
-                selectionBackground: selection
+                selectionBackground: selection,
+                lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
+                currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )
         )
         return selection
@@ -348,9 +352,7 @@ struct NeovimMouseInputTests {
         // 어긋나고, 어긋나면 이 단언은 실패하는 대신 **엉뚱한 줄을 보며 조용히 통과**한다.
         let frames = await session.gridUpdates()
         let frame = try #require(await firstValue(from: frames) { $0.lines.count > probeEndRow })
-        let draggedText = (probeStartRow...probeEndRow).map {
-            frame.lines[$0].plainText.trimmingCharacters(in: .whitespaces)
-        }
+        let draggedText = (probeStartRow...probeEndRow).map { codeText(of: frame.lines[$0]) }
         #expect(draggedText.count == 2, "드래그가 훑는 두 행을 못 읽었다")
         #expect(draggedText.allSatisfy { !$0.isEmpty }, "빈 행을 드래그하면 지울 것이 없다")
 

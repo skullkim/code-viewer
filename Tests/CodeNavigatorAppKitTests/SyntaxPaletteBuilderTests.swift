@@ -146,4 +146,27 @@ struct SyntaxPaletteBuilderTests {
             #expect(EditorColor(RGBColor(original)) == original, "\(original) 왕복 실패")
         }
     }
+
+    /// 라인번호 거터는 프로토타입이 그린 화면의 일부다(`styles.css:193` — 46px, `text-3`,
+    /// 현재 줄만 `text-1` + bold). 그런데 §4.1.1 의 소유 그룹 목록이 `등` 으로 끝나면서
+    /// `LineNr`·`CursorLineNr` 이 그 안에 접혔고, 접힌 채로 아무도 세지 않았다.
+    ///
+    /// 안 바르면 nvim 기본 `#4F5258` 이 남는데 우리 배경 위에서 **2.19:1** 이라 §4.5 의
+    /// 바닥(4.5:1)의 절반이다. 그리고 우리가 `Normal` 배경을 덮으면서 2.34 → 2.19 로
+    /// **더 나빠졌다** — 소유하지 않은 그룹의 대비를 소유한 그룹을 바꿔서 떨어뜨린 것이다.
+    @Test("라인번호가 디자인 토큰에서 온다", arguments: AppearanceScheme.allCases)
+    func theLineNumberGutterTakesItsColoursFromTokens(scheme: AppearanceScheme) {
+        let palette = SyntaxPaletteBuilder.palette(for: scheme)
+
+        #expect(palette.lineNumberForeground == EditorColor(DesignTokens.textTertiary.value(for: scheme)))
+        #expect(palette.currentLineNumberForeground == EditorColor(DesignTokens.textPrimary.value(for: scheme)))
+    }
+
+    @Test("현재 줄 번호가 나머지 줄 번호보다 눈에 띈다", arguments: AppearanceScheme.allCases)
+    func theCurrentLineNumberStandsOutFromTheRest(scheme: AppearanceScheme) {
+        // 두 슬롯이 같은 토큰을 읽으면 위 테스트는 통과하고 거터는 밋밋해진다.
+        let palette = SyntaxPaletteBuilder.palette(for: scheme)
+        #expect(palette.lineNumberForeground != palette.currentLineNumberForeground)
+    }
+
 }

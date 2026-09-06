@@ -113,7 +113,9 @@ struct MouseInteractionTests {
                 normalForeground: EditorColor(packedRGB: 0xE8E8ED),
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: EditorColor(packedRGB: 0x264F78),
-                selectionBackground: selectionBackground
+                selectionBackground: selectionBackground,
+                lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
+                currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )
         )
 
@@ -159,7 +161,13 @@ struct MouseInteractionTests {
         defer { Task { await session.shutDown() } }
         try await session.clearClipboardRegisterForTesting()
 
-        try await dragFrom(session, startRow: 1, startColumn: 0, endRow: 1, endColumn: 10)
+        // 거터 폭만큼 민다. `numberwidth` 기본이 4 라 0~3 열은 줄 번호이고, 거기서 시작하면
+        // 선택이 코드가 아니라 거터에서 출발한다.
+        try await dragFrom(
+            session,
+            startRow: 1, startColumn: gutterColumns,
+            endRow: 1, endColumn: gutterColumns + 10
+        )
         try await session.copySelection()
         try await settle(session)
 

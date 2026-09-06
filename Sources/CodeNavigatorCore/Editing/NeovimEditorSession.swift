@@ -861,8 +861,20 @@ public actor NeovimEditorSession: EditorSession {
     ///
     /// Like `showtabline=0`, this is a rendering-and-interaction contract for the embedded
     /// session, not an edit to the user's configuration (INV-7).
+    ///
+    /// `number` is here because the gutter is part of the designed screen (prototype `styles.css`
+    /// draws a 46px column), not a Neovim preference. It shipped off, and nobody noticed until a
+    /// person looked at the running application — the tests were green because none of them asked
+    /// whether the gutter was on screen.
     private func installSessionInteractionOptions(on channel: NeovimChannel) async {
         _ = try? await channel.request("nvim_command", [.string("set mouse=a")])
+        _ = try? await channel.request("nvim_command", [.string("set number")])
+        // `CursorLineNr` only applies while `cursorline` is on — without it every number is
+        // `LineNr` and the current line does not stand out. `cursorlineopt=number` takes the
+        // emphasised number **without** the full-width background band: the prototype marks the
+        // current line by its number alone, and §4.1.1 leaves `CursorLine` to the user.
+        _ = try? await channel.request("nvim_command", [.string("set cursorline")])
+        _ = try? await channel.request("nvim_command", [.string("set cursorlineopt=number")])
     }
 
     /// Installs `gd` and `gr` — except where the user's own configuration already holds them.
@@ -1079,6 +1091,13 @@ public actor NeovimEditorSession: EditorSession {
             ),
             MessagePackKeyValuePair(
                 key: .string("selectionBackground"), value: packed(palette.selectionBackground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("lineNumber"), value: packed(palette.lineNumberForeground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("currentLineNumber"),
+                value: packed(palette.currentLineNumberForeground)
             ),
         ])
     }

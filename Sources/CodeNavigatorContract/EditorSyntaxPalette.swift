@@ -32,6 +32,14 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
     public let sameSymbolBackground: EditorColor
     /// Behind a visual selection, including one made with the mouse (REQ-017 AC-3).
     public let selectionBackground: EditorColor
+    /// The line-number gutter, and the number on the line the cursor is on.
+    ///
+    /// Carried for the same reason as `normalForeground`: left undefined, Neovim's stock `LineNr`
+    /// (`#4F5258`) stays, which sits at 2.19:1 on the editor background — under half the 4.5:1
+    /// floor. Painting `Normal` made that *worse* (2.34 → 2.19), so owning the background without
+    /// owning the gutter degrades a surface the application did not mean to touch.
+    public let lineNumberForeground: EditorColor
+    public let currentLineNumberForeground: EditorColor
 
     public init(
         keyword: EditorColor,
@@ -44,7 +52,9 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         normalForeground: EditorColor,
         normalBackground: EditorColor,
         sameSymbolBackground: EditorColor,
-        selectionBackground: EditorColor
+        selectionBackground: EditorColor,
+        lineNumberForeground: EditorColor,
+        currentLineNumberForeground: EditorColor
     ) {
         self.keyword = keyword
         self.type = type
@@ -57,5 +67,7 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         self.normalBackground = normalBackground
         self.sameSymbolBackground = sameSymbolBackground
         self.selectionBackground = selectionBackground
+        self.lineNumberForeground = lineNumberForeground
+        self.currentLineNumberForeground = currentLineNumberForeground
     }
 }

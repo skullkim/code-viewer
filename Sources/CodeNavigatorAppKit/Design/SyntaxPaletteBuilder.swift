@@ -39,7 +39,11 @@ enum SyntaxPaletteBuilder {
             // screen at the same time as the symbol under the cursor, so one colour for both
             // leaves the two indistinguishable.
             sameSymbolBackground: EditorColor(DesignTokens.backgroundSameSymbol.value(for: scheme)),
-            selectionBackground: EditorColor(DesignTokens.backgroundSelection.value(for: scheme))
+            selectionBackground: EditorColor(DesignTokens.backgroundSelection.value(for: scheme)),
+            // 거터. 프로토타입이 `text-3` 로 그리고 현재 줄만 `text-1` 로 올린다
+            // (`styles.css:193·196`). 두 값이 갈려야 현재 줄이 눈에 띈다.
+            lineNumberForeground: EditorColor(DesignTokens.textTertiary.value(for: scheme)),
+            currentLineNumberForeground: EditorColor(DesignTokens.textPrimary.value(for: scheme))
         )
     }
 }

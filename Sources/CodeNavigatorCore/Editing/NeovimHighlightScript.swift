@@ -58,6 +58,11 @@ enum NeovimHighlightScript {
             fg = colours.normalForeground, bg = colours.normalBackground,
           })
 
+          -- 거터. 안 바르면 nvim 기본 #4F5258 이 남고 우리 배경 위에서 2.19:1 이다 —
+          -- §4.5 바닥의 절반이고, 우리가 Normal 배경을 덮으면서 오히려 나빠진 값이다.
+          vim.api.nvim_set_hl(0, 'LineNr', { fg = colours.lineNumber })
+          vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = colours.currentLineNumber, bold = true })
+
           vim.api.nvim_set_hl(0, '\(sameSymbolGroup)', { bg = colours.sameSymbolBackground })
           vim.api.nvim_set_hl(0, 'Visual', { bg = colours.selectionBackground })
         end

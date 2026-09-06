@@ -110,10 +110,12 @@ struct Increment3EnvironmentAssumptionsTests {
     private func foreground(
         in snapshot: EditorGridSnapshot, onLineContaining marker: String
     ) -> EditorColor? {
+        // 줄의 첫 런이 아니라 **마커가 든 런**을 집는다. 거터가 켜진 뒤로 첫 런은 줄 번호이고,
+        // 그것을 집으면 이 테스트는 코드 색 대신 `LineNr` 색을 재게 된다 — 실제로 그렇게 깨졌다.
         snapshot.lines
             .first { $0.plainText.contains(marker) }?
             .runs
-            .first { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }?
+            .first { $0.text.contains(marker) }?
             .style.foreground
     }
 
@@ -413,7 +415,9 @@ struct Increment3EnvironmentAssumptionsTests {
                 normalForeground: EditorColor(packedRGB: 0xE8E8ED),
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: matchBackground,
-                selectionBackground: EditorColor(packedRGB: 0x233043)
+                selectionBackground: EditorColor(packedRGB: 0x233043),
+                lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
+                currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )
         )
         try await session.openFile(atRelativePath: "m.ts", line: 1, recordJump: false)
@@ -479,7 +483,9 @@ struct Increment3EnvironmentAssumptionsTests {
                 normalForeground: EditorColor(packedRGB: 0xE8E8ED),
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: matchBackground,
-                selectionBackground: selectionBackground
+                selectionBackground: selectionBackground,
+                lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
+                currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )
         )
         try await session.openFile(atRelativePath: "s.ts", line: 1, recordJump: false)
