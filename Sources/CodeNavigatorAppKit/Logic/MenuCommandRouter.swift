@@ -16,6 +16,24 @@ public enum MenuCommandRouter {
     /// that a modal in a router is a modal in everything downstream of it.
     public typealias FolderChooser = @MainActor () -> URL?
 
+    /// Runs a `gd`/`gr` request's commands in order (REQ-015).
+    ///
+    /// Sequential rather than concurrent: `gd` lists usages for the word under the cursor and
+    /// then moves the cursor, and overlapping those two would read a word that is already gone.
+    ///
+    /// Both commands report a missing symbol with the same sentence, and `show` replaces rather
+    /// than stacks — so a cursor on punctuation still produces one message, not two.
+    public static func perform(
+        _ request: EditorNavigationRequest,
+        model: AppModel,
+        search: SearchModel,
+        chooseFolder: FolderChooser = presentFolderPanel
+    ) async {
+        for command in request.menuCommands {
+            await perform(command, model: model, search: search, chooseFolder: chooseFolder)
+        }
+    }
+
     public static func perform(
         _ command: MenuCommand,
         model: AppModel,

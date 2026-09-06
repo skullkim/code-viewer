@@ -118,7 +118,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // Installed before `start()`, which is where the subscription is made.
         model.onNavigationRequest = { [weak model, weak search] request in
             guard let model, let search else { return }
-            Task { await MenuCommandRouter.perform(request.menuCommand, model: model, search: search) }
+            Task { await MenuCommandRouter.perform(request, model: model, search: search) }
         }
         model.start()
         // Brings back the projects that were open, and lands on the one the user left in

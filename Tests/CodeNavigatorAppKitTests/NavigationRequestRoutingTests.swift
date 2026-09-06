@@ -12,19 +12,45 @@ import CodeNavigatorContract
 @Suite("네비게이션 요청·외형 매핑")
 struct NavigationRequestRoutingTests {
 
-    @Test("gd 는 정의로, gr 은 참조로 간다 — 뒤집히지 않았다")
-    func eachRequestMapsToItsOwnCommand() {
-        #expect(EditorNavigationRequest.goToDefinition.menuCommand == .goToDefinition)
-        #expect(EditorNavigationRequest.findReferences.menuCommand == .showReferences)
+    /// `gd` 는 정의로 가고 **동시에** 사용처를 나열한다.
+    ///
+    /// 사용자의 원래 요구가 그것이었다 — *"gd 를 누르면 해당 클래스를 사용하는 모든 곳이
+    /// 나열됐으면 좋겠어."* 처음엔 `gd`=정의 / `gr`=참조로 갈랐는데, 참조 패널이 정의를
+    /// `정의` 배지로 함께 싣기 때문에 한 번에 둘 다 보이는 편이 요구에 맞다.
+    @Test("gd 는 참조를 나열한 뒤 정의로 간다")
+    func goToDefinitionAlsoListsUsages() {
+        #expect(EditorNavigationRequest.goToDefinition.menuCommands == [.showReferences, .goToDefinition])
     }
 
-    @Test("두 요청이 서로 다른 명령으로 간다")
-    func theTwoRequestsDoNotCollapse() {
-        // 둘 다 같은 명령으로 가도 위 테스트는 절반만 실패한다. 여기서 뭉개짐 자체를 막는다.
-        let commands = Set(EditorNavigationRequest.allCases.map(\.menuCommand))
+    /// 순서가 뒤집히면 조용히 틀린다: `goToDefinition` 이 먼저면 커서가 정의로 옮겨간 뒤에
+    /// 참조를 찾게 되고, 커서 아래 낱말이 달라지는 경우 다른 심볼의 참조가 나온다.
+    @Test("참조를 먼저 뽑는다 — 커서가 움직이기 전에")
+    func usagesAreResolvedBeforeTheCursorMoves() {
+        let commands = EditorNavigationRequest.goToDefinition.menuCommands
+        let references = try? #require(commands.firstIndex(of: .showReferences))
+        let definition = try? #require(commands.firstIndex(of: .goToDefinition))
+        #expect(references != nil && definition != nil)
+        if let references, let definition {
+            #expect(references < definition, "정의로 먼저 가면 참조를 다른 낱말로 찾는다")
+        }
+    }
 
+    @Test("gr 은 참조만 나열한다 — gd 와 뭉개지지 않았다")
+    func findReferencesStaysReferencesOnly() {
+        #expect(EditorNavigationRequest.findReferences.menuCommands == [.showReferences])
+        #expect(
+            EditorNavigationRequest.goToDefinition.menuCommands
+                != EditorNavigationRequest.findReferences.menuCommands,
+            "두 요청이 같은 동작으로 뭉개졌다"
+        )
+    }
+
+    @Test("모든 요청이 최소 한 명령으로 간다 — 빈 목록은 조용한 무동작이다")
+    func everyRequestRoutesSomewhere() {
         #expect(EditorNavigationRequest.allCases.count == 2, "요청 종류가 늘면 이 표도 늘어야 한다")
-        #expect(commands.count == 2, "두 요청이 한 명령으로 뭉개졌다")
+        for request in EditorNavigationRequest.allCases {
+            #expect(!request.menuCommands.isEmpty, "\(request) 가 아무 명령으로도 안 간다")
+        }
     }
 
     @Test("다크 외형은 다크 팔레트를 부른다")

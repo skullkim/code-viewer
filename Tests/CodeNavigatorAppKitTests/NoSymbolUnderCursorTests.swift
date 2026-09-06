@@ -35,7 +35,7 @@ struct NoSymbolUnderCursorTests {
         editor.wordUnderCursorValue = nil
 
         await MenuCommandRouter.perform(
-            EditorNavigationRequest.findReferences.menuCommand,
+            EditorNavigationRequest.findReferences,
             model: model,
             search: search
         )
@@ -57,7 +57,7 @@ struct NoSymbolUnderCursorTests {
         #expect(project.referenceQueries.isEmpty, "시작 전에 이미 질의가 있으면 아래가 무의미하다")
 
         await MenuCommandRouter.perform(
-            EditorNavigationRequest.findReferences.menuCommand,
+            EditorNavigationRequest.findReferences,
             model: model,
             search: search
         )
@@ -73,7 +73,7 @@ struct NoSymbolUnderCursorTests {
         editor.wordUnderCursorValue = "UserService"
 
         await MenuCommandRouter.perform(
-            EditorNavigationRequest.findReferences.menuCommand,
+            EditorNavigationRequest.findReferences,
             model: model,
             search: search
         )
@@ -88,14 +88,14 @@ struct NoSymbolUnderCursorTests {
         editor.wordUnderCursorValue = nil
 
         await MenuCommandRouter.perform(
-            EditorNavigationRequest.goToDefinition.menuCommand,
+            EditorNavigationRequest.goToDefinition,
             model: model,
             search: search
         )
         let definitionMessage = model.statusMessage?.text
 
         await MenuCommandRouter.perform(
-            EditorNavigationRequest.findReferences.menuCommand,
+            EditorNavigationRequest.findReferences,
             model: model,
             search: search
         )
