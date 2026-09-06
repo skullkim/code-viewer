@@ -65,16 +65,21 @@ public struct JavaStopEvent: Sendable, Hashable {
     public let classID: UInt64
     public let methodID: UInt64
     public let codeIndex: UInt64
+    /// 왜 멈췄는지. 화면이 브레이크포인트와 예외를 다르게 말해야 한다 — 같은 말로 하면
+    /// 사용자는 자기가 걸지도 않은 자리에서 멈춘 이유를 못 찾는다.
+    public let reason: DebugStopReason
 
     public init(
         threadID: UInt64, requestID: Int32,
-        classID: UInt64, methodID: UInt64, codeIndex: UInt64
+        classID: UInt64, methodID: UInt64, codeIndex: UInt64,
+        reason: DebugStopReason = .breakpoint
     ) {
         self.threadID = threadID
         self.requestID = requestID
         self.classID = classID
         self.methodID = methodID
         self.codeIndex = codeIndex
+        self.reason = reason
     }
 }
 
@@ -93,6 +98,34 @@ public enum DebugStep: Sendable, Hashable, CaseIterable {
     case out
 }
 
+/// 예외에서 멈추는 규칙. 둘 다 끄면 요청 자체를 안 만든다 — JVM 은 그런 요청도 받아들이고
+/// **아무것도 보고하지 않는데**, 사용자에게는 "켰는데 안 멈춘다" 로 보인다.
+public struct ExceptionBreakpointRule: Sendable, Hashable {
+    /// 코드가 잡아서 처리하는 예외. 프레임워크가 예외로 흐름을 제어하는 코드에서는 초당
+    /// 수십 번 멈추므로 기본은 끔이다.
+    public let breakOnCaught: Bool
+    /// 아무도 안 잡아서 스레드를 죽이는 예외. 이건 거의 항상 보고 싶다.
+    public let breakOnUncaught: Bool
+
+    public var isEnabled: Bool { breakOnCaught || breakOnUncaught }
+
+    public init(breakOnCaught: Bool, breakOnUncaught: Bool) {
+        self.breakOnCaught = breakOnCaught
+        self.breakOnUncaught = breakOnUncaught
+    }
+
+    public static let off = ExceptionBreakpointRule(breakOnCaught: false, breakOnUncaught: false)
+    public static let uncaughtOnly = ExceptionBreakpointRule(breakOnCaught: false, breakOnUncaught: true)
+}
+
+/// 멈춘 이유. 화면이 "왜 여기서 멈췄지" 에 답할 수 있어야 한다.
+public enum DebugStopReason: Sendable, Hashable {
+    case breakpoint
+    case step
+    /// 예외로 멈췄다. 잡히는지 여부와 예외 객체를 함께 준다.
+    case exception(isCaught: Bool, objectID: UInt64)
+}
+
 public protocol DebugSession: Sendable {
     func setBreakpoint(className: String, line: Int) async throws -> Int32
     func clearBreakpoint(requestID: Int32) async throws
@@ -109,6 +142,9 @@ public protocol DebugSession: Sendable {
     /// 배열이면 원소를, 문자열이면 내용을 준다. 못 여는 것이면 빈 배열이다 — **던지지
     /// 않는다.** 변수 하나를 못 열었다고 패널 전체가 사라지면 안 된다.
     func fields(ofObject objectID: UInt64, typeSignature: String) async throws -> [JavaVariable]
+    /// 예외에서 멈추는 규칙을 갈아 끼운다. 이전 규칙은 지운다 — 안 지우면 규칙이 쌓여
+    /// 껐다고 생각한 것에서 계속 멈춘다.
+    func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws
     func close() async
 }
 

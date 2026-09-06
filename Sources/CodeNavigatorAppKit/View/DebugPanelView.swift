@@ -17,6 +17,7 @@ public struct DebugPanelView: View {
     private let variableRows: [DebugVariableRow]
     private let variableNotice: String?
     private let selectedFrameID: UInt64?
+    private let stopReason: DebugStopReason?
     private let onSelectFrame: (JavaStackFrame) -> Void
     private let onToggleVariable: (DebugVariableRow) -> Void
     private let onResume: () -> Void
@@ -30,6 +31,7 @@ public struct DebugPanelView: View {
         variableRows: [DebugVariableRow],
         variableNotice: String?,
         selectedFrameID: UInt64?,
+        stopReason: DebugStopReason?,
         onSelectFrame: @escaping (JavaStackFrame) -> Void,
         onToggleVariable: @escaping (DebugVariableRow) -> Void,
         onResume: @escaping () -> Void,
@@ -42,6 +44,7 @@ public struct DebugPanelView: View {
         self.variableRows = variableRows
         self.variableNotice = variableNotice
         self.selectedFrameID = selectedFrameID
+        self.stopReason = stopReason
         self.onSelectFrame = onSelectFrame
         self.onToggleVariable = onToggleVariable
         self.onResume = onResume
@@ -98,7 +101,18 @@ public struct DebugPanelView: View {
         case .attached(let host, let port):
             return "실행 중 — \(host):\(port) · 브레이크포인트 \(breakpoints.count)개"
         case .stopped(let host, let port):
-            return "멈춤 — \(host):\(port)"
+            // **왜 멈췄는지 말한다.** 예외로 멈춘 것을 브레이크포인트처럼 말하면 사용자는
+            // 자기가 걸지도 않은 자리에서 멈춘 이유를 못 찾는다.
+            switch stopReason {
+            case .exception(let isCaught, _):
+                return isCaught
+                    ? "예외에서 멈춤 (잡힘) — \(host):\(port)"
+                    : "예외에서 멈춤 (잡히지 않음) — \(host):\(port)"
+            case .step:
+                return "한 걸음 뒤 — \(host):\(port)"
+            case .breakpoint, .none:
+                return "멈춤 — \(host):\(port)"
+            }
         case .failed(let reason):
             return reason
         }

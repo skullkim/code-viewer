@@ -15,6 +15,9 @@ private enum Command {
     static let fields: UInt8 = 4
     static let methods: UInt8 = 5
 
+    static let classType: UInt8 = 3
+    static let superclass: UInt8 = 1
+
     static let objectReference: UInt8 = 9
     static let referenceTypeOfObject: UInt8 = 1
     static let objectGetValues: UInt8 = 2
@@ -256,6 +259,33 @@ public actor JavaDebugSession: DebugSession {
         )
     }
 
+    // MARK: - 예외 브레이크포인트
+
+    /// 지금 걸려 있는 예외 요청. 갈아 끼울 때 지우기 위해 들고 있다 — 안 지우면 규칙이
+    /// 쌓여서 껐다고 생각한 것에서 계속 멈춘다.
+    private var exceptionRequestID: Int32?
+
+    public func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws {
+        if let existing = exceptionRequestID {
+            try? await clear(kind: JDWPExceptionRequest.eventKind, requestID: existing)
+            exceptionRequestID = nil
+        }
+        guard let payload = JDWPExceptionRequest.payload(
+            classID: nil,
+            caught: rule.breakOnCaught,
+            uncaught: rule.breakOnUncaught,
+            referenceTypeIDSize: sizes.referenceTypeID
+        ) else {
+            // 둘 다 끔 = 끄기. 요청을 안 만드는 것이 맞다.
+            return
+        }
+        let reply = try await connection.request(
+            commandSet: Command.eventRequest, command: Command.eventSet, payload: payload
+        )
+        var reader = JDWPReader(bytes: reply)
+        exceptionRequestID = try reader.readInt32()
+    }
+
     // MARK: - 멈춤과 재개
 
     /// Waits until the debuggee stops at a breakpoint.
@@ -273,6 +303,25 @@ public actor JavaDebugSession: DebugSession {
                 await placeDeferredBreakpoint(for: prepared)
                 try? await resume()
                 continue
+            }
+
+            // 예외 이벤트는 페이로드 모양이 브레이크포인트와 다르다 — 위치 뒤에 예외 객체와
+            // 잡히는 위치가 더 붙는다. 먼저 시도해서 맞으면 그것이다.
+            if let thrown = try JDWPExceptionRequest.parse(
+                event: event,
+                referenceTypeIDSize: sizes.referenceTypeID,
+                methodIDSize: sizes.methodID,
+                objectIDSize: sizes.objectID
+            ) {
+                await clearPendingStepRequest()
+                return JavaStopEvent(
+                    threadID: thrown.threadID,
+                    requestID: thrown.requestID,
+                    classID: thrown.classID,
+                    methodID: thrown.methodID,
+                    codeIndex: thrown.codeIndex,
+                    reason: .exception(isCaught: thrown.isCaught, objectID: thrown.exceptionObjectID)
+                )
             }
 
             guard let stop = try parseStop(event) else { continue }
@@ -307,7 +356,8 @@ public actor JavaDebugSession: DebugSession {
             let codeIndex = try reader.readUInt64()
             return JavaStopEvent(
                 threadID: threadID, requestID: requestID,
-                classID: classID, methodID: methodID, codeIndex: codeIndex
+                classID: classID, methodID: methodID, codeIndex: codeIndex,
+                reason: kind == JDWPStepRequest.eventKind ? .step : .breakpoint
             )
         }
         return nil
@@ -617,12 +667,7 @@ public actor JavaDebugSession: DebugSession {
         _ = try typeReader.readByte()   // refTypeTag
         let classID = try typeReader.readIdentifier(size: sizes.referenceTypeID)
 
-        let fieldsReply = try await connection.request(
-            commandSet: Command.referenceType,
-            command: Command.fields,
-            payload: identifierBytes(classID, size: sizes.referenceTypeID)
-        )
-        let allFields = try JDWPField.parseList(payload: fieldsReply, fieldIDSize: sizes.fieldID)
+        let allFields = try await fieldsIncludingInherited(ofClass: classID)
         // 정적 필드는 인스턴스에 없다. 섞어서 물으면 JVM 이 거절하고 **필드가 하나도 안
         // 보인다** — 하나 때문에 전부를 잃는다.
         let instanceOnly = allFields.filter { !$0.isStatic }
@@ -651,6 +696,53 @@ public actor JavaDebugSession: DebugSession {
             ))
         }
         return variables
+    }
+
+    /// Fields declared here **and in every superclass**.
+    ///
+    /// `ReferenceType.Fields` 는 그 클래스가 **선언한** 필드만 준다. 상속받은 것은 안 준다.
+    /// 실측으로 걸렸다: `IllegalStateException` 을 열었더니 필드가 0개였는데, 예외 메시지는
+    /// `Throwable.detailMessage` 라 한 단계 위에 있었다. 사용자에게는 "예외를 열었는데
+    /// 아무것도 없다" 로 보이고, 그건 우리가 못 읽은 것과 구별되지 않는다.
+    ///
+    /// 자기 것부터 올라간다 — 하위 클래스가 같은 이름으로 가린 필드가 있으면 가까운 쪽이
+    /// 먼저 보이는 편이 자연스럽다.
+    private func fieldsIncludingInherited(ofClass classID: UInt64) async throws -> [JDWPField] {
+        var fields: [JDWPField] = []
+        var seenIDs: Set<UInt64> = []
+        var current: UInt64? = classID
+        var depth = 0
+
+        while let typeID = current, depth < Self.maximumSuperclassDepth {
+            depth += 1
+            let reply = try await connection.request(
+                commandSet: Command.referenceType,
+                command: Command.fields,
+                payload: identifierBytes(typeID, size: sizes.referenceTypeID)
+            )
+            for field in try JDWPField.parseList(payload: reply, fieldIDSize: sizes.fieldID)
+            where seenIDs.insert(field.id).inserted {
+                fields.append(field)
+            }
+            current = try? await superclass(ofClass: typeID)
+        }
+        return fields
+    }
+
+    /// `Object` 까지 올라가면 멈춘다. 상한을 두는 것은 깊이 때문이 아니라, 응답이 이상할 때
+    /// 무한 루프에 빠지지 않기 위해서다 — 이벤트 루프 안에서 그러면 디버거가 통째로 멈춘다.
+    static let maximumSuperclassDepth = 32
+
+    private func superclass(ofClass classID: UInt64) async throws -> UInt64? {
+        let reply = try await connection.request(
+            commandSet: Command.classType,
+            command: Command.superclass,
+            payload: identifierBytes(classID, size: sizes.referenceTypeID)
+        )
+        var reader = JDWPReader(bytes: reply)
+        let superclassID = try reader.readIdentifier(size: sizes.referenceTypeID)
+        // 0 은 `Object` 위, 즉 없다는 뜻이다.
+        return superclassID == 0 ? nil : superclassID
     }
 
     /// 열 수 있는 값이면 그 id. `null`(id 0)과 기본형은 nil 이다.

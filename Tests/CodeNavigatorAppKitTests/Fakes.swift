@@ -477,3 +477,4 @@ final class FakeWorkspace: ProjectWorkspace, @unchecked Sendable {
         return TabRestoreOutcome(restored: restored, missing: missing)
     }
 }
+

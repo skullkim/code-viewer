@@ -186,6 +186,43 @@ struct JDWPLiveBreakpointTests {
         try await session.resume()
     }
 
+    /// 예외에서 멈춘다. 브레이크포인트를 어디에 걸어야 할지 모를 때 쓰는 기능이다.
+    @Test("잡히는 예외에서 멈추고, 그것이 예외 때문임을 안다")
+    func stopsOnACaughtException() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 예외 검증을 건너뛴다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        defer { Task { await session.close() } }
+
+        try await session.setExceptionBreakpoint(
+            ExceptionBreakpointRule(breakOnCaught: true, breakOnUncaught: true)
+        )
+        let stop = try await session.waitForBreakpoint()
+
+        guard case .exception(let isCaught, let objectID) = stop.reason else {
+            Issue.record("예외가 아니라 \(stop.reason) 로 멈췄다")
+            return
+        }
+        print("LIVE(exception) caught=\(isCaught) object=\(objectID)")
+        #expect(isCaught, "이 디버기는 잡는 예외를 던진다")
+        #expect(objectID != 0)
+
+        // 예외 객체 안을 열 수 있어야 한다 — 메시지를 보려면 그게 필요하다.
+        let fields = try await session.fields(
+            ofObject: objectID, typeSignature: "Ljava/lang/IllegalStateException;"
+        )
+        print("LIVE(exception) 필드 \(fields.map(\.name).joined(separator: ","))")
+        #expect(!fields.isEmpty, "예외 객체를 못 연다")
+
+        // 껐으면 더는 안 멈춰야 한다.
+        try await session.setExceptionBreakpoint(.off)
+        try await session.resume()
+        print("LIVE(exception) 끄고 재개")
+    }
+
     /// 앱이 실제로 하는 순서다 — 이벤트 리스너를 먼저 띄워 두고, 그 **와중에** 사용자가
     /// 브레이크포인트를 건다.
     ///

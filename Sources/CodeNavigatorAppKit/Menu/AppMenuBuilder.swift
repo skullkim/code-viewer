@@ -119,6 +119,11 @@ public enum AppMenuBuilder {
             MenuItemDescriptor(title: "함수 안으로", command: .stepInto, keyEquivalent: "i", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "함수 밖으로", command: .stepOut, keyEquivalent: "u", modifiers: [.command, .option]),
             .separator,
+            // 잡히지 않는 예외는 거의 항상 보고 싶다. 잡히는 예외는 따로 둔다 — 프레임워크가
+            // 예외로 흐름을 제어하는 코드에서 켜면 초당 수십 번 멈추고, 그러면 디버거를 끈다.
+            MenuItemDescriptor(title: "잡히지 않는 예외에서 멈춤", command: .toggleBreakOnUncaughtException),
+            MenuItemDescriptor(title: "잡히는 예외에서도 멈춤", command: .toggleBreakOnCaughtException),
+            .separator,
             MenuItemDescriptor(title: "디버그 패널 표시", command: .toggleDebugPanel, keyEquivalent: "5", modifiers: [.command, .option]),
         ])
     }

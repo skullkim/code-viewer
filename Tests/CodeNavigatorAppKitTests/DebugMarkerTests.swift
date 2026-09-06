@@ -145,6 +145,11 @@ private final class MarkerFakeSession: DebugSession, @unchecked Sendable {
     /// 실제로 걸었는지 테스트가 확인할 수 있게 기록한다.
     private(set) var steps: [DebugStep] = []
     func step(_ step: DebugStep, threadID: UInt64) async throws { steps.append(step) }
+    /// 규칙을 기록한다 — 껐는지 켰는지 테스트가 확인할 수 있게.
+    private(set) var exceptionRule: ExceptionBreakpointRule = .off
+    func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws {
+        exceptionRule = rule
+    }
     func close() async {}
 }
 

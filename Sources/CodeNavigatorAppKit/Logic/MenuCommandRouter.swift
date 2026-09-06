@@ -118,6 +118,16 @@ public enum MenuCommandRouter {
             await model.debug.step(.into)
         case .stepOut:
             await model.debug.step(.out)
+        case .toggleBreakOnUncaughtException:
+            await model.debug.setExceptionRule(ExceptionBreakpointRule(
+                breakOnCaught: model.debug.exceptionRule.breakOnCaught,
+                breakOnUncaught: !model.debug.exceptionRule.breakOnUncaught
+            ))
+        case .toggleBreakOnCaughtException:
+            await model.debug.setExceptionRule(ExceptionBreakpointRule(
+                breakOnCaught: !model.debug.exceptionRule.breakOnCaught,
+                breakOnUncaught: model.debug.exceptionRule.breakOnUncaught
+            ))
         case .toggleDebugPanel:
             model.shell.isDebugPanelVisible.toggle()
 

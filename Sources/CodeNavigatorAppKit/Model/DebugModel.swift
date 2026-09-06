@@ -73,6 +73,11 @@ public final class DebugModel {
     /// 열리는 것은 아무것도 안 여는 것보다 나쁘다 — 사용자가 그 파일을 고치기 시작한다.
     public private(set) var stoppedBreakpointPath: String?
     public private(set) var stoppedLine: Int?
+    /// 왜 멈췄는지. 화면이 브레이크포인트와 예외를 다르게 말해야 한다.
+    public private(set) var stopReason: DebugStopReason?
+    /// 예외에서 멈추는 규칙. 기본은 안 잡히는 예외만 — caught 를 켜면 프레임워크가 예외로
+    /// 흐름을 제어하는 코드에서 초당 수십 번 멈춘다.
+    public private(set) var exceptionRule: ExceptionBreakpointRule = .off
 
     /// 멈춤이 화면에 반영돼야 한다고 알린다. 뷰 계층이 파일을 열고 표시를 다시 그린다 —
     /// 모델이 직접 하면 편집기를 알아야 하고, 그러면 이 모델을 테스트하는 데 편집기가 필요해진다.
@@ -173,6 +178,7 @@ public final class DebugModel {
         session = nil
         connection = .detached
         breakpoints = []
+        exceptionRule = .off
         clearStoppedState()
     }
 
@@ -201,6 +207,18 @@ public final class DebugModel {
             // 걸리지 않은 것을 목록에 넣지 않는다. 넣으면 사용자는 걸린 줄 알고, 안 멈추는
             // 것을 "아직 그 줄을 안 지났다" 로 읽는다.
             lastError = "\(className):\(line) 에 브레이크포인트를 걸지 못했습니다: \(error)"
+        }
+    }
+
+    /// 예외에서 멈추는 규칙을 바꾼다.
+    public func setExceptionRule(_ rule: ExceptionBreakpointRule) async {
+        guard let session else { return }
+        do {
+            try await session.setExceptionBreakpoint(rule)
+            exceptionRule = rule
+            lastError = nil
+        } catch {
+            lastError = "예외 중단 설정을 바꾸지 못했습니다: \(error)"
         }
     }
 
@@ -234,6 +252,7 @@ public final class DebugModel {
     private func handleStop(_ stop: JavaStopEvent, host: String, port: UInt16) async {
         stopThreadID = stop.threadID
         stopCodeIndex = stop.codeIndex
+        stopReason = stop.reason
         connection = .stopped(host: host, port: port)
 
         do {
@@ -328,6 +347,7 @@ public final class DebugModel {
         childrenByObjectID = [:]
         stoppedBreakpointPath = nil
         stoppedLine = nil
+        stopReason = nil
         frames = []
         variables = []
         variableNotice = nil

@@ -962,7 +962,8 @@ public final class AppModel {
             sessionState: sessionState,
             hasOpenProject: projectRootPath != nil,
             appearance: shell.appearance,
-            debugConnection: debug.connection
+            debugConnection: debug.connection,
+            exceptionRule: debug.exceptionRule
         )
     }
 

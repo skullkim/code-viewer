@@ -151,5 +151,10 @@ private final class TreeFakeSession: DebugSession, @unchecked Sendable {
         openedObjects.append(objectID)
         return fieldsByObject[objectID] ?? []
     }
+    /// 규칙을 기록한다 — 껐는지 켰는지 테스트가 확인할 수 있게.
+    private(set) var exceptionRule: ExceptionBreakpointRule = .off
+    func setExceptionBreakpoint(_ rule: ExceptionBreakpointRule) async throws {
+        exceptionRule = rule
+    }
     func close() async {}
 }

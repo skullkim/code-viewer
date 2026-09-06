@@ -17,19 +17,22 @@ public struct MenuAvailability: Sendable, Hashable {
     public let hasOpenProject: Bool
     public let appearance: AppearancePreference
     public let debugConnection: DebugConnection
+    public let exceptionRule: ExceptionBreakpointRule
 
     public init(
         inputMode: InputMode,
         sessionState: EditorSessionState,
         hasOpenProject: Bool,
         appearance: AppearancePreference = .system,
-        debugConnection: DebugConnection = .detached
+        debugConnection: DebugConnection = .detached,
+        exceptionRule: ExceptionBreakpointRule = .off
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
         self.hasOpenProject = hasOpenProject
         self.appearance = appearance
         self.debugConnection = debugConnection
+        self.exceptionRule = exceptionRule
     }
 
     private var isSessionRunning: Bool {
@@ -47,6 +50,10 @@ public struct MenuAvailability: Sendable, Hashable {
         // 디버그 패널은 붙어 있지 않을 때도 열 수 있다 — 어떻게 붙는지 거기 적혀 있다.
         case .toggleDebugPanel:
             return hasOpenProject
+
+        // 붙어 있어야 예외 규칙을 걸 수 있다 — JVM 이 없으면 걸 곳이 없다.
+        case .toggleBreakOnUncaughtException, .toggleBreakOnCaughtException:
+            return debugConnection.isAttached
 
         case .attachDebugger:
             return hasOpenProject && !debugConnection.isAttached
@@ -105,6 +112,8 @@ public struct MenuAvailability: Sendable, Hashable {
         case .selectAppearanceSystem: return appearance == .system
         case .selectAppearanceLight: return appearance == .light
         case .selectAppearanceDark: return appearance == .dark
+        case .toggleBreakOnUncaughtException: return exceptionRule.breakOnUncaught
+        case .toggleBreakOnCaughtException: return exceptionRule.breakOnCaught
         default: return false
         }
     }
