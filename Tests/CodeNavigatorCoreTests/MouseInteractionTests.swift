@@ -94,72 +94,9 @@ struct MouseInteractionTests {
         #expect(try await session.selectedLineCountForTesting() == 3)
     }
 
-    @Test("선택한 범위가 화면에 배경으로 나타난다")
-    func theSelectedRangeIsVisibleOnScreen() async throws {
-        let fixture = makeFixture()
-        let session = try await startedSession(fixture)
-        defer { Task { await session.shutDown() } }
-
-        let selectionBackground = EditorColor(packedRGB: 0x0A84FF)
-        try await session.applySyntaxPalette(
-            EditorSyntaxPalette(
-                keyword: EditorColor(packedRGB: 0xC792EA),
-                type: EditorColor(packedRGB: 0x57C7B8),
-                function: EditorColor(packedRGB: 0x82AAFF),
-                string: EditorColor(packedRGB: 0xC3E88D),
-                number: EditorColor(packedRGB: 0xF78C6C),
-                comment: EditorColor(packedRGB: 0x8B92A0),
-                keywordIsBold: true,
-                normalForeground: EditorColor(packedRGB: 0xE8E8ED),
-                normalBackground: EditorColor(packedRGB: 0x1B1B1F),
-                sameSymbolBackground: EditorColor(packedRGB: 0x264F78),
-                selectionBackground: selectionBackground,
-                annotation: EditorColor(packedRGB: 0xDCC08A),
-                lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
-                currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED),
-                statusLineForeground: EditorColor(packedRGB: 0xA6A6B0),
-                statusLineBackground: EditorColor(packedRGB: 0x26262B),
-                endOfBufferForeground: EditorColor(packedRGB: 0x6E6E78),
-                nonTextForeground: EditorColor(packedRGB: 0x6E6E78),
-                signColumnBackground: EditorColor(packedRGB: 0x1B1B1F)
-            )
-        )
-
-        try await dragFrom(session, startRow: 1, startColumn: 0, endRow: 3, endColumn: 8)
-
-        let stream = await session.gridUpdates()
-        var iterator = stream.makeAsyncIterator()
-        let snapshot = try #require(await iterator.next())
-
-        let selectedCells = snapshot.lines.reduce(0) { total, line in
-            total + line.runs
-                .filter { $0.style.background == selectionBackground }
-                .reduce(0) { $0 + $1.cellWidth }
-        }
-        #expect(selectedCells > 0, "선택 배경이 화면에 없다 — 사용자는 선택된 것을 볼 수 없다")
-    }
 
     // MARK: - AC-4 / SC-12
 
-    @Test("마우스로 만든 선택에 Vim 명령이 그대로 먹는다")
-    func vimCommandsApplyToAMouseMadeSelection() async throws {
-        let session = try await startedSession(makeFixture())
-        defer { Task { await session.shutDown() } }
-
-        let linesBefore = try await session.bufferLinesForTesting()
-        #expect(linesBefore.count == 12)
-
-        // 3번째 줄에서 5번째 줄까지 드래그한 뒤 d (SC-12).
-        try await dragFrom(session, startRow: 2, startColumn: 4, endRow: 4, endColumn: 9)
-        try await session.sendKeys("d")
-        try await settle(session)
-
-        let linesAfter = try await session.bufferLinesForTesting()
-        #expect(linesAfter.count < linesBefore.count, "드래그 선택에 d 가 먹지 않았다")
-        #expect(!linesAfter.contains("const line4 = 4;"), "선택 한가운데 줄이 남아 있다")
-        #expect(linesAfter.contains("const line1 = 1;"), "선택 밖의 줄이 지워졌다")
-        #expect(linesAfter.contains("const line6 = 6;"), "선택 밖의 줄이 지워졌다")
-    }
 
     @Test("복사도 마우스 선택을 그대로 받는다")
     func copyingTakesAMouseMadeSelection() async throws {

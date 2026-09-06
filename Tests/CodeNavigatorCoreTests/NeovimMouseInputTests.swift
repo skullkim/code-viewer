@@ -376,5 +376,16 @@ struct NeovimMouseInputTests {
         for text in draggedText {
             #expect(!after.contains(text), "\(text) 가 남아 있다 — 마우스 선택에 Vim 명령이 안 먹는다")
         }
+
+        // **선택 밖은 살아남아야 한다.** 위 단언들만으로는 `d` 가 버퍼를 통째로 지운 경우도
+        // 통과한다 — 줄 수는 줄었고 드래그한 글자도 사라졌으니까. 삭제가 선택 범위에
+        // 머물렀는지는 밖을 봐야 안다. (중복 정리하며 MouseInteractionTests 에서 옮겨 옴)
+        let untouched = before.filter { line in
+            !line.isEmpty && !draggedText.contains(line)
+        }
+        #expect(!untouched.isEmpty, "선택 밖 줄이 없으면 이 단언은 아무것도 안 지킨다")
+        for text in untouched {
+            #expect(after.contains(text), "\(text) 가 사라졌다 — 삭제가 선택 범위를 넘었다")
+        }
     }
 }
