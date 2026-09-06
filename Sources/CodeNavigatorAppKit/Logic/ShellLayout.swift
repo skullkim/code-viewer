@@ -66,6 +66,15 @@ extension ShellLayout {
 
         public static let editorMinimumWidth: CGFloat = 420
 
+        // 디버그 패널은 IntelliJ 처럼 편집기 아래에 눕는다. 스택과 변수를 나란히 놓아야
+        // 하므로 세로로 세우면 둘 다 못 읽는다.
+        public static let debugPanelDefaultHeight: CGFloat = 220
+        public static let debugPanelMinimumHeight: CGFloat = 120
+        public static let debugPanelMaximumHeight: CGFloat = 520
+        /// 패널이 아무리 커져도 편집기에 남겨야 하는 세로. 이것 없이는 드래그 한 번에
+        /// 편집기가 사라진다.
+        public static let editorMinimumHeight: CGFloat = 200
+
         /// How far a splitter may be dragged before the side area stops growing. Without a
         /// ceiling a stored width from a wide monitor would swallow a narrow window whole.
         public static let treeMaximumWidth: CGFloat = 480
@@ -130,6 +139,11 @@ extension ShellLayout {
     /// Clamps a dragged width to what the design allows for that area.
     public static func clampTreeWidth(_ width: CGFloat) -> CGFloat {
         min(max(width, Metrics.treeMinimumWidth), Metrics.treeMaximumWidth)
+    }
+
+    public static func clampDebugPanelHeight(_ height: CGFloat) -> CGFloat {
+        guard height.isFinite else { return Metrics.debugPanelDefaultHeight }
+        return min(max(height, Metrics.debugPanelMinimumHeight), Metrics.debugPanelMaximumHeight)
     }
 
     public static func clampPanelWidth(_ width: CGFloat) -> CGFloat {

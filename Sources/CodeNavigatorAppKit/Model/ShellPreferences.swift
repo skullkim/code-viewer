@@ -37,6 +37,14 @@ public final class ShellPreferences {
         didSet { write(isPanelVisible, forKey: Self.panelVisibleKey) }
     }
 
+    public var isDebugPanelVisible: Bool {
+        didSet { write(isDebugPanelVisible, forKey: Self.debugPanelVisibleKey) }
+    }
+
+    public var debugPanelHeight: CGFloat {
+        didSet { write(debugPanelHeight, forKey: Self.debugPanelHeightKey) }
+    }
+
     /// 밝게 볼지 어둡게 볼지, 아니면 시스템을 따를지.
     public var appearance: AppearancePreference {
         didSet { storage.setData(Data(appearance.rawValue.utf8), forKey: Self.appearanceKey) }
@@ -52,6 +60,8 @@ public final class ShellPreferences {
     static let openTabsKey = "shell.openTabs"
     static let activeTabKey = "shell.activeTab"
     static let appearanceKey = "shell.appearance"
+    static let debugPanelVisibleKey = "shell.debugPanelVisible"
+    static let debugPanelHeightKey = "shell.debugPanelHeight"
 
     public init(storage: KeyValueStore) {
         self.storage = storage
@@ -68,6 +78,16 @@ public final class ShellPreferences {
         // 못 읽는 값은 시스템 따름으로 떨어진다. 설정 파일 한 줄이 깨졌다고 창이 안 열리면
         // 사용자는 무엇이 잘못됐는지 알 방법이 없다 (REQ-NF-004).
         self.appearance = Self.readAppearance(storage) ?? .system
+        // 디버그 패널은 기본으로 닫혀 있다. 디버깅은 늘 하는 일이 아니고, 열려 있으면
+        // 편집기 세로를 계속 먹는다.
+        self.isDebugPanelVisible = Self.readFlag(storage, forKey: Self.debugPanelVisibleKey) ?? false
+        self.debugPanelHeight = ShellLayout.clampDebugPanelHeight(
+            Self.readWidth(storage, forKey: Self.debugPanelHeightKey) ?? ShellLayout.Metrics.debugPanelDefaultHeight
+        )
+    }
+
+    public func setDebugPanelHeight(_ height: CGFloat) {
+        debugPanelHeight = ShellLayout.clampDebugPanelHeight(height)
     }
 
     private static func readAppearance(_ storage: KeyValueStore) -> AppearancePreference? {

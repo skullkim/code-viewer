@@ -11,7 +11,12 @@ import Foundation
 /// takes to press a key.
 final class JDWPSocketTransport: JDWPTransport, @unchecked Sendable {
     private let descriptor: Int32
-    private let queue = DispatchQueue(label: "jdwp.socket")
+    /// 읽기와 쓰기가 **다른 큐**를 쓴다. 소켓은 전이중인데 한 직렬 큐에 묶으면 반이중이 된다 —
+    /// 이벤트를 기다리며 막혀 있는 읽기 뒤로 모든 쓰기가 줄을 서고, 그러면 디버거가 이벤트를
+    /// 기다리기 시작한 순간부터 명령이 **전송조차 되지 않는다**. 라이브에서 실제로 그랬고,
+    /// 증상은 "브레이크포인트를 걸었는데 아무 일도 안 일어남" 이었다 — 오류도 로그도 없이.
+    private let readQueue = DispatchQueue(label: "jdwp.socket.read")
+    private let writeQueue = DispatchQueue(label: "jdwp.socket.write")
 
     private init(descriptor: Int32) {
         self.descriptor = descriptor
@@ -54,7 +59,7 @@ final class JDWPSocketTransport: JDWPTransport, @unchecked Sendable {
 
     func send(_ bytes: [UInt8]) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            queue.async { [descriptor] in
+            writeQueue.async { [descriptor] in
                 var remaining = bytes[...]
                 while !remaining.isEmpty {
                     let written = remaining.withUnsafeBytes { buffer in
@@ -74,7 +79,7 @@ final class JDWPSocketTransport: JDWPTransport, @unchecked Sendable {
     func receive(count: Int) async throws -> [UInt8] {
         guard count > 0 else { return [] }
         return try await withCheckedThrowingContinuation { continuation in
-            queue.async { [descriptor] in
+            readQueue.async { [descriptor] in
                 var buffer = [UInt8](repeating: 0, count: count)
                 var filled = 0
                 while filled < count {
@@ -95,8 +100,8 @@ final class JDWPSocketTransport: JDWPTransport, @unchecked Sendable {
     }
 
     func close() async {
-        queue.sync { [descriptor] in
-            Darwin.close(descriptor)
-        }
+        // 읽기 큐는 소켓 대기로 막혀 있을 수 있으므로 그쪽에서 닫으려 하면 영영 못 닫는다.
+        // 서술자를 닫으면 막혀 있던 `read` 가 0 으로 풀린다.
+        Darwin.close(descriptor)
     }
 }

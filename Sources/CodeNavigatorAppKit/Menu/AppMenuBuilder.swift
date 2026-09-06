@@ -16,6 +16,7 @@ public enum AppMenuBuilder {
             editMenu,
             navigateMenu,
             viewMenu,
+            debugMenu,
             windowMenu,
             helpMenu,
         ]
@@ -97,6 +98,19 @@ public enum AppMenuBuilder {
             MenuItemDescriptor(title: "어둡게", command: .selectAppearanceDark),
             .separator,
             MenuItemDescriptor(title: "전체 화면 시작", command: .toggleFullScreen, keyEquivalent: "f", modifiers: [.command, .control]),
+        ])
+    }
+
+    /// IntelliJ 의 Run 메뉴 자리. 단축키도 그쪽을 따른다 — 그 손버릇으로 오는 사람들이 쓴다.
+    private static var debugMenu: MenuDescriptor {
+        MenuDescriptor(title: "디버그", items: [
+            MenuItemDescriptor(title: "디버거 연결…", command: .attachDebugger, keyEquivalent: "d", modifiers: [.command, .control]),
+            MenuItemDescriptor(title: "디버거 끊기", command: .detachDebugger),
+            .separator,
+            MenuItemDescriptor(title: "브레이크포인트 토글", command: .toggleBreakpoint, keyEquivalent: "b", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "계속 실행", command: .resumeDebuggee, keyEquivalent: "r", modifiers: [.command, .option]),
+            .separator,
+            MenuItemDescriptor(title: "디버그 패널 표시", command: .toggleDebugPanel, keyEquivalent: "5", modifiers: [.command, .option]),
         ])
     }
 

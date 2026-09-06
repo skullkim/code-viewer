@@ -95,6 +95,22 @@ public struct MainWindowView: View {
                 panes(shell: shell, windowWidth: proxy.size.width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                // 디버그 패널은 IntelliJ 처럼 편집기 **아래**에 눕는다. 호출 스택과 변수를
+                // 나란히 놓아야 둘 다 읽히고, 오른쪽 세로 패널에 넣으면 프레임 한 줄이 잘려
+                // 어느 메서드인지 알 수 없게 된다.
+                //
+                // 높이는 창에 대고 한 번 더 조인다. 설계 한계만으로 조이면 작은 창에서
+                // 패널이 편집기를 통째로 밀어낼 수 있다 — 가로 스플리터에서 이미 겪었다.
+                if model.shell.isDebugPanelVisible {
+                    ShellHorizontalSplitter(height: model.shell.debugPanelHeight) { proposed in
+                        model.shell.setDebugPanelHeight(
+                            min(proposed, proxy.size.height - ShellLayout.Metrics.editorMinimumHeight)
+                        )
+                    }
+                    debugPane
+                        .frame(height: model.shell.debugPanelHeight)
+                }
+
                 Divider()
 
                 StatusBarView(
@@ -209,6 +225,21 @@ public struct MainWindowView: View {
                 }
             }
         }
+    }
+
+    private var debugPane: some View {
+        DebugPanelView(
+            connection: model.debug.connection,
+            breakpoints: model.debug.breakpoints,
+            frames: model.debug.frames,
+            variables: model.debug.variables,
+            variableNotice: model.debug.variableNotice,
+            selectedFrameID: model.debug.selectedFrameID,
+            onSelectFrame: { frame in Task { await model.debug.selectFrame(frame) } },
+            onResume: { Task { await model.debug.resume() } },
+            onAttach: { Task { await perform(.attachDebugger) } },
+            onDetach: { Task { await perform(.detachDebugger) } }
+        )
     }
 
     private var projectOpenPane: some View {

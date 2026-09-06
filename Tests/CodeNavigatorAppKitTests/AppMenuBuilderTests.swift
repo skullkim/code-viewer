@@ -23,7 +23,13 @@ struct AppMenuBuilderTests {
 
     @Test("02 §3 W-9 의 메뉴가 애플 관례 순서대로 있다")
     func theDesignedMenusExist() {
-        #expect(menus.map(\.title) == ["CodeNavigator", "파일", "편집", "이동", "보기", "창", "도움말"])
+        // 디버그는 보기와 창 사이다 — IntelliJ 의 Run 이 그 자리이고, Xcode 의 Debug 도
+        // 창 앞이다. 목록을 통째로 적는 것은 트립와이어다: 메뉴가 늘거나 순서가 바뀌면
+        // 여기서 걸려서 "이 자리가 맞나" 를 한 번 묻게 된다.
+        #expect(
+            menus.map(\.title)
+                == ["CodeNavigator", "파일", "편집", "이동", "보기", "디버그", "창", "도움말"]
+        )
     }
 
     @Test("모든 명령에 메뉴 경로가 있다 — 단축키만 있는 기능은 없다")

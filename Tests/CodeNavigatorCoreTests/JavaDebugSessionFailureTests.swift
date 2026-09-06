@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CodeNavigatorContract
 @testable import CodeNavigatorCore
 
 /// 디버거가 사용자를 가장 크게 오도하는 순간은 실패할 때다. "변수가 없다" 와 "변수 이름을
@@ -7,17 +8,35 @@ import Foundation
 @Suite("Java 디버그 세션 — 실패를 구분한다")
 struct JavaDebugSessionFailureTests {
 
+    /// 바이트가 떨어지면 던지지 않고 기다린다 — 실제 소켓이 그렇다.
     private actor ScriptedTransport: JDWPTransport {
         private var incoming: [UInt8]
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var isClosed = false
         init(incoming: [UInt8]) { self.incoming = incoming }
         func send(_ bytes: [UInt8]) async throws {}
         func receive(count: Int) async throws -> [UInt8] {
-            guard incoming.count >= count else { throw JDWPConnectionError.connectionClosed }
+            while incoming.count < count {
+                if isClosed { throw JDWPConnectionError.connectionClosed }
+                await withCheckedContinuation { waiters.append($0) }
+            }
             let head = Array(incoming.prefix(count))
             incoming.removeFirst(count)
             return head
         }
-        func close() async {}
+        func close() async {
+            isClosed = true
+            let pending = waiters; waiters = []
+            pending.forEach { $0.resume() }
+        }
+    }
+
+    /// 리더를 켠 세션. 안 켜면 요청이 답을 못 받는데, 이제는 그게 무한 대기가 아니라
+    /// `readerNotStarted` 오류다.
+    private func session(_ transport: ScriptedTransport) async -> JavaDebugSession {
+        let connection = JDWPConnection(transport: transport)
+        await connection.startReading()
+        return JavaDebugSession(connection: connection, sizes: sizes)
     }
 
     private func reply(id: UInt32, payload: [UInt8], errorCode: UInt16) -> [UInt8] {
@@ -42,10 +61,7 @@ struct JavaDebugSessionFailureTests {
     /// 101 = ABSENT_INFORMATION. `javac -g` 없이 컴파일된 클래스에서 실제로 나온 코드다.
     @Test("변수 이름표가 없으면 빈 목록이 아니라 그렇다고 말한다")
     func reportsMissingDebugInformation() async throws {
-        let transport = ScriptedTransport(incoming: reply(id: 1, payload: [], errorCode: 101))
-        let session = JavaDebugSession(
-            connection: JDWPConnection(transport: transport), sizes: sizes
-        )
+        let session = await session(ScriptedTransport(incoming: reply(id: 1, payload: [], errorCode: 101)))
 
         await #expect(throws: JavaDebugError.self) {
             _ = try await session.localVariables(frame: frame, threadID: 1, codeIndex: 4)
@@ -55,10 +71,7 @@ struct JavaDebugSessionFailureTests {
     /// 다른 오류까지 "정보 없음" 으로 뭉뚱그리면 진짜 고장이 숨는다.
     @Test("다른 오류는 그대로 전달한다 — 전부 '정보 없음' 으로 뭉뚱그리지 않는다")
     func doesNotSwallowOtherErrors() async throws {
-        let transport = ScriptedTransport(incoming: reply(id: 1, payload: [], errorCode: 13))
-        let session = JavaDebugSession(
-            connection: JDWPConnection(transport: transport), sizes: sizes
-        )
+        let session = await session(ScriptedTransport(incoming: reply(id: 1, payload: [], errorCode: 13)))
 
         await #expect(throws: JDWPConnectionError.self) {
             _ = try await session.localVariables(frame: frame, threadID: 1, codeIndex: 4)
@@ -70,10 +83,7 @@ struct JavaDebugSessionFailureTests {
     @Test("로드 전 클래스는 nil 이다 — 없다고 단정하지 않는다")
     func treatsAnUnloadedClassAsUnknown() async throws {
         let empty = withUnsafeBytes(of: UInt32(0).bigEndian, Array.init)
-        let transport = ScriptedTransport(incoming: reply(id: 1, payload: empty, errorCode: 0))
-        let session = JavaDebugSession(
-            connection: JDWPConnection(transport: transport), sizes: sizes
-        )
+        let session = await session(ScriptedTransport(incoming: reply(id: 1, payload: empty, errorCode: 0)))
         #expect(try await session.loadedClassID(named: "com.example.NotYet") == nil)
     }
 }

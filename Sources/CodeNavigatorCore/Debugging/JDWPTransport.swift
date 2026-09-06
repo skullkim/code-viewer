@@ -17,6 +17,8 @@ enum JDWPConnectionError: Error, Sendable {
     /// The JVM refused the command. The code is JDWP's own.
     case commandFailed(commandSet: UInt8, command: UInt8, errorCode: UInt16)
     case malformedPacket
+    /// `startReading()` 없이 명령을 보냈다. 프로그래밍 실수이고, 안 잡으면 무한 대기가 된다.
+    case readerNotStarted
     case connectFailed(String)
 }
 

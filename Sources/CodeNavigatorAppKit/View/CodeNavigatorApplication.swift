@@ -127,6 +127,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in await model.restoreTabs() }
 
         sharedWorkspace = workspace
+        // 실제 JDWP 세션은 여기서만 만든다 — 모델은 계약만 알고, Core 를 아는 것은 이
+        // 조립 지점뿐이다.
+        model.debugSessionFactory = { host, port in
+            try await JavaDebugSession.attach(host: host, port: port)
+        }
+
         sharedEditorSession = editorSession
         sharedModel = model
         sharedSearch = search

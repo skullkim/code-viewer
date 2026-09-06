@@ -1,3 +1,4 @@
+import CodeNavigatorContract
 import Foundation
 
 /// JDWP 명령 번호. 숫자를 호출부에 흩어 두면 어느 것이 무엇인지 읽을 수 없고, 하나 틀려도
@@ -44,48 +45,12 @@ private enum SuspendPolicy {
     static let all: UInt8 = 2
 }
 
-enum JavaDebugError: Error, Sendable {
-    case classNotLoaded(String)
-    case noExecutableCodeOnLine(className: String, line: Int)
-    case notSuspended
-    /// 클래스가 `javac -g` 없이 컴파일돼 지역 변수 이름표가 없다.
-    ///
-    /// 흔한 일이고 우리 잘못이 아니지만, **빈 목록으로 넘기면 안 된다** — 사용자는 "이 자리에
-    /// 지역 변수가 없다" 로 읽는다. 없는 것과 알 수 없는 것은 다른 사건이다.
-    case noLocalVariableInformation(className: String, methodName: String)
-}
-
-/// One stack frame as the debugger shows it.
-struct JavaStackFrame: Sendable, Hashable {
-    let frameID: UInt64
-    let className: String
-    let methodName: String
-    let line: Int
-    let classID: UInt64
-    let methodID: UInt64
-}
-
-struct JavaVariable: Sendable, Hashable {
-    let name: String
-    let typeSignature: String
-    let value: String
-}
-
-/// Where the debuggee stopped.
-struct JavaStopEvent: Sendable, Hashable {
-    let threadID: UInt64
-    let requestID: Int32
-    let classID: UInt64
-    let methodID: UInt64
-    let codeIndex: UInt64
-}
-
 /// IntelliJ 급 Java 디버깅의 1차 범위 — 붙기, 걸기, 보기, 풀기.
 ///
 /// 언어 서버를 쓰지 않는다. `java-debug` 경로는 Eclipse JDT(수백 MB)를 끌고 오고, 그러면
 /// "작고 네이티브" 라는 이 앱의 유일한 정당성이 사라진다. JVM 이 이미 말하는 표준 프로토콜에
 /// 직접 붙는 편이 작고, 그 대가로 프레이밍을 우리가 책임진다.
-actor JavaDebugSession {
+public actor JavaDebugSession: DebugSession {
     private let connection: JDWPConnection
     private var sizes: JDWPIdentifierSizes
     /// 클래스 시그니처 → refTypeID. `ClassPrepare` 로 늦게 채워지는 것도 여기 들어온다.
@@ -100,16 +65,19 @@ actor JavaDebugSession {
     }
 
     /// Attaches to a JVM started with `-agentlib:jdwp=…,server=y`.
-    static func attach(host: String, port: UInt16) async throws -> JavaDebugSession {
+    public static func attach(host: String, port: UInt16) async throws -> JavaDebugSession {
         let transport = try JDWPSocketTransport.connect(host: host, port: port)
         let connection = JDWPConnection(transport: transport)
         try await connection.handshake()
+        // 리더는 핸드셰이크 **뒤에** 켠다. 핸드셰이크만 패킷 프레이밍이 아니라 맨 바이트라,
+        // 리더가 먼저 돌면 그 14바이트를 패킷 헤더로 읽는다.
+        await connection.startReading()
         // ID 폭을 먼저 읽는다. 이 값 없이 파싱한 것은 전부 못 믿는다.
         let sizes = try await connection.readIdentifierSizes()
         return JavaDebugSession(connection: connection, sizes: sizes)
     }
 
-    func close() async {
+    public func close() async {
         await connection.close()
     }
 
@@ -125,7 +93,7 @@ actor JavaDebugSession {
     /// 로드하지 않았고, 그때 이 조회는 정상적으로 0건을 답한다. 0건을 "없음" 으로 읽으면
     /// 브레이크포인트가 조용히 아무 데도 안 걸린다 — 그리고 그건 "아직 그 줄을 안 지났다" 와
     /// 화면에서 구별되지 않는다. 그래서 nil 을 돌려주고, 위층이 `ClassPrepare` 로 기다린다.
-    func loadedClassID(named className: String) async throws -> UInt64? {
+    public func loadedClassID(named className: String) async throws -> UInt64? {
         let signature = signature(forClassName: className)
         if let cached = classIDsBySignature[signature] { return cached }
 
@@ -147,7 +115,7 @@ actor JavaDebugSession {
     /// Asks the JVM to notify us when a class is prepared, so a breakpoint can be planted on a
     /// class that has not loaded yet.
     @discardableResult
-    func requestClassPrepareNotification(forClassName className: String) async throws -> Int32 {
+    public func requestClassPrepareNotification(forClassName className: String) async throws -> Int32 {
         // modifier kind 5 = ClassMatch, 패턴은 점 표기 그대로.
         var payload: [UInt8] = [EventKind.classPrepare, SuspendPolicy.all]
         payload += withUnsafeBytes(of: UInt32(1).bigEndian, Array.init)   // modifier count
@@ -191,7 +159,7 @@ actor JavaDebugSession {
     /// **가까운 줄로 옮기지 않고** 실패한다 — 사용자가 찍지 않은 줄에서 멈추는 것은 편의가
     /// 아니라 디버거가 거짓말을 한 것이다.
     @discardableResult
-    func setBreakpoint(className: String, line: Int) async throws -> Int32 {
+    public func setBreakpoint(className: String, line: Int) async throws -> Int32 {
         guard let classID = try await loadedClassID(named: className) else {
             throw JavaDebugError.classNotLoaded(className)
         }
@@ -220,7 +188,7 @@ actor JavaDebugSession {
         throw JavaDebugError.noExecutableCodeOnLine(className: className, line: line)
     }
 
-    func clearBreakpoint(requestID: Int32) async throws {
+    public func clearBreakpoint(requestID: Int32) async throws {
         var payload: [UInt8] = [EventKind.breakpoint]
         payload += withUnsafeBytes(of: requestID.bigEndian, Array.init)
         _ = try await connection.request(
@@ -231,7 +199,7 @@ actor JavaDebugSession {
     // MARK: - 멈춤과 재개
 
     /// Waits until the debuggee stops at a breakpoint.
-    func waitForBreakpoint() async throws -> JavaStopEvent {
+    public func waitForBreakpoint() async throws -> JavaStopEvent {
         while true {
             let event = try await connection.nextEvent()
             guard let stop = try parseBreakpoint(event) else { continue }
@@ -268,7 +236,7 @@ actor JavaDebugSession {
     }
 
     /// 진단용 — 멈췄다고 믿는 스레드가 실제로 몇 겹 멈춰 있는지.
-    func suspendCount(threadID: UInt64) async throws -> Int32 {
+    public func suspendCount(threadID: UInt64) async throws -> Int32 {
         let reply = try await connection.request(
             commandSet: Command.threadReference,
             command: Command.suspendCount,
@@ -278,7 +246,7 @@ actor JavaDebugSession {
         return try reader.readInt32()
     }
 
-    func resume() async throws {
+    public func resume() async throws {
         _ = try await connection.request(
             commandSet: Command.virtualMachine, command: Command.vmResume, payload: []
         )
@@ -286,7 +254,7 @@ actor JavaDebugSession {
 
     // MARK: - 스택과 변수
 
-    func stackFrames(threadID: UInt64) async throws -> [JavaStackFrame] {
+    public func stackFrames(threadID: UInt64) async throws -> [JavaStackFrame] {
         var payload = identifierBytes(threadID, size: sizes.objectID)
         payload += withUnsafeBytes(of: UInt32(0).bigEndian, Array.init)   // start index
         // **length 는 -1 이어야 한다** — "남은 전부" 라는 뜻이다. 넉넉한 수를 주면 되겠거니
@@ -336,7 +304,7 @@ actor JavaDebugSession {
     private var classNamesByID: [UInt64: String] = [:]
 
     /// `Lcom/example/Probe;` → `com.example.Probe`.
-    func className(ofClass classID: UInt64) async throws -> String {
+    public func className(ofClass classID: UInt64) async throws -> String {
         if let cached = classNamesByID[classID] { return cached }
         let reply = try await connection.request(
             commandSet: Command.referenceType,
@@ -357,7 +325,7 @@ actor JavaDebugSession {
     /// `VariableTable` 은 메서드의 **모든** 지역 변수를 준다 — 아직 선언 전인 것까지. 각 항목의
     /// 유효 범위(codeIndex, length)를 보고 지금 위치에 살아 있는 것만 남긴다. 안 거르면 아직
     /// 초기화되지 않은 슬롯의 쓰레기 값을 변수 값이라고 보여 준다.
-    func localVariables(frame: JavaStackFrame, threadID: UInt64, codeIndex: UInt64) async throws -> [JavaVariable] {
+    public func localVariables(frame: JavaStackFrame, threadID: UInt64, codeIndex: UInt64) async throws -> [JavaVariable] {
         var tablePayload = identifierBytes(frame.classID, size: sizes.referenceTypeID)
         tablePayload += identifierBytes(frame.methodID, size: sizes.methodID)
         let tableReply: [UInt8]

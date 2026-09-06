@@ -56,8 +56,10 @@ struct MenuCommandModeSafetyTests {
         var unsafe: Set<MenuCommand> = []
         for command in MenuCommand.allCases {
             let (model, search, editor) = makeModel()
-            // No folder panel: a modal here would block the run for ever.
-            await MenuCommandRouter.perform(command, model: model, search: search, chooseFolder: { nil })
+            // 사람이 없는 실행이다. 모달이 하나라도 열리면 이 루프는 영원히 안 끝난다 —
+            // 실제로 디버그 대상 대화상자를 추가했을 때 그렇게 됐다. `.headless` 는 훅을
+            // 새로 붙여도 자동으로 덮으므로 여기를 다시 고칠 일이 없다.
+            await MenuCommandRouter.perform(command, model: model, search: search, environment: .headless)
             if !editor.sentKeys.isEmpty {
                 unsafe.insert(command)
             }
@@ -87,7 +89,7 @@ struct MenuCommandModeSafetyTests {
 
         for (command, method) in expected {
             let (model, search, editor) = makeModel()
-            await MenuCommandRouter.perform(command, model: model, search: search, chooseFolder: { nil })
+            await MenuCommandRouter.perform(command, model: model, search: search, environment: .headless)
             #expect(editor.editorCommands == [method], "\(command)가 \(method)를 부르지 않았다")
             #expect(editor.sentKeys.isEmpty, "\(command)가 raw 키를 보냈다 — 표준 모드에서 버퍼를 오염시킨다")
         }

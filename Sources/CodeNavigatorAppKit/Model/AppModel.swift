@@ -52,6 +52,11 @@ public final class AppModel {
     public let recentProjects: RecentProjectStore
     /// Window chrome the application restores on launch (REQ-011 AC-3).
     public let shell: ShellPreferences
+    /// 디버거 화면의 상태. 세션은 붙을 때 주입된다 — 프로젝트를 열었다고 JVM 이 있는 것은 아니다.
+    public let debug = DebugModel()
+    /// 실제 JDWP 세션은 조립 지점이 넣어 준다. 이 모델은 Core 를 모른다 — 알면 화면 상태를
+    /// 재는 데 JVM 이 필요해지고, 그런 테스트는 아무도 안 돌린다.
+    public var debugSessionFactory: DebugSessionFactory?
 
     /// The file tree, which asks the engine on the user's rhythm rather than the engine's.
     /// The active tab's tree, or an empty one when no project is open.
@@ -549,6 +554,58 @@ public final class AppModel {
         (try? await editorSession.wordUnderCursor()) ?? nil
     }
 
+    // MARK: 디버거 (REQ-016)
+
+    /// Attaches to a JVM already running with `-agentlib:jdwp`.
+    ///
+    /// 세션 만들기를 모델 밖에 두지 않는다 — 대신 실패를 그대로 화면 상태로 옮긴다. 붙지
+    /// 못한 것을 조용히 넘기면 사용자는 브레이크포인트를 걸어 놓고 왜 안 멈추는지 묻는다.
+    public func attachDebugger(host: String, port: UInt16) async {
+        guard let debugSessionFactory else {
+            debug.reportAttachFailure("디버거가 이 빌드에 연결되어 있지 않습니다")
+            return
+        }
+        do {
+            let session = try await debugSessionFactory(host, port)
+            await debug.attach(session: session, host: host, port: port)
+            show(StatusMessage(kind: .success, text: "디버거 연결됨 — \(host):\(port)"))
+        } catch {
+            debug.reportAttachFailure("\(host):\(port) 에 붙지 못했습니다: \(error)")
+            show(StatusMessage(kind: .error, text: "✕ 디버거 연결 실패"))
+        }
+    }
+
+    public func detachDebugger() async {
+        await debug.detach()
+        show(StatusMessage(kind: .success, text: "디버거 연결 해제"))
+    }
+
+    /// Toggles a breakpoint on the line the cursor is on.
+    ///
+    /// 클래스 이름은 파일에서 만든다 — JDWP 는 파일을 모르고 클래스만 안다. Java 가 아니거나
+    /// 이름을 못 만들면 **거기서 멈춘다**. 억지로 만든 이름으로 JVM 에 물으면 "그런 클래스
+    /// 없음" 이 돌아오고, 그 실패는 화면에서 "아직 그 줄을 안 지났다" 와 같아 보인다.
+    public func toggleBreakpointAtCursor() async {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root)
+        else {
+            show(StatusMessage(kind: .error, text: "✕ 브레이크포인트를 걸 파일이 없습니다"))
+            return
+        }
+        guard let source = try? String(contentsOfFile: absolutePath, encoding: .utf8),
+              let className = JavaTypeName.forFile(atPath: relativePath, source: source)
+        else {
+            show(StatusMessage(kind: .error, text: "✕ Java 파일에서만 브레이크포인트를 걸 수 있습니다"))
+            return
+        }
+        await debug.toggleBreakpoint(path: relativePath, line: status.cursorLine, className: className)
+        if let error = debug.lastError {
+            show(StatusMessage(kind: .error, text: "✕ \(error)"))
+        }
+    }
+
     /// 참조 검색이 "무엇에 대한 참조인가"를 풀 수 있게 커서 자리를 알려 준다.
     ///
     /// 이름만으로는 답이 없다 — 실측으로 463파일 레포에서 `getId` 는 서로 무관한 15개
@@ -830,7 +887,8 @@ public final class AppModel {
             inputMode: inputMode,
             sessionState: sessionState,
             hasOpenProject: projectRootPath != nil,
-            appearance: shell.appearance
+            appearance: shell.appearance,
+            debugConnection: debug.connection
         )
     }
 

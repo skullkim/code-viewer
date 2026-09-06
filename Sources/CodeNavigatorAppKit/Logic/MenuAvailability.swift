@@ -16,17 +16,20 @@ public struct MenuAvailability: Sendable, Hashable {
     public let sessionState: EditorSessionState
     public let hasOpenProject: Bool
     public let appearance: AppearancePreference
+    public let debugConnection: DebugConnection
 
     public init(
         inputMode: InputMode,
         sessionState: EditorSessionState,
         hasOpenProject: Bool,
-        appearance: AppearancePreference = .system
+        appearance: AppearancePreference = .system,
+        debugConnection: DebugConnection = .detached
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
         self.hasOpenProject = hasOpenProject
         self.appearance = appearance
+        self.debugConnection = debugConnection
     }
 
     private var isSessionRunning: Bool {
@@ -40,6 +43,24 @@ public struct MenuAvailability: Sendable, Hashable {
         case .openProject, .openRecentProject, .closeWindow, .toggleFullScreen,
              .selectAppearanceSystem, .selectAppearanceLight, .selectAppearanceDark:
             return true
+
+        // 디버그 패널은 붙어 있지 않을 때도 열 수 있다 — 어떻게 붙는지 거기 적혀 있다.
+        case .toggleDebugPanel:
+            return hasOpenProject
+
+        case .attachDebugger:
+            return hasOpenProject && !debugConnection.isAttached
+
+        case .detachDebugger:
+            return debugConnection.isAttached
+
+        // 브레이크포인트는 붙어 있어야 걸 수 있다. JVM 이 없으면 걸 곳이 없다.
+        case .toggleBreakpoint:
+            return debugConnection.isAttached && isSessionRunning
+
+        // 멈춰 있을 때만 풀 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
+        case .resumeDebuggee:
+            return debugConnection.isStopped
 
         case .closeProject, .toggleFileTree:
             return hasOpenProject

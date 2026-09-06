@@ -34,4 +34,10 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case selectAppearanceSystem
     case selectAppearanceLight
     case selectAppearanceDark
+    // 디버그
+    case attachDebugger
+    case detachDebugger
+    case toggleBreakpoint
+    case resumeDebuggee
+    case toggleDebugPanel
 }
