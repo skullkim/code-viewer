@@ -40,4 +40,7 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case toggleBreakpoint
     case resumeDebuggee
     case toggleDebugPanel
+    case stepOver
+    case stepInto
+    case stepOut
 }

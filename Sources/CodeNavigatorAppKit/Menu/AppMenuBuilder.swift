@@ -110,6 +110,15 @@ public enum AppMenuBuilder {
             MenuItemDescriptor(title: "브레이크포인트 토글", command: .toggleBreakpoint, keyEquivalent: "b", modifiers: [.command, .option]),
             MenuItemDescriptor(title: "계속 실행", command: .resumeDebuggee, keyEquivalent: "r", modifiers: [.command, .option]),
             .separator,
+            // IntelliJ 는 F8 / F7 / ⇧F8 이지만 여기서는 ⌘ 조합을 쓴다.
+            //
+            // REQ-011 AC-2: 앱은 **⌘ 조합만** 가져간다. 맨 기능키를 쓰면 그 규칙에 구멍이
+            // 하나 생기고, 구멍이 하나 생기면 다음 사람이 둘째를 뚫는다 — 그러면 Vim 사용자가
+            // 자기 매핑을 잃기 시작한다. IntelliJ 손버릇 하나를 포기하는 편이 싸다.
+            MenuItemDescriptor(title: "한 줄 실행", command: .stepOver, keyEquivalent: "n", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "함수 안으로", command: .stepInto, keyEquivalent: "i", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "함수 밖으로", command: .stepOut, keyEquivalent: "u", modifiers: [.command, .option]),
+            .separator,
             MenuItemDescriptor(title: "디버그 패널 표시", command: .toggleDebugPanel, keyEquivalent: "5", modifiers: [.command, .option]),
         ])
     }

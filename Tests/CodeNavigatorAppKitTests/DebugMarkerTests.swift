@@ -135,6 +135,9 @@ private final class MarkerFakeSession: DebugSession, @unchecked Sendable {
         []
     }
     func resume() async throws {}
+    /// 실제로 걸었는지 테스트가 확인할 수 있게 기록한다.
+    private(set) var steps: [DebugStep] = []
+    func step(_ step: DebugStep, threadID: UInt64) async throws { steps.append(step) }
     func close() async {}
 }
 

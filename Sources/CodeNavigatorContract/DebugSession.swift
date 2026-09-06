@@ -75,6 +75,16 @@ public struct JavaStopEvent: Sendable, Hashable {
 ///
 /// 계약을 여기 두는 이유는 `ProjectSession` 과 같다 — 화면 상태 기계를 검증하는 데 실제
 /// 디버기가 필요하면 아무도 그 테스트를 돌리지 않는다.
+/// 한 걸음의 깊이. 화면 낱말과 JDWP 숫자를 잇는다.
+public enum DebugStep: Sendable, Hashable, CaseIterable {
+    /// 다음 줄로 — 함수 호출은 통째로 지나간다.
+    case over
+    /// 호출 안으로.
+    case into
+    /// 지금 함수를 끝내고 부른 자리로.
+    case out
+}
+
 public protocol DebugSession: Sendable {
     func setBreakpoint(className: String, line: Int) async throws -> Int32
     func clearBreakpoint(requestID: Int32) async throws
@@ -83,6 +93,9 @@ public protocol DebugSession: Sendable {
     func stackFrames(threadID: UInt64) async throws -> [JavaStackFrame]
     func localVariables(frame: JavaStackFrame, threadID: UInt64, codeIndex: UInt64) async throws -> [JavaVariable]
     func resume() async throws
+    /// 한 걸음 나아가고 다시 멈춘다. 멈춤은 `waitForBreakpoint` 로 도착한다 — 브레이크포인트와
+    /// 같은 통로다. 화면이 둘을 다르게 다루면 "왜 여기서 멈췄지" 가 두 가지 답을 갖게 된다.
+    func step(_ step: DebugStep, threadID: UInt64) async throws
     func close() async
 }
 

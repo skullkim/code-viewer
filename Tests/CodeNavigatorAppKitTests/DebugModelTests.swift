@@ -32,7 +32,10 @@ struct DebugModelTests {
         }
         func clearBreakpoint(requestID: Int32) async throws { cleared.append(requestID) }
         func waitForBreakpoint() async throws -> JavaStopEvent {
-            await stopGate.wait()
+            // **한 번만 통과시킨다.** 계속 열어 두면 걸음을 뗀 직후 리스너가 곧바로 다시
+            // 멈춤을 받아 화면을 다시 채우고, 그러면 "먼저 비우는가" 를 잴 수가 없다.
+            // 실제 세션도 다음 멈춤까지 막힌다.
+            await stopGate.waitOnce()
             return stop
         }
         func letItStop() { stopGate.open() }
@@ -42,6 +45,9 @@ struct DebugModelTests {
             return variables
         }
         func resume() async throws { resumeCount += 1 }
+        /// 실제로 걸었는지 테스트가 확인할 수 있게 기록한다.
+        private(set) var steps: [DebugStep] = []
+        func step(_ step: DebugStep, threadID: UInt64) async throws { steps.append(step) }
         func close() async { isClosed = true }
     }
 
@@ -58,6 +64,21 @@ struct DebugModelTests {
                 continuations.append(continuation)
                 lock.unlock()
             }
+        }
+
+        /// 통과시킨 뒤 다시 닫는다.
+        ///
+        /// 닫는 일은 동기 함수에 맡긴다 — `NSLock.lock()` 은 비동기 문맥에서 쓸 수 없다
+        /// (스레드가 바뀌면 잠금을 놓을 사람이 사라진다).
+        func waitOnce() async {
+            await wait()
+            closeGate()
+        }
+
+        private func closeGate() {
+            lock.lock()
+            isOpen = false
+            lock.unlock()
         }
         func open() {
             lock.lock()
@@ -157,6 +178,31 @@ struct DebugModelTests {
 
         #expect(model.variables.isEmpty)
         #expect(model.variableNotice != nil)
+    }
+
+    /// 한 걸음 떼는 순간 지금 화면은 낡는다. 안 비우면 사용자는 옛 스택을 보면서 다음
+    /// 멈춤을 기다리고, 그 사이 아무 표시도 없어서 눌린 건지 아닌지 모른다.
+    @Test("한 걸음 떼면 낡은 스택과 변수를 먼저 비운다")
+    func clearsTheStaleFrameWhenStepping() async throws {
+        let session = FakeSession()
+        let model = await attached(session)
+        session.letItStop()
+        await model.waitForNextStopForTesting()
+        #expect(!model.frames.isEmpty)
+
+        await model.step(.over)
+        #expect(session.steps == [.over])
+        #expect(model.frames.isEmpty, "낡은 스택이 남았다")
+        #expect(model.variables.isEmpty)
+        #expect(!model.connection.isStopped)
+    }
+
+    @Test("멈춰 있지 않으면 걷지 않는다 — 스레드가 없으면 걸 곳도 없다")
+    func doesNotStepWhileRunning() async throws {
+        let session = FakeSession()
+        let model = await attached(session)
+        await model.step(.into)
+        #expect(session.steps.isEmpty)
     }
 
     @Test("떼면 세션을 닫고 모든 것을 비운다")

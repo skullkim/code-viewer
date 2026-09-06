@@ -219,6 +219,22 @@ public final class DebugModel {
         }
     }
 
+    /// 한 걸음 나아간다. 멈춤은 리스너가 받아 화면을 다시 채운다 — 브레이크포인트와 같은 길이다.
+    public func step(_ step: DebugStep) async {
+        guard let session, let threadID = stopThreadID else { return }
+        // 걸음을 떼는 순간 지금 화면은 낡은다. 먼저 비워야 사용자가 옛 스택을 보며 기다리지 않는다.
+        let stoppedAt = connection
+        clearStoppedState()
+        if case .stopped(let host, let port) = stoppedAt {
+            connection = .attached(host: host, port: port)
+        }
+        do {
+            try await session.step(step, threadID: threadID)
+        } catch {
+            lastError = "한 걸음 나아가지 못했습니다: \(error)"
+        }
+    }
+
     public func resume() async {
         guard let session else { return }
         do {

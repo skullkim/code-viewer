@@ -202,14 +202,17 @@ public actor JavaDebugSession: DebugSession {
     public func waitForBreakpoint() async throws -> JavaStopEvent {
         while true {
             let event = try await connection.nextEvent()
-            guard let stop = try parseBreakpoint(event) else { continue }
+            guard let stop = try parseStop(event) else { continue }
+            // 스텝으로 멈췄든 브레이크포인트로 멈췄든, 살아 있는 스텝 요청은 여기서 거둔다.
+            // 안 거두면 그 다음부터 매 줄 멈춘다.
+            await clearPendingStepRequest()
             return stop
         }
     }
 
     /// `Event.Composite` (64, 100) 하나에 이벤트가 여러 개 들어올 수 있다. 첫 개만 읽고
     /// 나머지를 버리면, 같은 순간에 걸린 다른 브레이크포인트가 소리 없이 사라진다.
-    private func parseBreakpoint(_ event: JDWPEvent) throws -> JavaStopEvent? {
+    private func parseStop(_ event: JDWPEvent) throws -> JavaStopEvent? {
         guard event.commandSet == 64, event.command == 100 else { return nil }
         var reader = JDWPReader(bytes: event.payload)
         _ = try reader.readByte()   // suspend policy
@@ -217,7 +220,9 @@ public actor JavaDebugSession: DebugSession {
         for _ in 0..<count {
             let kind = try reader.readByte()
             let requestID = try reader.readInt32()
-            guard kind == EventKind.breakpoint else {
+            // 스텝과 브레이크포인트는 페이로드 모양이 같다(스레드 + 위치). 둘 다 받는다 —
+            // 화면에서 "왜 여기서 멈췄지" 의 답은 하나여야 한다.
+            guard kind == EventKind.breakpoint || kind == JDWPStepRequest.eventKind else {
                 // 우리가 아직 다루지 않는 종류다. 페이로드 폭을 모르므로 **이어서 읽지
                 // 않는다** — 모르는 채로 계속 읽으면 그 뒤가 전부 쓰레기가 된다.
                 return nil
@@ -244,6 +249,52 @@ public actor JavaDebugSession: DebugSession {
         )
         var reader = JDWPReader(bytes: reply)
         return try reader.readInt32()
+    }
+
+    /// Steps one line and resumes.
+    ///
+    /// **요청을 쓰고 곧바로 지운다.** 안 지우면 매 줄 멈춘다 — 사용자는 "스텝을 한 번
+    /// 눌렀는데 계속 멈춘다" 를 겪고, 그게 브레이크포인트 때문인지 스텝 때문인지 화면에서
+    /// 구별하지 못한다. JVM 은 요청이 살아 있는 한 계속 보고한다.
+    ///
+    /// 지우는 것이 **재개보다 먼저**다. 재개한 뒤에 지우면 그 사이에 이미 한 걸음이 보고돼
+    /// 두 번 멈춘다.
+    public func step(_ step: DebugStep, threadID: UInt64) async throws {
+        let payload = JDWPStepRequest.payload(
+            threadID: threadID, depth: Self.depth(for: step), objectIDSize: sizes.objectID
+        )
+        let reply = try await connection.request(
+            commandSet: Command.eventRequest, command: Command.eventSet, payload: payload
+        )
+        var reader = JDWPReader(bytes: reply)
+        let requestID = try reader.readInt32()
+
+        try await resume()
+        // 한 걸음이 보고된 뒤에 지운다. 여기서 실패해도 재개는 이미 됐으므로 조용히 넘기지
+        // 않고 남긴다 — 안 지워진 스텝 요청은 다음 실행 내내 사용자를 붙잡는다.
+        pendingStepRequestID = requestID
+    }
+
+    /// 마지막 스텝 요청. 다음 멈춤을 받으면 지운다.
+    private var pendingStepRequestID: Int32?
+
+    /// 스텝으로 멈춘 뒤 그 요청을 거둔다. 안 거두면 매 줄 멈춘다.
+    func clearPendingStepRequest() async {
+        guard let requestID = pendingStepRequestID else { return }
+        pendingStepRequestID = nil
+        var payload: [UInt8] = [JDWPStepRequest.eventKind]
+        payload += withUnsafeBytes(of: requestID.bigEndian, Array.init)
+        _ = try? await connection.request(
+            commandSet: Command.eventRequest, command: Command.eventClear, payload: payload
+        )
+    }
+
+    private static func depth(for step: DebugStep) -> JDWPStepDepth {
+        switch step {
+        case .into: return .into
+        case .over: return .over
+        case .out: return .out
+        }
     }
 
     public func resume() async throws {

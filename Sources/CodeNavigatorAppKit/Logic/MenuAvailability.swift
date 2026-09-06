@@ -59,7 +59,8 @@ public struct MenuAvailability: Sendable, Hashable {
             return debugConnection.isAttached && isSessionRunning
 
         // 멈춰 있을 때만 풀 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
-        case .resumeDebuggee:
+        // 멈춰 있을 때만 걸을 수 있다. 달리는 중에 눌러도 아무 일이 없는 항목은 켜 두지 않는다.
+        case .resumeDebuggee, .stepOver, .stepInto, .stepOut:
             return debugConnection.isStopped
 
         case .closeProject, .toggleFileTree:

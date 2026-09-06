@@ -58,6 +58,41 @@ struct JDWPLiveBreakpointTests {
         print("LIVE resumed")
     }
 
+    /// **한 번 누르면 한 걸음만 간다.** 스텝 요청을 안 거두면 JVM 이 매 줄 보고하고,
+    /// 사용자는 "한 번 눌렀는데 계속 멈춘다" 를 겪는다 — 그게 브레이크포인트 때문인지
+    /// 스텝 때문인지 화면에서는 구별되지 않는다.
+    @Test("한 줄 실행이 정확히 한 줄만 나아간다")
+    func stepsExactlyOneLine() async throws {
+        guard Self.isEnabled else {
+            print("SKIP: JDWP_LIVE=1 이 아니라 라이브 스텝 검증을 건너뛴다")
+            return
+        }
+
+        let session = try await JavaDebugSession.attach(host: "127.0.0.1", port: Self.port)
+        defer { Task { await session.close() } }
+
+        // 5행(`int doubled = ...`)에 걸고 멈춘 뒤, 한 줄 넘기면 6행이어야 한다.
+        let requestID = try await session.setBreakpoint(className: "Probe", line: 5)
+        let stop = try await session.waitForBreakpoint()
+        let before = try #require(try await session.stackFrames(threadID: stop.threadID).first)
+        print("LIVE(step) 멈춤 \(before.className).\(before.methodName):\(before.line)")
+        #expect(before.line == 5)
+
+        // 브레이크포인트를 먼저 거둔다. 안 거두면 다음 바퀴의 5행에서 멈춘 것을 스텝의
+        // 결과로 잘못 읽는다 — 검사가 자기가 만든 신호를 자기 답으로 쓰는 꼴이다.
+        try await session.clearBreakpoint(requestID: requestID)
+
+        try await session.step(.over, threadID: stop.threadID)
+        let stepped = try await session.waitForBreakpoint()
+        let after = try #require(try await session.stackFrames(threadID: stepped.threadID).first)
+        print("LIVE(step) 한 줄 뒤 \(after.className).\(after.methodName):\(after.line)")
+        #expect(after.line == 6, "한 줄 넘겼는데 \(after.line)행이다")
+
+        // 요청이 거둬졌는지 본다. 안 거뒀으면 재개하자마자 또 멈춘다.
+        try await session.resume()
+        print("LIVE(step) 재개")
+    }
+
     /// 앱이 실제로 하는 순서다 — 이벤트 리스너를 먼저 띄워 두고, 그 **와중에** 사용자가
     /// 브레이크포인트를 건다.
     ///

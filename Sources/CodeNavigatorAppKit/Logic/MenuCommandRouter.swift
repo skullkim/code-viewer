@@ -112,6 +112,12 @@ public enum MenuCommandRouter {
             await model.toggleBreakpointAtCursor()
         case .resumeDebuggee:
             await model.debug.resume()
+        case .stepOver:
+            await model.debug.step(.over)
+        case .stepInto:
+            await model.debug.step(.into)
+        case .stepOut:
+            await model.debug.step(.out)
         case .toggleDebugPanel:
             model.shell.isDebugPanelVisible.toggle()
 
