@@ -133,6 +133,14 @@ public enum DesignTokens {
     public static let syntaxString = token("syntax-string", "#2B742E", "#C3E88D")
     public static let syntaxNumber = token("syntax-number", "#9E4F00", "#F78C6C")
     public static let syntaxComment = token("syntax-comment", "#606570", "#9AA0AD")
+    /// Annotations — `@Service`, `@Override`.
+    ///
+    /// Gold rather than a reuse of an existing token: an annotation sits on the line above a
+    /// declaration and reads as a label on it, so sharing a colour with keywords or strings makes
+    /// the label look like part of the code it labels. Measured on the worst of the three editor
+    /// surfaces (`bg-same-symbol`): 7.05:1 dark · 5.03:1 light, and ΔE 32.0 / 35.2 from its
+    /// nearest neighbour, which is `syntax-string` in both themes.
+    public static let syntaxAnnotation = token("syntax-annotation", "#6B6300", "#DCC08A")
 
     /// The floor §4.1.1 sets for the colour distance between a syntax colour and plain text.
     ///
@@ -142,6 +150,7 @@ public enum DesignTokens {
     /// The syntax family, in the order §4.1.1 lists it.
     public static let syntaxTokens: [ColorToken] = [
         syntaxKeyword, syntaxType, syntaxFunction, syntaxString, syntaxNumber, syntaxComment,
+        syntaxAnnotation,
     ]
 
     /// Plain code — anything the palette does not colour, including `Identifier`.
@@ -173,7 +182,7 @@ public enum DesignTokens {
         textPrimary, textSecondary, textTertiary, accent, accentText,
         danger, warning, warningSolid, success, purple, teal,
         syntaxKeyword, syntaxType, syntaxFunction, syntaxString, syntaxNumber, syntaxComment,
-        backgroundSelection, backgroundSameSymbol,
+        syntaxAnnotation, backgroundSelection, backgroundSameSymbol,
     ]
 
     /// The floor design §4.5 sets for text.

@@ -114,6 +114,7 @@ struct MouseInteractionTests {
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: EditorColor(packedRGB: 0x264F78),
                 selectionBackground: selectionBackground,
+                annotation: EditorColor(packedRGB: 0xDCC08A),
                 lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
                 currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )

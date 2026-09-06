@@ -193,4 +193,28 @@ struct CompositionRootTests {
         #expect(ShellComposition.panes(hasOpenProject: false, layout: wide) == [.projectOpen])
         #expect(ShellComposition.panes(hasOpenProject: true, layout: wide) == [.fileTree, .editorGrid, .referencePanel])
     }
+
+    /// `gd` 가 참조도 함께 나열하게 되면서, 정의가 여러 건일 때 **후보 팝업**이 그대로 뜨는지가
+    /// 새 질문이 됐다 — 앞서 `showReferences` 가 돌기 때문이다.
+    ///
+    /// `menuCommands` 표만 보는 테스트로는 못 잡는다. 표는 맞고 화면만 비는 실패가 가능하고,
+    /// 이 빌드에서 그 형태가 이미 여러 번 나왔다.
+    @Test("gd 는 정의가 여러 건이면 후보 팝업을 그대로 띄운다")
+    func goToDefinitionStillPresentsCandidates() async {
+        let (model, search, project, editor) = makeModels()
+        editor.wordUnderCursorValue = "parse"
+        project.definitionsByName["parse"] = [
+            SymbolDefinition(name: "parse", kind: .function, path: "Index/Parser.swift", line: 41, signature: "func parse()"),
+            SymbolDefinition(name: "parse", kind: .function, path: "Util/ArgParse.swift", line: 12, signature: "func parse()"),
+        ]
+        await model.openProject(at: URL(fileURLWithPath: "/repo/sample"))
+
+        await MenuCommandRouter.perform(
+            EditorNavigationRequest.goToDefinition, model: model, search: search
+        )
+
+        #expect(model.definitionCandidates?.count == 2, "후보 팝업이 사라졌다")
+        #expect(editor.openedFiles.isEmpty, "사용자가 고르기 전에 파일이 열렸다")
+    }
+
 }

@@ -42,6 +42,7 @@ enum SyntaxPaletteBuilder {
             selectionBackground: EditorColor(DesignTokens.backgroundSelection.value(for: scheme)),
             // 거터. 프로토타입이 `text-3` 로 그리고 현재 줄만 `text-1` 로 올린다
             // (`styles.css:193·196`). 두 값이 갈려야 현재 줄이 눈에 띈다.
+            annotation: EditorColor(DesignTokens.syntaxAnnotation.value(for: scheme)),
             lineNumberForeground: EditorColor(DesignTokens.textTertiary.value(for: scheme)),
             currentLineNumberForeground: EditorColor(DesignTokens.textPrimary.value(for: scheme))
         )

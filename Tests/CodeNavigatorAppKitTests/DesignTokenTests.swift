@@ -145,11 +145,14 @@ struct DesignTokenTests {
         }
     }
 
-    @Test("여섯 구문 색이 서로도 구별된다", arguments: AppearanceScheme.allCases)
-    func theSixSyntaxColoursAreDistinctFromEachOther(scheme: AppearanceScheme) {
+    @Test("구문 색이 서로도 구별된다", arguments: AppearanceScheme.allCases)
+    func theSyntaxColoursAreDistinctFromEachOther(scheme: AppearanceScheme) {
         // 전부 평문에서 멀어도 서로 붙어 있으면 키워드와 타입을 구별할 수 없다.
+        //
+        // 개수를 세는 이유는 목록이 늘 때 이 검사가 따라 늘게 하기 위해서다 — 토큰을 더하고
+        // 여기를 안 고치면 새 색은 아무와도 대조되지 않은 채 통과한다.
         let tokens = DesignTokens.syntaxTokens
-        #expect(tokens.count == 6)
+        #expect(tokens.count == 7, "구문 토큰이 늘거나 줄면 이 검사도 따라와야 한다")
 
         for (index, token) in tokens.enumerated() {
             for other in tokens[(index + 1)...] {
@@ -180,6 +183,7 @@ struct DesignTokenTests {
             (DesignTokens.syntaxString, "#2B742E", "#C3E88D"),
             (DesignTokens.syntaxNumber, "#9E4F00", "#F78C6C"),
             (DesignTokens.syntaxComment, "#606570", "#9AA0AD"),
+            (DesignTokens.syntaxAnnotation, "#6B6300", "#DCC08A"),
         ]
         #expect(published.count == DesignTokens.syntaxTokens.count, "발행값 표가 토큰 수와 어긋난다")
 

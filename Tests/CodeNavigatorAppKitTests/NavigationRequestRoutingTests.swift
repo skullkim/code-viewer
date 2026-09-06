@@ -76,4 +76,5 @@ struct NavigationRequestRoutingTests {
 
         #expect(AppearanceScheme(variant) == .dark)
     }
+
 }

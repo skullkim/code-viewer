@@ -416,6 +416,7 @@ struct Increment3EnvironmentAssumptionsTests {
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: matchBackground,
                 selectionBackground: EditorColor(packedRGB: 0x233043),
+                annotation: EditorColor(packedRGB: 0xDCC08A),
                 lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
                 currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )
@@ -484,6 +485,7 @@ struct Increment3EnvironmentAssumptionsTests {
                 normalBackground: EditorColor(packedRGB: 0x1B1B1F),
                 sameSymbolBackground: matchBackground,
                 selectionBackground: selectionBackground,
+                annotation: EditorColor(packedRGB: 0xDCC08A),
                 lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
                 currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
             )

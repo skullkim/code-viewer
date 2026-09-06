@@ -21,6 +21,7 @@ struct SyntaxHighlightTests {
         normalBackground: EditorColor(packedRGB: 0x1B1B1F),
         sameSymbolBackground: EditorColor(packedRGB: 0x264F78),
         selectionBackground: EditorColor(packedRGB: 0x0A84FF),
+        annotation: EditorColor(packedRGB: 0xDCC08A),
         lineNumberForeground: EditorColor(packedRGB: 0x9898A1),
         currentLineNumberForeground: EditorColor(packedRGB: 0xE8E8ED)
     )
@@ -366,5 +367,41 @@ struct SyntaxHighlightTests {
         #expect(gutterColour(ofScreenRow: 2) == Self.palette.lineNumberForeground)
         #expect(gutterColour(ofScreenRow: 0) == Self.palette.currentLineNumberForeground)
     }
+
+
+    // MARK: - tree-sitter (클래스·메서드·애노테이션)
+
+    /// 정규식 문법은 Java 를 `Comment`·`Constant`·`Type` 셋으로만 나눈다 — 클래스 이름과
+    /// 메서드 이름은 그 안에 없어서 평문으로 남았고, 그게 "IntelliJ 같지 않다"의 실체다.
+    /// 번들한 파서가 붙으면 그 자리가 채워진다.
+    @Test("클래스 이름·메서드 이름·애노테이션이 각자 색을 갖는다")
+    func treeSitterColoursNamesTheRegexSyntaxCannotSee() async throws {
+        let fixture = TemporaryProjectFixture()
+        // 마커를 전부 대문자로 지으면 안 된다. tree-sitter 의 Java 쿼리는
+        // `^[A-Z_][A-Z\\d_]+$` 를 상수로 잡아서, 무엇을 이름 붙였든 상수 색이 나온다 —
+        // 처음 판이 그렇게 셋 다 숫자 색으로 통과했고, 그건 제품이 아니라 픽스처 문제였다.
+        fixture.write("Sample.java", contents: """
+        @MarkerAnnotation
+        public class MarkerClass {
+            public String markerMethod(String user) { return user; }
+        }
+        """)
+        let session = try await startedSession(fixture)
+        defer { Task { await session.shutDown() } }
+
+        let baseline = await currentRevision(session)
+        let snapshot = try await freshSnapshot(session, containing: "MarkerClass", newerThan: baseline) {
+            try await session.openFile(atRelativePath: "Sample.java", line: nil, recordJump: false)
+        }
+
+        let className = try #require(run(in: snapshot, containing: "MarkerClass"))
+        let methodName = try #require(run(in: snapshot, containing: "markerMethod"))
+        let annotation = try #require(run(in: snapshot, containing: "MarkerAnnotation"))
+
+        #expect(className.style.foreground == Self.palette.type, "클래스 이름이 평문이다")
+        #expect(methodName.style.foreground == Self.palette.function, "메서드 이름이 평문이다")
+        #expect(annotation.style.foreground == Self.palette.annotation, "애노테이션이 평문이다")
+    }
+
 
 }

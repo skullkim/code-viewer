@@ -30,6 +30,16 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_PATH/$EXECUTABLE_NAME" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$INFO_PLIST" "$APP_DIR/Contents/Info.plist"
 
+# The tree-sitter parsers the embedded Neovim loads. Checked rather than copied blindly: without
+# them Neovim falls back to regex syntax files, and that failure shows up as "this language has
+# no highlighting" rather than as a missing file.
+TREESITTER_SOURCE="$REPO_ROOT/Resources/treesitter"
+if [ ! -d "$TREESITTER_SOURCE/parser" ]; then
+    echo "FAIL: $TREESITTER_SOURCE/parser 가 없다 — scripts/build-treesitter-parsers.sh 를 먼저 돌려라" >&2
+    exit 1
+fi
+cp -R "$TREESITTER_SOURCE" "$APP_DIR/Contents/Resources/treesitter"
+
 # The plist names the executable; a mismatch produces a bundle that launches to nothing.
 PLIST_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_DIR/Contents/Info.plist")"
 if [ "$PLIST_EXECUTABLE" != "$EXECUTABLE_NAME" ]; then

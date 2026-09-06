@@ -60,6 +60,26 @@ enum NeovimHighlightScript {
 
           -- 거터. 안 바르면 nvim 기본 #4F5258 이 남고 우리 배경 위에서 2.19:1 이다 —
           -- §4.5 바닥의 절반이고, 우리가 Normal 배경을 덮으면서 오히려 나빠진 값이다.
+          -- tree-sitter 캡처. 정규식 문법은 클래스 이름·메서드 이름·애노테이션을 아예
+          -- 분류하지 않아서(실측: Java 는 Comment·Constant·Type 셋뿐) 그 자리가 평문으로
+          -- 남았다. 파서가 붙은 언어에서는 이 그룹들이 그 자리를 채운다.
+          local treeSitterGroups = {
+            [colours.type]         = { '@type', '@type.definition', '@constructor' },
+            [colours.functionName] = { '@function', '@function.method', '@function.call', '@method' },
+            [colours.annotation]   = { '@attribute' },
+            [colours.number]       = { '@constant', '@number', '@boolean' },
+            [colours.keyword]      = { '@keyword', '@keyword.function', '@keyword.return' },
+            [colours.string]       = { '@string' },
+            [colours.comment]      = { '@comment' },
+            [colours.normalForeground] = { '@variable', '@property', '@parameter' },
+          }
+          for colour, groups in pairs(treeSitterGroups) do
+            for _, group in ipairs(groups) do
+              vim.api.nvim_set_hl(0, group, { fg = colour })
+            end
+          end
+          vim.api.nvim_set_hl(0, '@keyword', { fg = colours.keyword, bold = colours.keywordIsBold })
+
           vim.api.nvim_set_hl(0, 'LineNr', { fg = colours.lineNumber })
           vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = colours.currentLineNumber, bold = true })
 
@@ -195,4 +215,55 @@ enum NeovimHighlightScript {
         return 'installed'
         """
     }
+
+    /// Points Neovim at the parsers the application ships, and turns tree-sitter on for the
+    /// languages that have one (REQ-016 AC-1).
+    ///
+    /// Neovim installs six parsers and none of them are languages this application indexes, so
+    /// without this the editor falls back to regex syntax files. Those cannot tell a class name
+    /// from a variable — measured, Java resolves into `Comment`, `Constant` and `Type` and
+    /// nothing else, which is why class and method names rendered as plain text.
+    ///
+    /// The runtime path is *prepended* so a user who has their own parser for the same language
+    /// keeps it: the application supplies what is missing rather than replacing what is there
+    /// (INV-7).
+    ///
+    /// Starting is per-buffer and guarded. `vim.treesitter.start` throws for a language with no
+    /// parser, and a throw here would leave the buffer with no highlighting at all — worse than
+    /// the regex fallback it was meant to improve on. So a failure quietly leaves the regex path
+    /// in place, which is exactly what Kotlin does today.
+    static func installTreeSitterScript(runtimePath: String, languages: [String]) -> String {
+        let languageList = languages.map { "['\($0)'] = true" }.joined(separator: ", ")
+        return """
+        local bundled = { \(languageList) }
+        -- `vim.opt` 가 목록 항목의 이스케이프를 처리한다. 직접 escape 를 부르면 Swift 문자열
+        -- 리터럴을 한 겹 더 지나며 역슬래시가 어긋나고, 그 결과는 **조용히 실패하는 Lua** 다.
+        vim.opt.runtimepath:prepend([[\(runtimePath)]])
+
+        local function startTreeSitter(buffer)
+          local language = vim.bo[buffer].filetype
+          if not bundled[language] then
+            return
+          end
+          -- 실패해도 조용히 정규식 경로를 남긴다. 여기서 예외가 나면 그 버퍼는 강조가
+          -- 아예 없어지는데, 그건 고치려던 것보다 나쁘다.
+          pcall(vim.treesitter.start, buffer, language)
+        end
+
+        vim.api.nvim_create_augroup('CodeNavigatorTreeSitter', { clear = true })
+        vim.api.nvim_create_autocmd('FileType', {
+          group = 'CodeNavigatorTreeSitter',
+          callback = function(arguments) startTreeSitter(arguments.buf) end,
+        })
+
+        for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_loaded(buffer) then
+            startTreeSitter(buffer)
+          end
+        end
+
+        return 'installed'
+        """
+    }
+
 }

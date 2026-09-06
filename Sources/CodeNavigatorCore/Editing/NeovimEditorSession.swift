@@ -1000,10 +1000,53 @@ public actor NeovimEditorSession: EditorSession {
         return (editorDefaults, user, userScriptPath)
     }
 
+    /// The languages the application ships a parser **and** a highlight query for.
+    ///
+    /// Kotlin and TypeScript are absent, and both were measured rather than assumed. Kotlin's
+    /// grammar publishes no `highlights.scm`; TypeScript's is 35 lines of type rules that return
+    /// no captures at all for ordinary statements. Starting tree-sitter for either turns the regex
+    /// syntax off and supplies nothing, which trades imperfect colour for none.
+    static let treeSitterLanguages = ["java"]
+
+    /// Where the bundled parsers live, or nil when running somewhere they were not bundled.
+    ///
+    /// Returning nil rather than a guessed path matters: a wrong runtime path makes Neovim fail
+    /// to find a parser, and that failure looks exactly like "this language has no highlighting"
+    /// — the state we are trying to leave.
+    static func bundledTreeSitterRuntimePath() -> String? {
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("treesitter"),
+            // Running from the build directory rather than the assembled `.app`, which is how
+            // the tests and `swift run` see the world.
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()   // Editing
+                .deletingLastPathComponent()   // CodeNavigatorCore
+                .deletingLastPathComponent()   // Sources
+                .deletingLastPathComponent()   // repository root
+                .appendingPathComponent("Resources/treesitter"),
+        ]
+        return candidates
+            .compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("parser").path) }?
+            .path
+    }
+
     /// Installs the allow-list and the same-symbol highlight, and restores any palette the
     /// application already gave us (a restart must not come back colourless).
     private func installHighlightBehaviour(on channel: NeovimChannel) async {
         let allowedFileTypes = NeovimSyntaxAllowList.highlightedFileTypes.sorted()
+
+        // Before the allow-list, because the allow-list turns regex syntax off for languages we
+        // do not support and tree-sitter is what supplies the colour for the ones we do.
+        if let runtimePath = Self.bundledTreeSitterRuntimePath() {
+            _ = await runLua(
+                NeovimHighlightScript.installTreeSitterScript(
+                    runtimePath: runtimePath,
+                    languages: Self.treeSitterLanguages
+                ),
+                on: channel
+            )
+        }
 
         _ = await runLua(
             NeovimHighlightScript.installAllowListScript(allowedFileTypes: allowedFileTypes),
@@ -1091,6 +1134,9 @@ public actor NeovimEditorSession: EditorSession {
             ),
             MessagePackKeyValuePair(
                 key: .string("selectionBackground"), value: packed(palette.selectionBackground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("annotation"), value: packed(palette.annotation)
             ),
             MessagePackKeyValuePair(
                 key: .string("lineNumber"), value: packed(palette.lineNumberForeground)

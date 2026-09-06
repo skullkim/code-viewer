@@ -38,6 +38,11 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
     /// (`#4F5258`) stays, which sits at 2.19:1 on the editor background — under half the 4.5:1
     /// floor. Painting `Normal` made that *worse* (2.34 → 2.19), so owning the background without
     /// owning the gutter degrades a surface the application did not mean to touch.
+    /// Annotations — `@Service`, `@Override`.
+    ///
+    /// Only reachable through tree-sitter: the regex syntax files have no notion of an
+    /// annotation, so this slot stays unused on languages that fall back to them.
+    public let annotation: EditorColor
     public let lineNumberForeground: EditorColor
     public let currentLineNumberForeground: EditorColor
 
@@ -53,6 +58,7 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         normalBackground: EditorColor,
         sameSymbolBackground: EditorColor,
         selectionBackground: EditorColor,
+        annotation: EditorColor,
         lineNumberForeground: EditorColor,
         currentLineNumberForeground: EditorColor
     ) {
@@ -67,6 +73,7 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         self.normalBackground = normalBackground
         self.sameSymbolBackground = sameSymbolBackground
         self.selectionBackground = selectionBackground
+        self.annotation = annotation
         self.lineNumberForeground = lineNumberForeground
         self.currentLineNumberForeground = currentLineNumberForeground
     }

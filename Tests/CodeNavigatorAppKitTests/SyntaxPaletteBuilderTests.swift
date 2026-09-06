@@ -22,6 +22,7 @@ struct SyntaxPaletteBuilderTests {
             ("string", palette.string, DesignTokens.syntaxString),
             ("number", palette.number, DesignTokens.syntaxNumber),
             ("comment", palette.comment, DesignTokens.syntaxComment),
+            ("annotation", palette.annotation, DesignTokens.syntaxAnnotation),
         ]
         #expect(expected.count == DesignTokens.syntaxTokens.count, "슬롯 수가 토큰 수와 어긋난다")
 
