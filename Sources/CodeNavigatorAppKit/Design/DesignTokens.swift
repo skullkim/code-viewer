@@ -58,6 +58,13 @@ public enum DesignTokens {
     /// surface it actually appears on, hue preserved; reported to the lead for a ruling.
     public static let textTertiary = token("text-3", "#6A6A73", "#9898A1")
 
+    /// 편집기의 경계 표시 — 버퍼 끝의 `~`, 비출력 문자.
+    ///
+    /// 실측해서 고른 값이다. 밴드가 좁다: 3:1 아래면 편집기가 어디서 끝나는지 안 보이고,
+    /// 5:1 위면 코드처럼 읽혀서 없는 내용을 있는 것처럼 만든다. 이 값은 3.24(라이트) ·
+    /// 3.40(다크)이다. `text-3` 는 5.35/6.00 으로 너무 눈에 띄었다.
+    public static let editorEdgeMarker = token("editor-edge", "#8E8E99", "#6E6E78")
+
     public static let accent = token("accent", "#007AFF", "#0A84FF")
     public static let accentText = token("accent-text", "#0B62D6", "#4D9FFF")
 

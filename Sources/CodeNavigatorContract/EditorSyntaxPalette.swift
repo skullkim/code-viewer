@@ -46,6 +46,23 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
     public let lineNumberForeground: EditorColor
     public let currentLineNumberForeground: EditorColor
 
+    // MARK: 편집기 주변부
+    //
+    // 코드가 아니라서 오래 비어 있었고, 비어 있으면 nvim 기본값이 나온다. 그건 우리 배경을
+    // 모르고 고른 색이라 대비가 맞을 이유가 없다 — 라이트 모드에서 밝은 화면 아래에 어두운
+    // 회색 막대가 남아 편집기 절반이 다른 앱처럼 보였다.
+
+    /// 편집기 하단 상태줄. 파일명과 위치를 담으므로 읽혀야 한다.
+    public let statusLineForeground: EditorColor
+    public let statusLineBackground: EditorColor
+    /// 버퍼 끝의 `~`. 정보가 아니라 경계 표시다 — 코드로 오인될 만큼 밝으면 안 된다.
+    public let endOfBufferForeground: EditorColor
+    /// 줄바꿈·탭 같은 비출력 문자.
+    public let nonTextForeground: EditorColor
+    /// 사인 열(브레이크포인트가 놓이는 자리). 배경은 편집기와 **같아야** 한다 — 다르면
+    /// 아무것도 없는 줄에도 세로 띠가 생기고, 사용자는 그것을 켜져 있는 표시로 읽는다.
+    public let signColumnBackground: EditorColor
+
     public init(
         keyword: EditorColor,
         type: EditorColor,
@@ -60,7 +77,12 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         selectionBackground: EditorColor,
         annotation: EditorColor,
         lineNumberForeground: EditorColor,
-        currentLineNumberForeground: EditorColor
+        currentLineNumberForeground: EditorColor,
+        statusLineForeground: EditorColor,
+        statusLineBackground: EditorColor,
+        endOfBufferForeground: EditorColor,
+        nonTextForeground: EditorColor,
+        signColumnBackground: EditorColor
     ) {
         self.keyword = keyword
         self.type = type
@@ -76,5 +98,10 @@ public struct EditorSyntaxPalette: Sendable, Hashable, Codable {
         self.annotation = annotation
         self.lineNumberForeground = lineNumberForeground
         self.currentLineNumberForeground = currentLineNumberForeground
+        self.statusLineForeground = statusLineForeground
+        self.statusLineBackground = statusLineBackground
+        self.endOfBufferForeground = endOfBufferForeground
+        self.nonTextForeground = nonTextForeground
+        self.signColumnBackground = signColumnBackground
     }
 }

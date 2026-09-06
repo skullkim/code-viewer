@@ -83,6 +83,24 @@ enum NeovimHighlightScript {
           vim.api.nvim_set_hl(0, 'LineNr', { fg = colours.lineNumber })
           vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = colours.currentLineNumber, bold = true })
 
+          -- 편집기 주변부. 안 칠하면 nvim 기본값이 나오고, 그건 우리 배경을 모르고 고른
+          -- 색이라 대비가 맞을 이유가 없다 — 라이트 모드에서 밝은 화면 아래에 어두운 회색
+          -- 막대가 남아 편집기 절반이 다른 앱처럼 보였다.
+          --
+          -- `StatusLineNC` 는 비활성 창의 상태줄이다. 같이 안 칠하면 창을 나눴을 때 한쪽만
+          -- 우리 색이고 다른 쪽은 nvim 색이 된다.
+          for _, group in ipairs({ 'StatusLine', 'StatusLineNC' }) do
+            vim.api.nvim_set_hl(0, group, {
+              fg = colours.statusLineForeground,
+              bg = colours.statusLineBackground,
+            })
+          end
+          vim.api.nvim_set_hl(0, 'EndOfBuffer', { fg = colours.endOfBuffer })
+          vim.api.nvim_set_hl(0, 'NonText', { fg = colours.nonText })
+          -- 사인 열 배경은 편집기 배경과 같다. 다르면 아무것도 없는 줄에도 세로 띠가 생기고,
+          -- 사용자는 그것을 무언가 켜져 있는 표시로 읽는다.
+          vim.api.nvim_set_hl(0, 'SignColumn', { bg = colours.signColumnBackground })
+
           vim.api.nvim_set_hl(0, '\(sameSymbolGroup)', { bg = colours.sameSymbolBackground })
           vim.api.nvim_set_hl(0, 'Visual', { bg = colours.selectionBackground })
         end

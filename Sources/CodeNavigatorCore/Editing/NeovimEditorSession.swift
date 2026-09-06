@@ -1145,6 +1145,21 @@ public actor NeovimEditorSession: EditorSession {
                 key: .string("currentLineNumber"),
                 value: packed(palette.currentLineNumberForeground)
             ),
+            MessagePackKeyValuePair(
+                key: .string("statusLineForeground"), value: packed(palette.statusLineForeground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("statusLineBackground"), value: packed(palette.statusLineBackground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("endOfBuffer"), value: packed(palette.endOfBufferForeground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("nonText"), value: packed(palette.nonTextForeground)
+            ),
+            MessagePackKeyValuePair(
+                key: .string("signColumnBackground"), value: packed(palette.signColumnBackground)
+            ),
         ])
     }
 

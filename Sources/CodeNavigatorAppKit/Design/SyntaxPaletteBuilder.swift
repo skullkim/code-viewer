@@ -44,7 +44,17 @@ enum SyntaxPaletteBuilder {
             // (`styles.css:193·196`). 두 값이 갈려야 현재 줄이 눈에 띈다.
             annotation: EditorColor(DesignTokens.syntaxAnnotation.value(for: scheme)),
             lineNumberForeground: EditorColor(DesignTokens.textTertiary.value(for: scheme)),
-            currentLineNumberForeground: EditorColor(DesignTokens.textPrimary.value(for: scheme))
+            currentLineNumberForeground: EditorColor(DesignTokens.textPrimary.value(for: scheme)),
+            // 편집기 주변부. 색을 안 주면 nvim 기본값이 나오는데, 그건 우리 배경을 모르고
+            // 고른 색이라 대비가 맞을 이유가 없다 — 라이트 모드에서 어두운 회색 막대가
+            // 남아 편집기 절반이 다른 앱처럼 보였다.
+            statusLineForeground: EditorColor(DesignTokens.textSecondary.value(for: scheme)),
+            statusLineBackground: EditorColor(DesignTokens.backgroundStatus.value(for: scheme)),
+            endOfBufferForeground: EditorColor(DesignTokens.editorEdgeMarker.value(for: scheme)),
+            nonTextForeground: EditorColor(DesignTokens.editorEdgeMarker.value(for: scheme)),
+            // 편집기 배경과 **같은** 값이다. 다르면 아무것도 없는 줄에도 세로 띠가 생기고,
+            // 사용자는 그것을 무언가 켜져 있는 표시로 읽는다.
+            signColumnBackground: EditorColor(DesignTokens.backgroundContent.value(for: scheme))
         )
     }
 }
