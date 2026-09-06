@@ -17,7 +17,7 @@ SwiftUI + AppKit · Neovim --embed (MessagePack-RPC) · tree-sitter · macOS 14+
 
 ## 설치
 
-**[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 5.3MB
+**[최신 릴리스에서 `.dmg` 받기](https://github.com/skullkim/code-viewer/releases/latest)** — 유니버설(`x86_64 arm64`), 27MB
 
 1. `.dmg`를 열고 **CodeNavigator.app을 Applications로 드래그**
 2. 아래 한 줄을 실행하고 더블클릭
@@ -26,7 +26,13 @@ SwiftUI + AppKit · Neovim --embed (MessagePack-RPC) · tree-sitter · macOS 14+
 xattr -d com.apple.quarantine /Applications/CodeNavigator.app
 ```
 
-**필요한 것**: macOS 14+ · `nvim` 0.9.0 이상 (`brew install neovim`)
+**필요한 것**: macOS 14+. 그게 전부다.
+
+Neovim은 앱이 싣고 다닌다(v0.12.5, 유니버설). 따로 설치하지 않아도 되고, 이미 설치돼
+있어도 앱은 자기 것을 쓴다 — 이 맥에 어떤 버전이 있든 검증한 그 버전으로 동작한다.
+자기 빌드를 쓰고 싶으면 경로를 지정하면 그쪽이 우선한다.
+
+`~/.config/nvim` 설정은 그대로 읽힌다. 바뀌는 건 그 설정을 어떤 실행 파일이 읽느냐뿐이다.
 
 ### ⚠ 왜 그 한 줄이 필요한가
 
@@ -45,12 +51,22 @@ xattr -d com.apple.quarantine /Applications/CodeNavigator.app
 ## 소스에서 빌드하기
 
 ```bash
+./scripts/vendor-neovim.sh        # Neovim 내려받아 유니버설로 조립 (최초 1회, 47MB)
+./scripts/build-treesitter-parsers.sh   # tree-sitter 파서 (최초 1회)
+./scripts/build-app-icon.sh       # SVG → .icns (아이콘을 고칠 때만)
+
 swift build -c release            # 빌드
 ./scripts/bundle.sh               # .app 조립 (권한 문구 검증 + 번들 매니페스트)
 open .build/CodeNavigator.app
 
-./scripts/package-dmg.sh          # 배포용 유니버설 .dmg
+./scripts/package-dmg.sh          # 배포용 유니버설 .dmg (조립은 bundle.sh 에 위임)
 ```
+
+`Resources/nvim`은 커밋되지 않는다 — 서드파티 릴리스라 받아서 조립한다. 버전과 SHA-256을
+`vendor-neovim.sh`가 핀으로 들고 있어 누가 언제 돌려도 같은 것이 나온다.
+
+각 조립 스크립트에는 `--self-test`가 있고, 그게 통과해야 그 산출물을 근거로 무엇을
+주장할 수 있다.
 
 **필요한 것**: 위에 더해 Swift 6
 

@@ -21,6 +21,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKOUTS="$REPO_ROOT/.build/checkouts"
 OUTPUT="$REPO_ROOT/Resources/treesitter"
 
+# The self-test must load these parsers into the **same** Neovim the application ships, not
+# whichever one this machine has on `PATH`. Since the editor became a bundled dependency those two
+# can differ, and then a green self-test would be a statement about the developer's Neovim while
+# the download highlights nothing.
+NVIM="$REPO_ROOT/Resources/nvim/bin/nvim"
+[ -x "$NVIM" ] || NVIM="nvim"
+
 # Only Java, and both omissions were measured rather than assumed.
 #
 # Kotlin's grammar ships no `highlights.scm` at all. TypeScript ships one, but it is 35 lines of
@@ -119,7 +126,8 @@ self_test() {
     done
 
     local report
-    report="$(nvim --headless -i NONE --clean --cmd "set runtimepath^=$OUTPUT" -c 'lua
+    printf '  검사에 쓰는 nvim: %s (%s)\n' "$NVIM" "$("$NVIM" --version 2>/dev/null | head -1)"
+    report="$("$NVIM" --headless -i NONE --clean --cmd "set runtimepath^=$OUTPUT" -c 'lua
       local function sampleFor(language)
         local byLanguage = {
           java = "class Sample { void run() {} }",

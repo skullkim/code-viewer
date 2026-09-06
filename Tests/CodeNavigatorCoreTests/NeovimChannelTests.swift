@@ -25,9 +25,14 @@ struct NeovimChannelTests {
         #expect(FileManager.default.isExecutableFile(atPath: executable.path))
     }
 
-    @Test("설치돼 있지 않으면 명확한 에러다 — 조용한 실패가 아니다")
+    @Test("아무 데도 Neovim 이 없으면 명확한 에러다 — 조용한 실패가 아니다")
     func reportsMissingNeovimClearly() {
-        let locator = NeovimExecutableLocator(wellKnownPaths: ["/nonexistent/bin/nvim"])
+        // 번들 사본까지 없애야 "아무 데도 없는 상태"가 된다. 앱이 Neovim 을 싣게 된 뒤로는
+        // 알려진 경로와 PATH 만 비워서는 이 경로에 닿지 않는다 — 번들된 것이 잡혀 버린다.
+        let locator = NeovimExecutableLocator(
+            wellKnownPaths: ["/nonexistent/bin/nvim"],
+            bundledPath: nil
+        )
         #expect(throws: NavigatorError.editorNotInstalled) {
             try locator.locate(environment: ["PATH": "/nonexistent/bin"])
         }

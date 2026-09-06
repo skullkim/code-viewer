@@ -14,6 +14,7 @@ EXPECTED_IDENTIFIER="${EXPECTED_IDENTIFIER:-dev.local.code-navigator-mac}"
 
 APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
 BINARY="$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
+BUNDLED_NVIM="$APP_DIR/Contents/Resources/nvim/bin/nvim"
 
 # The self-test moves the binary aside to prove it notices its absence. Interrupted between
 # the two moves, it would leave the bundle permanently broken — and every later run would
@@ -59,7 +60,25 @@ self_test() {
     fi
     restore_binary
 
-    # 3) 되돌린 뒤에는 깨끗하게 통과해야 한다 (오탐 없음).
+    # 3) 번들된 Neovim 이 사라지면 반드시 실패해야 한다.
+    #
+    # 이걸 안 잡으면 "editor 없는 앱"이 출하된다 — 창은 뜨고 메뉴도 있고 --self-check 도
+    # 통과하는데 편집기 칸만 비어 있는, 신고되지 않는 형태의 고장이다.
+    if [ -x "$BUNDLED_NVIM" ]; then
+        mv "$BUNDLED_NVIM" "$BUNDLED_NVIM.selftest-backup"
+        if "$0" >/dev/null 2>&1; then
+            printf '  FAIL: 번들된 nvim 이 없는데 통과했다\n'
+            status=1
+        else
+            printf '  ok: 번들된 nvim 부재를 잡는다\n'
+        fi
+        mv "$BUNDLED_NVIM.selftest-backup" "$BUNDLED_NVIM"
+    else
+        printf '  FAIL: 번들에 nvim 이 없다 — 검사할 대상 자체가 없다\n'
+        status=1
+    fi
+
+    # 4) 되돌린 뒤에는 깨끗하게 통과해야 한다 (오탐 없음).
     if "$0" >/dev/null 2>&1; then
         printf '  ok: 정상 번들은 통과한다 (오탐 없음)\n'
     else
@@ -124,4 +143,26 @@ if [ -z "$SUBVIEW_COUNT" ] || [ "$SUBVIEW_COUNT" -lt 1 ]; then
     exit 1
 fi
 
-printf 'ok: %s\n' "$OUTPUT"
+# 편집기를 싣고 있는지. 앱은 이제 자기 Neovim 을 들고 다니고, 그게 이 다운로드로 설치가
+# 끝난다는 주장의 근거다. 파일 존재만 보지 않고 실행해서 버전을 받는다 — 서명이 깨졌거나
+# 아키텍처가 안 맞으면 파일은 멀쩡히 그 자리에 있고 실행만 안 된다.
+if [ ! -x "$BUNDLED_NVIM" ]; then
+    echo "FAIL: 번들에 Neovim 이 없다: $BUNDLED_NVIM" >&2
+    echo "  scripts/vendor-neovim.sh 를 돌린 뒤 다시 번들하라." >&2
+    exit 1
+fi
+NVIM_VERSION_LINE="$("$BUNDLED_NVIM" --version 2>&1 | head -1)"
+case "$NVIM_VERSION_LINE" in
+    NVIM\ v*) ;;
+    *) echo "FAIL: 번들된 Neovim 이 실행되지 않는다 — 응답: \"$NVIM_VERSION_LINE\"" >&2; exit 1 ;;
+esac
+
+# 런타임까지 딸려 왔는지. 실행만 되고 런타임이 없으면 구문 강조도 파일타입 감지도 없이
+# 그냥 열린다.
+NVIM_RUNTIME="$("$BUNDLED_NVIM" --headless -u NONE -i NONE -c 'echo $VIMRUNTIME' -c q 2>&1 | tr -d '\r' | tail -1)"
+case "$NVIM_RUNTIME" in
+    "$APP_DIR"/*) ;;
+    *) echo "FAIL: 번들된 Neovim 이 런타임을 번들 밖에서 찾는다 — $NVIM_RUNTIME" >&2; exit 1 ;;
+esac
+
+printf 'ok: %s · nvim=%s\n' "$OUTPUT" "${NVIM_VERSION_LINE#NVIM }"

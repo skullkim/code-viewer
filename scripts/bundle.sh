@@ -14,12 +14,28 @@ PACKAGE_PATH="${PACKAGE_PATH:-$REPO_ROOT}"
 INFO_PLIST="${INFO_PLIST:-$REPO_ROOT/Resources/Info.plist}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_ROOT/.build}"
 
+# Release cuts need both architectures; a developer loop does not, and paying for the second one
+# on every build is minutes nobody gets back. `package-dmg.sh` turns this on rather than
+# assembling a bundle of its own — two assembly paths mean the next resource added to one of them
+# is missing from the other, which is exactly how the published DMG ended up with no tree-sitter
+# parsers and no icon while the local bundle had both.
+# 빈 배열을 `"${a[@]}"` 로 펼치면 macOS 기본 bash(3.2)는 `set -u` 아래에서 unbound 로 죽는다.
+# 유니버설 경로는 배열이 안 비어서 멀쩡하고 평소 빌드만 깨지는데, 그 조합이 제일 늦게
+# 발각된다 — 릴리스는 되는데 개발 빌드가 안 되는 형태다. 그래서 인자를 문자열로 둔다.
+UNIVERSAL="${UNIVERSAL:-0}"
+ARCH_FLAGS=""
+if [ "$UNIVERSAL" = "1" ]; then
+    ARCH_FLAGS="--arch arm64 --arch x86_64"
+fi
+
 APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
 
-echo "building $EXECUTABLE_NAME ($CONFIGURATION)…"
-swift build --package-path "$PACKAGE_PATH" -c "$CONFIGURATION" --product "$EXECUTABLE_NAME" >&2
+echo "building $EXECUTABLE_NAME ($CONFIGURATION${ARCH_FLAGS:+, universal})…"
+# shellcheck disable=SC2086  # 분리되어야 하는 인자다
+swift build --package-path "$PACKAGE_PATH" -c "$CONFIGURATION" $ARCH_FLAGS --product "$EXECUTABLE_NAME" >&2
 
-BIN_PATH="$(swift build --package-path "$PACKAGE_PATH" -c "$CONFIGURATION" --show-bin-path)"
+# shellcheck disable=SC2086
+BIN_PATH="$(swift build --package-path "$PACKAGE_PATH" -c "$CONFIGURATION" $ARCH_FLAGS --show-bin-path)"
 if [ ! -x "$BIN_PATH/$EXECUTABLE_NAME" ]; then
     echo "FAIL: 빌드 산출물이 없다: $BIN_PATH/$EXECUTABLE_NAME" >&2
     exit 1
@@ -30,9 +46,6 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_PATH/$EXECUTABLE_NAME" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$INFO_PLIST" "$APP_DIR/Contents/Info.plist"
 
-# The tree-sitter parsers the embedded Neovim loads. Checked rather than copied blindly: without
-# them Neovim falls back to regex syntax files, and that failure shows up as "this language has
-# no highlighting" rather than as a missing file.
 # 아이콘. 없으면 Dock 에 기본 아이콘이 뜨는데, 그건 "빌드 실패" 처럼 안 보이고
 # "아직 안 만들었나 보다" 처럼 보여서 아무도 신고하지 않는다.
 ICON_SOURCE="$REPO_ROOT/Resources/AppIcon.icns"
@@ -42,12 +55,29 @@ if [ ! -f "$ICON_SOURCE" ]; then
 fi
 cp "$ICON_SOURCE" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
+# The tree-sitter parsers the embedded Neovim loads. Checked rather than copied blindly: without
+# them Neovim falls back to regex syntax files, and that failure shows up as "this language has
+# no highlighting" rather than as a missing file.
 TREESITTER_SOURCE="$REPO_ROOT/Resources/treesitter"
 if [ ! -d "$TREESITTER_SOURCE/parser" ]; then
     echo "FAIL: $TREESITTER_SOURCE/parser 가 없다 — scripts/build-treesitter-parsers.sh 를 먼저 돌려라" >&2
     exit 1
 fi
 cp -R "$TREESITTER_SOURCE" "$APP_DIR/Contents/Resources/treesitter"
+
+# Neovim itself. This is what makes installing the app the whole installation — before it, a Mac
+# without Neovim showed an empty editor pane and a start-up message, which reads as a broken app
+# rather than as a missing prerequisite.
+#
+# The layout inside `Resources/nvim` is load-bearing: Neovim locates its runtime relative to its
+# own executable, so `bin/nvim` must keep `share/nvim/runtime` as its sibling's child.
+NVIM_SOURCE="$REPO_ROOT/Resources/nvim"
+if [ ! -x "$NVIM_SOURCE/bin/nvim" ]; then
+    echo "FAIL: $NVIM_SOURCE/bin/nvim 이 없다 — scripts/vendor-neovim.sh 를 먼저 실행하라" >&2
+    exit 1
+fi
+cp -Rc "$NVIM_SOURCE" "$APP_DIR/Contents/Resources/nvim" 2>/dev/null \
+    || cp -R "$NVIM_SOURCE" "$APP_DIR/Contents/Resources/nvim"
 
 # The plist names the executable; a mismatch produces a bundle that launches to nothing.
 PLIST_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_DIR/Contents/Info.plist")"

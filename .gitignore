@@ -8,3 +8,8 @@
 # 불명으로 실패한다.
 _SelfTestProbe.swift
 *.selftest-backup
+
+# 서드파티 Neovim 릴리스를 받아서 조립한 트리(47MB). scripts/vendor-neovim.sh 가 버전과
+# 해시를 핀으로 들고 있으니 재현은 되고, 클론마다 47MB 를 물리지는 않는다.
+# Resources/treesitter 는 SPM 이 이미 받아 둔 소스로 여기서 빌드하는 것이라 커밋한다.
+Resources/nvim/

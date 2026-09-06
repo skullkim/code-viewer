@@ -19,27 +19,34 @@ APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$REPO_ROOT/Resources/Info.plist")"
 DMG="$OUTPUT_DIR/$APP_NAME-$VERSION.dmg"
 
+# Assembly is delegated rather than repeated. This script used to build its own bundle — copy the
+# binary, copy the Info.plist, done — and every resource added to `bundle.sh` afterwards was
+# missing from the download. Measured on the published v0.1.0: no tree-sitter parsers, no icon,
+# while the local bundle had both and looked correct to everyone testing locally.
 echo "building universal ($APP_NAME $VERSION)…" >&2
-swift build --package-path "$REPO_ROOT" -c release --arch arm64 --arch x86_64 --product "$APP_NAME" >&2
+UNIVERSAL=1 CONFIGURATION=release APP_NAME="$APP_NAME" OUTPUT_DIR="$OUTPUT_DIR" \
+    "$REPO_ROOT/scripts/bundle.sh" >/dev/null
 
-BIN="$(swift build --package-path "$REPO_ROOT" -c release --arch arm64 --arch x86_64 --show-bin-path)/$APP_NAME"
+BIN="$APP_DIR/Contents/MacOS/$APP_NAME"
 
 # Checked rather than trusted: `--arch` is silently ignored by some toolchain versions, and a
 # thin binary looks identical from the outside. The failure would only show on someone else's
 # Mac, which is the worst place to find it.
-ARCHS="$(lipo -archs "$BIN")"
-for want in arm64 x86_64; do
-    case " $ARCHS " in
-        *" $want "*) ;;
-        *) echo "FAIL: 유니버설이 아니다 — $want 가 없다 (실제: $ARCHS)" >&2; exit 1 ;;
-    esac
-done
-echo "  아키텍처: $ARCHS" >&2
-
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp "$BIN" "$APP_DIR/Contents/MacOS/$APP_NAME"
-cp "$REPO_ROOT/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+#
+# The bundled Neovim is checked for the same reason and separately — it is fetched per
+# architecture and `lipo`'d, so it can be thin while ours is fat.
+check_universal() {  # <label> <mach-o path>
+    local archs; archs="$(lipo -archs "$2")"
+    for want in arm64 x86_64; do
+        case " $archs " in
+            *" $want "*) ;;
+            *) echo "FAIL: $1 이 유니버설이 아니다 — $want 가 없다 (실제: $archs)" >&2; exit 1 ;;
+        esac
+    done
+    echo "  $1: $archs" >&2
+}
+check_universal "앱 실행 파일" "$BIN"
+check_universal "번들된 nvim" "$APP_DIR/Contents/Resources/nvim/bin/nvim"
 
 # Ad-hoc signature. It does not remove the Gatekeeper prompt, but without any signature at all
 # macOS 15+ refuses the app outright rather than offering the right-click override.
