@@ -567,6 +567,9 @@ public final class AppModel {
         }
         do {
             let session = try await debugSessionFactory(host, port)
+            // 멈추면 그 자리를 화면에 띄운다. 모델이 편집기를 직접 알면 화면 상태를 재는
+            // 데 편집기가 필요해지므로, 콜백으로 받는다.
+            debug.onStopped = { [weak self] in await self?.revealStoppedLine() }
             await debug.attach(session: session, host: host, port: port)
             show(StatusMessage(kind: .success, text: "디버거 연결됨 — \(host):\(port)"))
         } catch {
@@ -585,6 +588,44 @@ public final class AppModel {
     /// 클래스 이름은 파일에서 만든다 — JDWP 는 파일을 모르고 클래스만 안다. Java 가 아니거나
     /// 이름을 못 만들면 **거기서 멈춘다**. 억지로 만든 이름으로 JVM 에 물으면 "그런 클래스
     /// 없음" 이 돌아오고, 그 실패는 화면에서 "아직 그 줄을 안 지났다" 와 같아 보인다.
+    /// 디버거 표시를 편집기에 다시 그린다.
+    ///
+    /// 지금 열려 있는 파일 것만 그린다. 다른 파일의 브레이크포인트를 이 파일 줄 번호에
+    /// 찍으면 없는 표시를 만드는 것이고, 사용자는 걸지 않은 자리에 점이 있는 것을 본다.
+    public func refreshDebugMarkers() async {
+        guard let status = editorStatus,
+              let absolutePath = status.filePath,
+              let root = projectRootPath,
+              let relativePath = PathDisplay.relativePath(ofAbsolutePath: absolutePath, projectRoot: root)
+        else {
+            return
+        }
+
+        let breakpointLines = debug.breakpoints
+            .filter { $0.path == relativePath }
+            .map(\.line)
+        // 멈춘 줄은 그 파일에서 멈췄을 때만 그린다.
+        let stoppedLine = debug.stoppedBreakpointPath == relativePath ? debug.stoppedLine : nil
+
+        try? await editorSession.showDebugMarkers(
+            EditorDebugMarkers(
+                path: relativePath, breakpointLines: breakpointLines, stoppedLine: stoppedLine
+            ),
+            palette: SyntaxPaletteBuilder.debugPalette(for: appearanceScheme)
+        )
+    }
+
+    /// 멈춘 자리를 화면에 띄운다 — 파일을 열고 그 줄로 간다.
+    ///
+    /// **아는 파일일 때만** 연다. 프레임의 클래스 이름만으로 파일을 되짚으면 틀릴 수 있고,
+    /// 엉뚱한 파일이 열리는 것은 아무것도 안 여는 것보다 나쁘다. 우리가 건 브레이크포인트면
+    /// 경로를 이미 알고 있다.
+    public func revealStoppedLine() async {
+        guard let path = debug.stoppedBreakpointPath, let line = debug.stoppedLine else { return }
+        await openFile(atRelativePath: path, line: line)
+        await refreshDebugMarkers()
+    }
+
     public func toggleBreakpointAtCursor() async {
         guard let status = editorStatus,
               let absolutePath = status.filePath,
@@ -604,6 +645,7 @@ public final class AppModel {
         if let error = debug.lastError {
             show(StatusMessage(kind: .error, text: "✕ \(error)"))
         }
+        await refreshDebugMarkers()
     }
 
     /// 참조 검색이 "무엇에 대한 참조인가"를 풀 수 있게 커서 자리를 알려 준다.

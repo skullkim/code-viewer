@@ -166,6 +166,12 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
         locked { keyMappingOutcomes }
     }
 
+    private(set) var debugMarkers: [EditorDebugMarkers] = []
+
+    func showDebugMarkers(_ markers: EditorDebugMarkers, palette: EditorDebugPalette) async throws {
+        debugMarkers.append(markers)
+    }
+
     func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws {
         if let error = locked({ paletteError }) {
             throw error

@@ -13,6 +13,17 @@ enum SyntaxPaletteBuilder {
     ///
     /// Called again when the appearance changes; the session is expected to tolerate that
     /// (REQ-016 AC-6, and `applySyntaxPalette`'s own contract says so).
+    /// 디버거 표시 색. 구문 팔레트와 따로 만든다 — 바뀌는 이유가 다르다.
+    static func debugPalette(for scheme: AppearanceScheme) -> EditorDebugPalette {
+        EditorDebugPalette(
+            // 오류 빨강(`danger`)과 **다른 색**이다. 브레이크포인트는 사용자가 의도해서
+            // 놓은 것이고 고장이 아닌데, 같은 빨강이면 화면이 매번 사고처럼 보인다.
+            breakpointForeground: EditorColor(DesignTokens.debugBreakpoint.value(for: scheme)),
+            stoppedLineBackground: EditorColor(DesignTokens.debugStoppedLine.value(for: scheme)),
+            stoppedLineForeground: EditorColor(DesignTokens.debugStoppedArrow.value(for: scheme))
+        )
+    }
+
     static func palette(for scheme: AppearanceScheme) -> EditorSyntaxPalette {
         EditorSyntaxPalette(
             keyword: EditorColor(DesignTokens.syntaxKeyword.value(for: scheme)),

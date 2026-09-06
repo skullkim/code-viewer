@@ -52,6 +52,16 @@ public final class DebugModel {
     public private(set) var variableNotice: String?
     public private(set) var lastError: String?
     public private(set) var selectedFrameID: UInt64?
+    /// 멈춘 자리 — **우리가 건 브레이크포인트일 때만** 채워진다.
+    ///
+    /// 프레임의 클래스 이름으로 파일을 되짚지 않는다. 되짚기는 틀릴 수 있고, 엉뚱한 파일이
+    /// 열리는 것은 아무것도 안 여는 것보다 나쁘다 — 사용자가 그 파일을 고치기 시작한다.
+    public private(set) var stoppedBreakpointPath: String?
+    public private(set) var stoppedLine: Int?
+
+    /// 멈춤이 화면에 반영돼야 한다고 알린다. 뷰 계층이 파일을 열고 표시를 다시 그린다 —
+    /// 모델이 직접 하면 편집기를 알아야 하고, 그러면 이 모델을 테스트하는 데 편집기가 필요해진다.
+    public var onStopped: (@MainActor () async -> Void)?
 
     private var session: (any DebugSession)?
     private var stopThreadID: UInt64?
@@ -165,6 +175,18 @@ public final class DebugModel {
         if let top = frames.first {
             await loadVariables(for: top)
         }
+
+        // 우리가 건 브레이크포인트를 requestID 로 되짚는다. 못 찾으면 비운다 — 모르는
+        // 자리를 아는 척하지 않는다.
+        if let matched = breakpoints.first(where: { $0.requestID == stop.requestID }) {
+            stoppedBreakpointPath = matched.path
+            stoppedLine = matched.line
+        } else {
+            stoppedBreakpointPath = nil
+            stoppedLine = nil
+        }
+        await onStopped?()
+
         notifyStopHandled()
     }
 
@@ -213,6 +235,8 @@ public final class DebugModel {
     }
 
     private func clearStoppedState() {
+        stoppedBreakpointPath = nil
+        stoppedLine = nil
         frames = []
         variables = []
         variableNotice = nil

@@ -107,6 +107,15 @@ public protocol EditorSession: Sendable {
     /// renders (INV-8).
     func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws
 
+    /// Draws the debugger's breakpoint dots and stopped-line arrow in the gutter.
+    ///
+    /// 표시는 통째로 다시 놓는다 — 하나씩 지우고 더하면 우리가 기억하는 것과 화면이
+    /// 어긋날 수 있고, 그 어긋남은 "지웠는데 계속 멈춘다" 로 사용자에게 도착한다.
+    ///
+    /// 파일이 안 열려 있으면 아무 일도 하지 않는다. 억지로 열지 않는다 — 사용자가 보던
+    /// 파일을 표시 하나 때문에 바꾸는 것은 표시가 할 일이 아니다.
+    func showDebugMarkers(_ markers: EditorDebugMarkers, palette: EditorDebugPalette) async throws
+
     /// The identifier under the cursor, used as the query for go-to-definition and references.
     ///
     /// **Never an empty string** — an empty result is `nil`. Callers guard with `if let` and would

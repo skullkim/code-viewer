@@ -65,6 +65,14 @@ public enum DesignTokens {
     /// 3.40(다크)이다. `text-3` 는 5.35/6.00 으로 너무 눈에 띄었다.
     public static let editorEdgeMarker = token("editor-edge", "#8E8E99", "#6E6E78")
 
+    /// 브레이크포인트 점. `danger` 와 일부러 다르다 — 브레이크포인트는 사용자가 의도해서
+    /// 놓은 것이지 고장이 아니고, 오류 빨강을 쓰면 화면이 매번 사고처럼 보인다.
+    public static let debugBreakpoint = token("debug-breakpoint", "#D2453F", "#FF7A73")
+    /// 멈춘 줄의 배경. 코드가 그 위에서 계속 읽혀야 하므로 옅다.
+    public static let debugStoppedLine = token("debug-stopped-line", "#FFF3C4", "#3A3520")
+    /// 멈춘 줄을 가리키는 거터 화살표.
+    public static let debugStoppedArrow = token("debug-stopped-arrow", "#9A6B00", "#F0C24B")
+
     public static let accent = token("accent", "#007AFF", "#0A84FF")
     public static let accentText = token("accent-text", "#0B62D6", "#4D9FFF")
 

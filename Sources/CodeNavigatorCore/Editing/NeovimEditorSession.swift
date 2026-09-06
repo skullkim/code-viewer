@@ -50,6 +50,9 @@ public actor NeovimEditorSession: EditorSession {
     /// The last status published, so a mode change can be re-published without another round trip
     /// to Neovim. Mode arrives on the redraw stream while the rest of the status arrives from
     /// autocommands; without this the two never meet and the mode indicator lags or sticks.
+    /// 마지막으로 nvim 에 심은 디버그 색. 같은 값을 다시 심지 않기 위한 것이다.
+    private var installedDebugPalette: EditorDebugPalette?
+
     private var lastPublishedStatus: EditorStatus?
     private var lastKnownMode: EditorMode = .normal
     private var startupTimeoutOverride: Duration?
@@ -723,6 +726,45 @@ public actor NeovimEditorSession: EditorSession {
             )
         }
         await refreshStatus()
+    }
+
+    /// 디버거의 거터 표시를 다시 놓는다 (REQ-016).
+    ///
+    /// 설치와 갱신을 나눈다. 사인 정의와 색은 한 번만 있으면 되고, 놓는 일은 브레이크포인트가
+    /// 바뀔 때마다 일어난다 — 매번 다시 정의하면 nvim 이 매번 다시 그린다.
+    public func showDebugMarkers(
+        _ markers: EditorDebugMarkers, palette: EditorDebugPalette
+    ) async throws {
+        guard let channel else { throw NavigatorError.editorNotRunning }
+
+        if installedDebugPalette != palette {
+            _ = try? await channel.request("nvim_exec_lua", [
+                .string(NeovimDebugMarkerScript.installScript(palette: palette)), .array([]),
+            ])
+            installedDebugPalette = palette
+        }
+
+        // nvim 은 버퍼를 절대 경로로 안다. 상대 경로로 물으면 `bufnr` 이 -1 을 주고,
+        // 그러면 표시가 조용히 안 놓인다.
+        let absolutePath = projectRoot.map { root in
+            markers.path.hasPrefix("/") ? markers.path : root.appendingPathComponent(markers.path).path
+        } ?? markers.path
+
+        _ = try? await channel.request("nvim_exec_lua", [
+            .string(NeovimDebugMarkerScript.refreshScript()),
+            .array([.map([
+                MessagePackKeyValuePair(key: .string("path"), value: .string(absolutePath)),
+                MessagePackKeyValuePair(
+                    key: .string("breakpointLines"),
+                    value: .array(markers.breakpointLines.map { .integer(Int64($0)) })
+                ),
+                MessagePackKeyValuePair(
+                    key: .string("stoppedLine"),
+                    // 케이스 이름이 `nilValue` 다. `.nil` 은 Swift 예약어라 못 쓴다.
+                    value: markers.stoppedLine.map { MessagePackValue.integer(Int64($0)) } ?? .nilValue
+                ),
+            ])]),
+        ])
     }
 
     public func wordUnderCursor() async throws -> String? {

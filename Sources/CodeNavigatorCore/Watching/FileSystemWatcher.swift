@@ -22,6 +22,8 @@ final class FileSystemWatcher: @unchecked Sendable {
     private let onEvents: @Sendable ([FileSystemChangeEvent]) -> Void
     private let queue = DispatchQueue(label: "code-navigator.file-watcher")
     private var stream: FSEventStreamRef?
+    /// 스트림이 실제로 붙들고 있는 것. 감시자 자신이 아니라 이 상자다.
+    private var box: FileSystemWatcherBox?
 
     /// - Parameter rootPath: the project root. It is canonicalised here so incoming event paths
     ///   can be made relative to it.
@@ -37,11 +39,33 @@ final class FileSystemWatcher: @unchecked Sendable {
     func start() {
         guard stream == nil else { return }
 
+        // **스트림에 감시자를 직접 주지 않는다.** 예전에는 `passUnretained(self)` 였고,
+        // 게이트가 그 대가를 SIGSEGV 로 청구했다:
+        //
+        //     FSEvents root_dir_event_callback → fileSystemWatcherCallback → 0x0
+        //
+        // `deinit` 이 스트림을 무효화해도 큐에 **이미 실린** 콜백은 그 뒤에 실행될 수 있고,
+        // 그때 해제된 객체를 되살리면 주소 0 으로 뛴다. 앱에서는 탭을 닫는 순간이 정확히
+        // 같은 모양인데, 그 크래시 리포트는 사용자 손에 있고 우리는 못 본다.
+        //
+        // 그래서 스트림은 상자를 **강하게** 붙들고(retain/release 를 준다), 상자는 감시자를
+        // 잠금 아래 놓아 준다. 해제할 때 상자를 떼어 내면 뒤늦은 콜백은 nil 을 받고 돌아간다.
+        // 상자가 스트림에 붙들리는 것은 순환이 아니다 — 감시자는 상자를 소유하지만 상자는
+        // 감시자를 소유하지 않는다.
+        let box = FileSystemWatcherBox(watcher: self)
+        self.box = box
+
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            info: Unmanaged.passUnretained(box).toOpaque(),
+            retain: { pointer in
+                guard let pointer else { return nil }
+                return UnsafeRawPointer(Unmanaged<FileSystemWatcherBox>.fromOpaque(pointer).retain().toOpaque())
+            },
+            release: { pointer in
+                guard let pointer else { return }
+                Unmanaged<FileSystemWatcherBox>.fromOpaque(pointer).release()
+            },
             copyDescription: nil
         )
         let flags = FSEventStreamCreateFlags(
@@ -70,6 +94,12 @@ final class FileSystemWatcher: @unchecked Sendable {
     }
 
     func stop() {
+        // **먼저 떼어 낸다.** 무효화를 먼저 하면 그 사이에 이미 큐에 실린 콜백이 아직 살아
+        // 있는 감시자를 잡고 들어올 수 있고, 그 콜백이 끝나기 전에 `deinit` 이 끝나면
+        // 같은 크래시다. 떼어 내는 것이 먼저여야 순서가 성립한다.
+        box?.detach()
+        box = nil
+
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
@@ -129,13 +159,43 @@ struct FileSystemChangeEvent: Equatable {
     let requiresFullRescan: Bool
 }
 
+/// What the stream actually holds.
+///
+/// 감시자와 스트림 사이에 한 겹을 둔다. 스트림은 이 상자를 강하게 붙들고, 상자는 감시자를
+/// 잠금 아래 놓아 준다 — 해제할 때 떼어 내면 뒤늦게 도착한 콜백이 nil 을 받고 조용히 돌아간다.
+///
+/// 상자가 감시자를 **소유하지 않는** 것이 요점이다. 소유하면 스트림 → 상자 → 감시자로
+/// 순환이 되고, `deinit` 이 영영 안 불려서 스트림이 남는다.
+final class FileSystemWatcherBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private weak var storedWatcher: FileSystemWatcher?
+
+    init(watcher: FileSystemWatcher) {
+        self.storedWatcher = watcher
+    }
+
+    var watcher: FileSystemWatcher? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedWatcher
+    }
+
+    func detach() {
+        lock.lock()
+        storedWatcher = nil
+        lock.unlock()
+    }
+}
+
 /// The C callback. It must have no captures to be convertible to a C function pointer, so the
-/// watcher travels through the stream's info pointer instead.
+/// box travels through the stream's info pointer instead.
 private let fileSystemWatcherCallback: FSEventStreamCallback = {
     _, clientCallBackInfo, numEvents, eventPaths, eventFlags, _ in
 
     guard let clientCallBackInfo else { return }
-    let watcher = Unmanaged<FileSystemWatcher>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+    let box = Unmanaged<FileSystemWatcherBox>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+    // 이미 떼어 낸 상자다 — 감시자가 사라진 뒤에 도착한 이벤트다. 조용히 돌아간다.
+    guard let watcher = box.watcher else { return }
 
     // kFSEventStreamCreateFlagUseCFTypes was set, so this is a CFArray of CFString.
     let pathsArray = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
