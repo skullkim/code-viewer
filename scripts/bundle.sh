@@ -33,6 +33,15 @@ cp "$INFO_PLIST" "$APP_DIR/Contents/Info.plist"
 # The tree-sitter parsers the embedded Neovim loads. Checked rather than copied blindly: without
 # them Neovim falls back to regex syntax files, and that failure shows up as "this language has
 # no highlighting" rather than as a missing file.
+# 아이콘. 없으면 Dock 에 기본 아이콘이 뜨는데, 그건 "빌드 실패" 처럼 안 보이고
+# "아직 안 만들었나 보다" 처럼 보여서 아무도 신고하지 않는다.
+ICON_SOURCE="$REPO_ROOT/Resources/AppIcon.icns"
+if [ ! -f "$ICON_SOURCE" ]; then
+    echo "FAIL: $ICON_SOURCE 가 없다 — scripts/build-app-icon.sh 를 먼저 돌려라" >&2
+    exit 1
+fi
+cp "$ICON_SOURCE" "$APP_DIR/Contents/Resources/AppIcon.icns"
+
 TREESITTER_SOURCE="$REPO_ROOT/Resources/treesitter"
 if [ ! -d "$TREESITTER_SOURCE/parser" ]; then
     echo "FAIL: $TREESITTER_SOURCE/parser 가 없다 — scripts/build-treesitter-parsers.sh 를 먼저 돌려라" >&2

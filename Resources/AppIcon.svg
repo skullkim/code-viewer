@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#042f2e"/>
+      <stop offset="1" stop-color="#022c22"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg4)"/>
+  <!-- code lines with indentation, last line has caret -->
+  <g stroke-linecap="round" stroke-width="26">
+    <line x1="150" y1="180" x2="300" y2="180" stroke="#2dd4bf"/>
+    <line x1="196" y1="230" x2="362" y2="230" stroke="#5eead4" stroke-opacity="0.85"/>
+    <line x1="196" y1="280" x2="330" y2="280" stroke="#5eead4" stroke-opacity="0.7"/>
+    <line x1="150" y1="330" x2="252" y2="330" stroke="#2dd4bf"/>
+  </g>
+  <rect x="286" y="314" width="26" height="34" rx="6" fill="#f0fdfa">
+    <animate attributeName="opacity" values="1;1;0;0;1" dur="1.2s" repeatCount="indefinite"/>
+  </rect>
+</svg>
