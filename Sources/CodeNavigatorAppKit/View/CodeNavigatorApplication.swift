@@ -48,7 +48,11 @@ public enum CodeNavigatorApplication {
         ApplicationDelegate.makeMenuBar().install(into: application)
         let menuCount = application.mainMenu?.items.count ?? 0
 
-        print("bundleIdentifier=\(identifier) executable=\(executable) rootView=laidOut subviews=\(hosting.subviews.count) menus=\(menuCount)")
+        // 배선까지 보고한다. 실행·디버그 실행은 **조립 지점에서 공장을 꽂아야만** 동작하는데,
+        // 그 한 줄이 빠져도 화면은 멀쩡히 그려지고 테스트도 통과한다 — 버튼을 눌러야만
+        // 아무 일도 안 일어나는 것을 안다. 게이트가 그것을 눌러 보는 대신 물어본다.
+        let wiring = ApplicationDelegate.wiringReport()
+        print("bundleIdentifier=\(identifier) executable=\(executable) rootView=laidOut subviews=\(hosting.subviews.count) menus=\(menuCount) \(wiring)")
     }
 }
 
@@ -65,6 +69,13 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private static var sharedModel: AppModel?
     private static var sharedSearch: SearchModel?
     private static var sharedWorkspace: ProjectWorkspaceEngine?
+
+    /// 조립이 실제로 꽂혔는지 한 줄로 답한다. 게이트가 읽는다.
+    static func wiringReport() -> String {
+        let model = sharedModel
+        return "terminal=\(model?.terminalSessionFactory != nil ? "wired" : "MISSING")"
+            + " debugger=\(model?.debugSessionFactory != nil ? "wired" : "MISSING")"
+    }
 
     /// Held so the editor session can be handed over synchronously after the one `await`
     /// the actor boundary needs. Assembling twice would start two Neovim processes.
@@ -132,6 +143,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         model.debugSessionFactory = { host, port in
             try await JavaDebugSession.attach(host: host, port: port)
         }
+        model.terminalSessionFactory = { NeovimTerminalSession() }
 
         sharedEditorSession = editorSession
         sharedModel = model

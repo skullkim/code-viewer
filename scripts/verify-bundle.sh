@@ -33,6 +33,23 @@ trap restore_binary EXIT INT TERM
 # 이 스크립트는 게이트 스텝이다. 게이트 스텝이 아무것도 잡지 못하는 상태는 초록불과
 # 구분되지 않으므로, 통과만 확인하는 것은 절반이다.
 # ---------------------------------------------------------------------------
+# 실행·디버그 실행은 조립 지점에서 공장을 꽂아야만 동작한다. 그 한 줄이 빠져도 창은
+# 멀쩡히 그려지고 테스트도 통과한다 — 버튼을 눌러야만 아무 일도 안 일어나는 것을 안다.
+#
+# 자체 검사가 부를 수 있도록 함수로 둔다. 판정문을 자체 검사에 복사해 두면 둘이 갈라지고,
+# 그때 자체 검사는 "이 스크립트" 가 아니라 "복사본" 을 시험하게 된다.
+check_wiring() {
+    local output="$1"
+    local wire
+    for wire in terminal debugger; do
+        if ! printf '%s' "$output" | grep -q "$wire=wired"; then
+            echo "FAIL: $wire 가 조립되지 않았다 — 화면은 그려지지만 눌러도 아무 일이 없다" >&2
+            return 1
+        fi
+    done
+    return 0
+}
+
 self_test() {
     local status=0
     printf '=== verify-bundle 자체 검사 ===\n'
@@ -40,6 +57,19 @@ self_test() {
     if [ ! -x "$BINARY" ]; then
         printf '  SKIP: 검사할 번들이 없다 — 먼저 scripts/bundle.sh 를 실행하라\n'
         return 1
+    fi
+
+    # 0) 배선 판정이 양방향으로 도는지 — 실제 판정 함수를 두 픽스처로 부른다.
+    WIRED_FIXTURE='rootView=laidOut menus=9 terminal=wired debugger=wired'
+    MISSING_FIXTURE='rootView=laidOut menus=9 terminal=MISSING debugger=wired'
+    if check_wiring "$MISSING_FIXTURE" 2>/dev/null; then
+        printf '  FAIL: terminal=MISSING 인데 통과시켰다\n'
+        status=1
+    elif ! check_wiring "$WIRED_FIXTURE" 2>/dev/null; then
+        printf '  FAIL: 정상 배선을 실패로 읽었다 (오탐)\n'
+        status=1
+    else
+        printf '  ok: 배선 누락을 잡고, 정상은 통과시킨다\n'
     fi
 
     # 1) 식별자가 다르면 반드시 실패해야 한다.
@@ -133,6 +163,11 @@ fi
 MENU_COUNT="$(printf '%s' "$OUTPUT" | sed -n 's/.*menus=\([0-9][0-9]*\).*/\1/p')"
 if [ -z "$MENU_COUNT" ] || [ "$MENU_COUNT" -lt 6 ]; then
     echo "FAIL: 메뉴 막대가 설치되지 않았다 (menus=$MENU_COUNT) — ⌘ 조합이 Neovim 으로 샌다" >&2
+    printf '%s\n' "$OUTPUT" >&2
+    exit 1
+fi
+
+if ! check_wiring "$OUTPUT"; then
     printf '%s\n' "$OUTPUT" >&2
     exit 1
 fi

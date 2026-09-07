@@ -143,3 +143,30 @@ struct KeyboardFocusTests {
         #expect(coordinator.owner == .editor)
     }
 }
+
+/// 터미널이 키보드를 가져갔다가 돌려주지 않으면 편집기에 닿을 수 없게 된다 — 이 타입이
+/// 존재하는 이유가 된 결함과 같은 모양이다.
+@Suite("터미널 키보드 주고받기")
+@MainActor
+struct TerminalKeyboardFocusTests {
+
+    @Test("터미널이 돌기 시작하면 키보드를 갖고, 멈추면 편집기로 돌아간다")
+    func handsTheKeyboardBackWhenTheRunEnds() {
+        let coordinator = KeyboardFocusCoordinator()
+        coordinator.surfaceDidOpen(.terminal)
+        #expect(coordinator.owner == .terminal)
+
+        coordinator.surfaceDidClose(.terminal)
+        #expect(coordinator.owner == .editor, "터미널이 키보드를 물고 놓지 않았다")
+    }
+
+    /// 검색창에서 실행하면 끝난 뒤 검색창으로 돌아가야 한다 — 하드코딩된 기본값이 아니라.
+    @Test("터미널을 닫으면 그 전에 갖고 있던 곳으로 돌아간다")
+    func returnsToWhoeverHadItBefore() {
+        let coordinator = KeyboardFocusCoordinator()
+        coordinator.userFocused(.textSearchField)
+        coordinator.surfaceDidOpen(.terminal)
+        coordinator.surfaceDidClose(.terminal)
+        #expect(coordinator.owner == .textSearchField)
+    }
+}

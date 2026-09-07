@@ -1,3 +1,4 @@
+import CodeNavigatorContract
 import Foundation
 import CoreGraphics
 import Observation
@@ -37,12 +38,24 @@ public final class ShellPreferences {
         didSet { write(isPanelVisible, forKey: Self.panelVisibleKey) }
     }
 
+    /// 아래 패널에서 지금 보고 있는 탭.
+    public var bottomPanelTab: BottomPanelTab {
+        didSet { storage.setData(Data(bottomPanelTab.rawValue.utf8), forKey: Self.bottomPanelTabKey) }
+    }
+
     public var isDebugPanelVisible: Bool {
         didSet { write(isDebugPanelVisible, forKey: Self.debugPanelVisibleKey) }
     }
 
     public var debugPanelHeight: CGFloat {
         didSet { write(debugPanelHeight, forKey: Self.debugPanelHeightKey) }
+    }
+
+    /// 실행 설정들. 손으로 고친 설정 하나가 창을 못 열게 하면 안 되므로, 못 읽으면 빈 목록이다.
+    public var runConfigurations: [RunConfiguration] {
+        didSet {
+            storage.setData(try? JSONEncoder().encode(runConfigurations), forKey: Self.runConfigurationsKey)
+        }
     }
 
     /// 밝게 볼지 어둡게 볼지, 아니면 시스템을 따를지.
@@ -62,6 +75,8 @@ public final class ShellPreferences {
     static let appearanceKey = "shell.appearance"
     static let debugPanelVisibleKey = "shell.debugPanelVisible"
     static let debugPanelHeightKey = "shell.debugPanelHeight"
+    static let runConfigurationsKey = "shell.runConfigurations"
+    static let bottomPanelTabKey = "shell.bottomPanelTab"
 
     public init(storage: KeyValueStore) {
         self.storage = storage
@@ -81,9 +96,26 @@ public final class ShellPreferences {
         // 디버그 패널은 기본으로 닫혀 있다. 디버깅은 늘 하는 일이 아니고, 열려 있으면
         // 편집기 세로를 계속 먹는다.
         self.isDebugPanelVisible = Self.readFlag(storage, forKey: Self.debugPanelVisibleKey) ?? false
+        self.runConfigurations = Self.readRunConfigurations(storage)
+        self.bottomPanelTab = Self.readData(storage, forKey: Self.bottomPanelTabKey)
+            .flatMap(BottomPanelTab.init(rawValue:)) ?? .debug
         self.debugPanelHeight = ShellLayout.clampDebugPanelHeight(
             Self.readWidth(storage, forKey: Self.debugPanelHeightKey) ?? ShellLayout.Metrics.debugPanelDefaultHeight
         )
+    }
+
+    private static func readData(_ storage: KeyValueStore, forKey key: String) -> String? {
+        storage.data(forKey: key).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    private static func readRunConfigurations(_ storage: KeyValueStore) -> [RunConfiguration] {
+        guard let data = storage.data(forKey: runConfigurationsKey),
+              let configurations = try? JSONDecoder().decode([RunConfiguration].self, from: data)
+        else {
+            // 손으로 고쳐 깨진 설정이 창을 못 열게 하면 안 된다 (REQ-NF-004).
+            return []
+        }
+        return configurations
     }
 
     public func setDebugPanelHeight(_ height: CGFloat) {

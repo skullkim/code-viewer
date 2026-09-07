@@ -28,7 +28,7 @@ struct AppMenuBuilderTests {
         // 여기서 걸려서 "이 자리가 맞나" 를 한 번 묻게 된다.
         #expect(
             menus.map(\.title)
-                == ["CodeNavigator", "파일", "편집", "이동", "보기", "디버그", "창", "도움말"]
+                == ["CodeNavigator", "파일", "편집", "이동", "보기", "실행", "디버그", "창", "도움말"]
         )
     }
 

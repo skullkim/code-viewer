@@ -19,6 +19,8 @@ public struct MenuAvailability: Sendable, Hashable {
     public let debugConnection: DebugConnection
     public let exceptionRule: ExceptionBreakpointRule
     public let capabilities: DebugCapabilities
+    /// 지금 무언가 돌고 있는지. 정지를 켜 둘지 정한다.
+    public let isRunning: Bool
 
     public init(
         inputMode: InputMode,
@@ -27,7 +29,8 @@ public struct MenuAvailability: Sendable, Hashable {
         appearance: AppearancePreference = .system,
         debugConnection: DebugConnection = .detached,
         exceptionRule: ExceptionBreakpointRule = .off,
-        capabilities: DebugCapabilities = .none
+        capabilities: DebugCapabilities = .none,
+        isRunning: Bool = false
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
@@ -36,6 +39,7 @@ public struct MenuAvailability: Sendable, Hashable {
         self.debugConnection = debugConnection
         self.exceptionRule = exceptionRule
         self.capabilities = capabilities
+        self.isRunning = isRunning
     }
 
     private var isSessionRunning: Bool {
@@ -57,6 +61,13 @@ public struct MenuAvailability: Sendable, Hashable {
         // 붙어 있어야 예외 규칙을 걸 수 있다 — JVM 이 없으면 걸 곳이 없다.
         case .toggleBreakOnUncaughtException, .toggleBreakOnCaughtException:
             return debugConnection.isAttached
+
+        // 실행은 프로젝트가 있어야 한다 — 어디서 돌릴지가 없으면 돌릴 수 없다.
+        case .runSelected, .debugSelected, .openTerminal, .editRunConfigurations:
+            return hasOpenProject
+
+        case .stopRun:
+            return isRunning
 
         case .attachDebugger:
             return hasOpenProject && !debugConnection.isAttached

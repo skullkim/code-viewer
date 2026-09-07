@@ -54,6 +54,12 @@ public final class AppModel {
     public let shell: ShellPreferences
     /// 디버거 화면의 상태. 세션은 붙을 때 주입된다 — 프로젝트를 열었다고 JVM 이 있는 것은 아니다.
     public let debug = DebugModel()
+    /// 터미널 패널. 세션은 실행할 때 주입된다.
+    public let terminal = TerminalModel()
+    /// 실제 터미널 세션을 만드는 것. 조립 지점이 넣어 준다 — 이 모델은 Core 를 모른다.
+    public var terminalSessionFactory: (@Sendable () -> any TerminalSession)?
+    /// 지금 고른 실행 설정.
+    public private(set) var selectedRunConfigurationID: String?
     /// 실제 JDWP 세션은 조립 지점이 넣어 준다. 이 모델은 Core 를 모른다 — 알면 화면 상태를
     /// 재는 데 JVM 이 필요해지고, 그런 테스트는 아무도 안 돌린다.
     public var debugSessionFactory: DebugSessionFactory?
@@ -488,6 +494,109 @@ public final class AppModel {
             return
         }
         try? await editorSession.sendMouse(event)
+    }
+
+    // MARK: 실행 (REQ-018)
+
+    /// 지금 고른 설정. 고른 적이 없으면 첫 번째다 — 설정이 하나뿐인 흔한 경우에 고르는
+    /// 동작을 요구하지 않는다.
+    public var selectedRunConfiguration: RunConfiguration? {
+        shell.runConfigurations.first { $0.id == selectedRunConfigurationID }
+            ?? shell.runConfigurations.first
+    }
+
+    public func selectRunConfiguration(_ configuration: RunConfiguration) {
+        selectedRunConfigurationID = configuration.id
+    }
+
+    /// 고른 설정을 터미널에서 돌린다.
+    ///
+    /// - Parameter debugPort: 디버그로 띄우면 그 포트. 띄운 뒤 자동으로 붙는다.
+    public func run(_ configuration: RunConfiguration, debugPort: UInt16? = nil) async {
+        guard let root = projectRootPath else {
+            show(StatusMessage(kind: .error, text: "✕ 프로젝트를 먼저 여세요"))
+            return
+        }
+        guard let terminalSessionFactory else {
+            show(StatusMessage(kind: .error, text: "✕ 터미널이 이 빌드에 연결되어 있지 않습니다"))
+            return
+        }
+        shell.isDebugPanelVisible = true
+        shell.bottomPanelTab = .terminal
+        selectedRunConfigurationID = configuration.id
+
+        await terminal.run(
+            configuration, projectRoot: root,
+            session: terminalSessionFactory(), debugPort: debugPort
+        )
+        if case .failed(let reason) = terminal.state {
+            show(StatusMessage(kind: .error, text: "✕ \(reason)"))
+            return
+        }
+        guard let debugPort else { return }
+
+        // 디버그 실행이면 붙는다. **JVM 이 포트를 열 때까지 기다린다** — 바로 붙으면
+        // "연결 거부" 가 나고, 그건 우리가 너무 빨랐다는 뜻이지 설정이 틀렸다는 뜻이 아닌데
+        // 화면에서는 구별되지 않는다.
+        await attachAfterLaunch(port: debugPort)
+    }
+
+    /// 실행 직후 디버거를 붙인다. JVM 이 뜰 시간을 준다.
+    private func attachAfterLaunch(port: UInt16) async {
+        let deadline = Date().addingTimeInterval(Self.launchAttachTimeout)
+        while Date() < deadline {
+            await attachDebugger(host: "127.0.0.1", port: port)
+            if debug.connection.isAttached {
+                // `suspend=y` 로 띄웠으므로 JVM 은 **한 줄도 실행하지 않은 채** 우리를
+                // 기다린다. 그렇게 띄우는 이유는 시작 코드에 건 브레이크포인트를 놓치지
+                // 않기 위해서인데, 붙기만 하고 풀어 주지 않으면 서버가 영영 안 뜬다 —
+                // 사용자는 "디버그 실행을 눌렀는데 서버가 안 뜬다" 만 겪는다.
+                await debug.resume()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+        show(StatusMessage(kind: .error, text: "✕ 띄운 프로세스에 붙지 못했습니다 — JVM 인가요?"))
+    }
+
+    /// 디버그 실행이 쓰는 포트. `-agentlib:jdwp` 예제가 거의 다 5005 를 쓴다.
+    public static let defaultDebugPort: UInt16 = 5005
+
+    /// 실행 뒤 붙기를 포기하는 시간. gradle 은 JVM 이 뜨기까지 몇 초 걸린다.
+    static let launchAttachTimeout: TimeInterval = 30
+
+    public func stopRun() async {
+        await terminal.stop()
+        if debug.connection.isAttached {
+            await debug.detach()
+        }
+    }
+
+    /// 실행 설정을 통째로 갈아 끼운다. 편집 화면이 끝낼 때 부른다.
+    public func replaceRunConfigurations(_ configurations: [RunConfiguration]) {
+        shell.runConfigurations = configurations
+        // 고른 것이 사라졌으면 선택을 놓는다 — 없는 설정을 고른 채로 두면 실행 버튼이
+        // 아무 일도 안 한다.
+        if let selected = selectedRunConfigurationID,
+           !configurations.contains(where: { $0.id == selected }) {
+            selectedRunConfigurationID = configurations.first?.id
+        }
+    }
+
+    public func openShell() async {
+        // 조용히 돌아가지 않는다. 셸 버튼을 눌렀는데 아무 일도 안 일어나면 사용자는 앱이
+        // 고장난 것으로 읽는다 — 실제로는 프로젝트를 안 연 것뿐이다.
+        guard let root = projectRootPath else {
+            show(StatusMessage(kind: .error, text: "✕ 프로젝트를 먼저 여세요"))
+            return
+        }
+        guard let terminalSessionFactory else {
+            show(StatusMessage(kind: .error, text: "✕ 터미널이 이 빌드에 연결되어 있지 않습니다"))
+            return
+        }
+        shell.isDebugPanelVisible = true
+        shell.bottomPanelTab = .terminal
+        await terminal.openShell(projectRoot: root, session: terminalSessionFactory())
     }
 
     /// 지금 열린 파일의 컴파일된 클래스를 JVM 에 다시 넣는다.
@@ -1036,7 +1145,8 @@ public final class AppModel {
             appearance: shell.appearance,
             debugConnection: debug.connection,
             exceptionRule: debug.exceptionRule,
-            capabilities: debug.capabilities
+            capabilities: debug.capabilities,
+            isRunning: terminal.isRunning
         )
     }
 

@@ -107,7 +107,7 @@ public struct MainWindowView: View {
                             min(proposed, proxy.size.height - ShellLayout.Metrics.editorMinimumHeight)
                         )
                     }
-                    debugPane
+                    bottomPane
                         .frame(height: model.shell.debugPanelHeight)
                 }
 
@@ -225,6 +225,86 @@ public struct MainWindowView: View {
                 }
             }
         }
+    }
+
+    /// 아래 패널. 디버그와 터미널을 탭으로 나눈다 — 둘을 나란히 놓으면 각자 절반이 되고,
+    /// 스택도 터미널도 못 읽을 만큼 좁아진다.
+    private var bottomPane: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: DesignTokens.Spacing.small) {
+                ForEach(BottomPanelTab.allCases) { tab in
+                    Button {
+                        model.shell.bottomPanelTab = tab
+                    } label: {
+                        Text(tab.title)
+                            .font(.system(size: DesignTokens.Typography.secondarySize, weight: .medium))
+                            .foregroundStyle(
+                                model.shell.bottomPanelTab == tab
+                                    ? DesignTokens.textPrimary.dynamicColor
+                                    : DesignTokens.textSecondary.dynamicColor
+                            )
+                            .padding(.horizontal, DesignTokens.Spacing.medium)
+                            .padding(.vertical, DesignTokens.Spacing.small)
+                            .background(
+                                model.shell.bottomPanelTab == tab
+                                    ? DesignTokens.backgroundHover.dynamicColor
+                                    : .clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // 이름을 붙여 둔다. 스타일을 벗긴 버튼은 안에 든 글자를 접근성 이름으로
+                    // 내주지 않아서, 보조 기술도 UI 검사도 이 탭을 집을 수 없다.
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(model.shell.bottomPanelTab == tab ? [.isSelected] : [])
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.medium)
+            .padding(.top, DesignTokens.Spacing.small)
+            .background(DesignTokens.backgroundPanel.dynamicColor)
+
+            Divider()
+
+            switch model.shell.bottomPanelTab {
+            case .debug: debugPane
+            case .terminal: terminalPane
+            }
+        }
+    }
+
+    private var terminalPane: some View {
+        TerminalPanelView(
+            state: model.terminal.state,
+            grid: model.terminal.gridFrame,
+            configurations: model.shell.runConfigurations,
+            selectedConfigurationID: model.selectedRunConfigurationID,
+            ownsKeyboard: focus.owner == .terminal,
+            onSelectConfiguration: { model.selectRunConfiguration($0) },
+            onRun: { configuration in Task { await model.run(configuration) } },
+            onDebug: { configuration in
+                Task { await model.run(configuration, debugPort: AppModel.defaultDebugPort) }
+            },
+            onStop: { Task { await model.stopRun() } },
+            onOpenShell: { Task { await model.openShell() } },
+            onEditConfigurations: { Task { await perform(.editRunConfigurations) } },
+            onKey: { notation in Task { await model.terminal.send(keys: notation) } },
+            onGridSizeChange: { columns, rows in
+                Task { await model.terminal.resize(columns: columns, rows: rows) }
+            },
+            onClaimKeyboard: { focus.userFocused(.terminal) }
+        )
+        // 돌기 시작하면 키보드를 가져오고, 멈추거나 탭이 바뀌면 돌려준다. 안 돌려주면
+        // 편집기가 닿지 않게 되는데, 그건 이 앱의 주 흐름이 끝나 버리는 결함이다.
+        .onChange(of: model.terminal.isRunning) { _, isRunning in
+            if isRunning {
+                focus.surfaceDidOpen(.terminal)
+            } else {
+                focus.surfaceDidClose(.terminal)
+            }
+        }
+        .onDisappear { focus.surfaceDidClose(.terminal) }
     }
 
     private var debugPane: some View {

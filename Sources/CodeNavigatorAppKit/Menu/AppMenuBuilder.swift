@@ -16,6 +16,7 @@ public enum AppMenuBuilder {
             editMenu,
             navigateMenu,
             viewMenu,
+            runMenu,
             debugMenu,
             windowMenu,
             helpMenu,
@@ -102,6 +103,19 @@ public enum AppMenuBuilder {
     }
 
     /// IntelliJ 의 Run 메뉴 자리. 단축키도 그쪽을 따른다 — 그 손버릇으로 오는 사람들이 쓴다.
+    /// 실행 메뉴. IntelliJ 의 Run 이 하는 일 중 "띄우는" 쪽이 여기 있고, "멈추는" 쪽은
+    /// 디버그 메뉴에 있다.
+    private static var runMenu: MenuDescriptor {
+        MenuDescriptor(title: "실행", items: [
+            MenuItemDescriptor(title: "실행", command: .runSelected, keyEquivalent: "r", modifiers: [.command, .shift]),
+            MenuItemDescriptor(title: "디버그 실행", command: .debugSelected, keyEquivalent: "d", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "정지", command: .stopRun, keyEquivalent: ".", modifiers: [.command]),
+            .separator,
+            MenuItemDescriptor(title: "터미널 열기", command: .openTerminal, keyEquivalent: "t", modifiers: [.command, .option]),
+            MenuItemDescriptor(title: "실행 설정…", command: .editRunConfigurations),
+        ])
+    }
+
     private static var debugMenu: MenuDescriptor {
         MenuDescriptor(title: "디버그", items: [
             MenuItemDescriptor(title: "디버거 연결…", command: .attachDebugger, keyEquivalent: "d", modifiers: [.command, .control]),

@@ -50,4 +50,10 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case toggleFieldWatch
     case addWatch
     case hotSwapCurrentFile
+    // 실행
+    case runSelected
+    case debugSelected
+    case stopRun
+    case openTerminal
+    case editRunConfigurations
 }

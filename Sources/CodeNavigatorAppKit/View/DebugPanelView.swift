@@ -138,10 +138,12 @@ public struct DebugPanelView: View {
     private func body(for connection: DebugConnection) -> some View {
         switch connection {
         case .detached, .failed:
+            // 손으로 띄우는 법은 두 번째로 민다. 이제 앱이 직접 띄워 주기 때문에, 그 명령을
+            // 먼저 보여 주면 사용자는 없는 준비 작업을 해야 하는 줄 안다.
             PanelMessage(text: """
-            디버거를 연결하면 브레이크포인트를 걸 수 있습니다.
+            터미널 탭에서 디버그 실행(⌘⌥D)을 누르면 서버를 띄우고 여기에 자동으로 붙습니다.
 
-            디버깅할 JVM 을 먼저 이렇게 띄우세요:
+            이미 돌고 있는 JVM 에 붙으려면 연결…을 누르세요. 그 JVM 은 이렇게 떠 있어야 합니다:
             java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005 …
             """)
         case .attaching:

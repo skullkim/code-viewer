@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import CodeNavigatorContract
 
 /// Runs a menu command.
@@ -23,6 +24,9 @@ public enum MenuCommandRouter {
     /// 브레이크포인트 조건을 묻는다. 현재 조건을 받아 새 조건을 준다.
     public typealias ConditionEditor = @MainActor (String) -> String?
 
+    /// 실행 설정을 고치는 화면. 취소하면 nil.
+    public typealias RunConfigurationEditor = @MainActor ([RunConfiguration]) -> [RunConfiguration]?
+
     /// 사용자에게 무언가를 묻는 모든 자리를 한 곳에 모은 것.
     ///
     /// 훅마다 인자를 하나씩 늘리다가 실제로 당했다. 명령 전체를 도는 테스트가 폴더 대화상자만
@@ -36,15 +40,18 @@ public enum MenuCommandRouter {
         public var chooseFolder: FolderChooser
         public var askDebugTarget: DebugTargetChooser
         public var askBreakpointCondition: ConditionEditor
+        public var editRunConfigurations: RunConfigurationEditor
 
         public init(
             chooseFolder: @escaping FolderChooser,
             askDebugTarget: @escaping DebugTargetChooser,
-            askBreakpointCondition: @escaping ConditionEditor
+            askBreakpointCondition: @escaping ConditionEditor,
+            editRunConfigurations: @escaping RunConfigurationEditor
         ) {
             self.chooseFolder = chooseFolder
             self.askDebugTarget = askDebugTarget
             self.askBreakpointCondition = askBreakpointCondition
+            self.editRunConfigurations = editRunConfigurations
         }
 
         /// 사람이 앉아 있는 실행.
@@ -52,14 +59,16 @@ public enum MenuCommandRouter {
             Environment(
                 chooseFolder: presentFolderPanel,
                 askDebugTarget: presentDebugTargetPrompt,
-                askBreakpointCondition: presentConditionPrompt
+                askBreakpointCondition: presentConditionPrompt,
+                editRunConfigurations: presentRunConfigurationEditor
             )
         }
 
         /// 사람이 없는 실행(테스트·자동화). 모든 물음이 "취소" 로 답한다.
         public static var headless: Environment {
             Environment(
-                chooseFolder: { nil }, askDebugTarget: { nil }, askBreakpointCondition: { _ in nil }
+                chooseFolder: { nil }, askDebugTarget: { nil },
+                askBreakpointCondition: { _ in nil }, editRunConfigurations: { _ in nil }
             )
         }
     }
@@ -117,6 +126,26 @@ public enum MenuCommandRouter {
             await model.setInputMode(.standard)
         case .restartEditSession:
             await model.restartEditSession()
+
+        case .runSelected, .debugSelected:
+            guard let configuration = model.selectedRunConfiguration else {
+                model.show(StatusMessage(kind: .error, text: "✕ 실행 설정이 없습니다 — ⌘, 로 추가하세요"))
+                return
+            }
+            await model.run(
+                configuration, debugPort: command == .debugSelected ? AppModel.defaultDebugPort : nil
+            )
+
+        case .stopRun:
+            await model.stopRun()
+
+        case .openTerminal:
+            await model.openShell()
+
+        case .editRunConfigurations:
+            let edited = environment.editRunConfigurations(model.shell.runConfigurations)
+            guard let edited else { return }
+            model.replaceRunConfigurations(edited)
 
         case .attachDebugger:
             guard let target = environment.askDebugTarget() else { return }
@@ -269,6 +298,40 @@ public enum MenuCommandRouter {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         return field.stringValue
+    }
+
+    /// 실행 설정 편집 창.
+    ///
+    /// SwiftUI 화면을 모달 창에 올린다 — NSAlert 로는 표를 못 만들고, 시트로 띄우면 어느
+    /// 창에 붙일지가 애매하다(패널에서도 메뉴에서도 연다).
+    public static func presentRunConfigurationEditor(
+        _ configurations: [RunConfiguration]
+    ) -> [RunConfiguration]? {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "실행 설정"
+
+        var result: [RunConfiguration]?
+        let view = RunConfigurationEditorView(
+            configurations: configurations,
+            onSave: { edited in
+                result = edited
+                NSApp.stopModal()
+            },
+            onCancel: { NSApp.stopModal() }
+        )
+        window.contentView = NSHostingView(rootView: view)
+        window.center()
+
+        NSApp.runModal(for: window)
+        // 모달이 끝나면 창을 반드시 닫는다. 안 닫으면 화면 밖에 살아 남아 다음 열기에서
+        // 두 개가 뜬다.
+        window.orderOut(nil)
+        return result
     }
 
     public static func presentFolderPanel() -> URL? {

@@ -10,6 +10,9 @@ public enum KeyboardFocusOwner: Sendable, Hashable, CaseIterable {
     case editor
     case symbolSearchField
     case textSearchField
+    /// 터미널 그리드. 편집기와 같은 이유로 키보드를 따로 가진다 — 터미널에 치는 글자가
+    /// 편집기 버퍼로 가면 파일이 망가진다.
+    case terminal
     case fileTree
 }
 
