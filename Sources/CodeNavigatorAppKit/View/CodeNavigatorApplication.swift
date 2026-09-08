@@ -75,6 +75,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         let model = sharedModel
         return "terminal=\(model?.terminalSessionFactory != nil ? "wired" : "MISSING")"
             + " debugger=\(model?.debugSessionFactory != nil ? "wired" : "MISSING")"
+            + " detector=\(model?.runConfigurationDetector != nil ? "wired" : "MISSING")"
     }
 
     /// Held so the editor session can be handed over synchronously after the one `await`
@@ -144,6 +145,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             try await JavaDebugSession.attach(host: host, port: port)
         }
         model.terminalSessionFactory = { NeovimTerminalSession() }
+        model.runConfigurationDetector = { ProjectRunScanner.detect(projectRoot: $0) }
 
         sharedEditorSession = editorSession
         sharedModel = model

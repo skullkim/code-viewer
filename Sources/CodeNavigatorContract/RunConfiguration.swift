@@ -11,14 +11,41 @@ public struct RunConfiguration: Sendable, Hashable, Codable, Identifiable {
     /// 프로젝트 루트 기준 상대 경로. 비우면 루트.
     public var workingDirectory: String
     public var environment: [String: String]
+    /// 디버그 실행일 때 에이전트를 어디에 붙일지. 명령마다 다르다 — `DebugLaunchStrategy`.
+    public var debugLaunch: DebugLaunchStrategy
 
     public var id: String { name }
 
-    public init(name: String, command: String, workingDirectory: String, environment: [String: String]) {
+    /// 디버그 실행을 눌러도 되는지. 못 붙는 명령에서 버튼을 켜 두면 사용자는 30초를
+    /// 기다린 뒤 "붙지 못했습니다" 만 본다.
+    public var canDebug: Bool { debugLaunch != .unsupported }
+
+    public init(
+        name: String,
+        command: String,
+        workingDirectory: String,
+        environment: [String: String],
+        debugLaunch: DebugLaunchStrategy = .javaToolOptions
+    ) {
         self.name = name
         self.command = command
         self.workingDirectory = workingDirectory
         self.environment = environment
+        self.debugLaunch = debugLaunch
+    }
+
+    /// v0.5.0 이 저장한 설정에는 `debugLaunch` 가 없다. 없다고 통째로 실패하면 사용자의
+    /// 설정이 전부 사라진다 — 읽기 실패는 빈 목록으로 처리되기 때문이다. 그때의 뜻
+    /// (`JAVA_TOOL_OPTIONS`) 을 그대로 이어 준다.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        command = try container.decode(String.self, forKey: .command)
+        workingDirectory = try container.decode(String.self, forKey: .workingDirectory)
+        environment = try container.decode([String: String].self, forKey: .environment)
+        debugLaunch = try container.decodeIfPresent(
+            DebugLaunchStrategy.self, forKey: .debugLaunch
+        ) ?? .javaToolOptions
     }
 
     /// 어디서 돌릴지. 절대 경로를 적었으면 그대로 쓴다 — 루트 아래로 억지로 밀어 넣으면
@@ -28,6 +55,59 @@ public struct RunConfiguration: Sendable, Hashable, Codable, Identifiable {
         if trimmed.isEmpty { return projectRoot }
         if trimmed.hasPrefix("/") { return trimmed }
         return (projectRoot as NSString).appendingPathComponent(trimmed)
+    }
+
+    /// Gradle 이 `--debug-jvm` 에서 여는 포트. **바꿀 수 없다.**
+    ///
+    /// 실측(Gradle 8.14.5): `-Dorg.gradle.debug.port=6001` 을 같이 줘도 앱 JVM 은
+    /// `address=5005` 로 떴다. 그 옵션은 Gradle 자신을 디버깅하는 쪽 것이지 태스크 쪽이
+    /// 아니다.
+    public static let gradleDebugPort: UInt16 = 5005
+
+    /// 디버그로 띄울 때 실제로 쓸 명령·환경과, **실제로 열릴 포트**.
+    ///
+    /// 셋을 **함께** 돌려주는 이유는 어디에 넣을지가 전략마다 다르고, 포트마저 우리 뜻대로
+    /// 안 되는 전략이 있기 때문이다. 따로 물으면 부르는 쪽이 짝을 맞춰야 하고, 하나라도
+    /// 어긋나면 엉뚱한 포트로 붙으러 가서 "붙지 못했습니다" 로 끝난다.
+    public func debugLaunch(
+        port: UInt16, inheriting inherited: [String: String]
+    ) -> (command: String, environment: [String: String], port: UInt16) {
+        var environment = mergedEnvironment(inheriting: inherited)
+        // Gradle 만 포트를 우리가 못 정한다. 나머지는 요청한 그대로다.
+        let actualPort = debugLaunch == .gradleDebugJvm ? Self.gradleDebugPort : port
+        // `suspend=y` 인 것은 시작 코드에 건 브레이크포인트를 놓치지 않기 위해서다.
+        // 붙은 뒤 우리가 다시 풀어 준다.
+        let agent = Self.agentArgument(port: actualPort)
+
+        switch debugLaunch {
+        case .javaToolOptions:
+            // 덮어쓰지 않고 뒤에 붙인다. 덮으면 사용자가 넣은 `-Xmx` 같은 것이 사라진다.
+            if let existing = environment[Self.javaToolOptionsKey], !existing.isEmpty {
+                environment[Self.javaToolOptionsKey] = existing + " " + agent
+            } else {
+                environment[Self.javaToolOptionsKey] = agent
+            }
+            return (command, environment, actualPort)
+
+        case .gradleDebugJvm:
+            // 플래그 하나뿐이다. 포트 옵션은 붙여 봐야 먹지 않고, 먹지 않는 옵션을 붙이면
+            // 있지도 않은 조절 수단이 있는 것처럼 보인다.
+            return (command + " --debug-jvm", environment, actualPort)
+
+        case .mavenJvmArguments:
+            return (command + " -Dspring-boot.run.jvmArguments=\"\(agent)\"", environment, actualPort)
+
+        case .unsupported:
+            // 붙지 않는다. 부르는 쪽이 `canDebug` 를 먼저 봐야 하지만, 여기서도 에이전트를
+            // 얹지 않는 것이 안전하다 — 얹으면 Node 프로세스가 알 수 없는 인자로 죽는다.
+            return (command, environment, actualPort)
+        }
+    }
+
+    static let javaToolOptionsKey = "JAVA_TOOL_OPTIONS"
+
+    static func agentArgument(port: UInt16) -> String {
+        "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:\(port)"
     }
 
     /// 실제로 프로세스에 줄 환경.

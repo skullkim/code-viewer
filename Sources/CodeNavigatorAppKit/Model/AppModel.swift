@@ -45,8 +45,16 @@ public final class AppModel {
     ///
     /// 탭 전환 경로가 네 곳인데 그 전부에서 렌더 갱신을 기억해야 한다면 하나는 반드시
     /// 빠진다 — 그리고 빠진 그 경로에서만 본문이 직전 탭의 문서를 말한다.
+    /// 실행 설정 감지도 같은 이유로 여기 붙는다 — 탭이 바뀌면 다른 프로젝트이고,
+    /// 앞 탭의 실행 설정을 그대로 두면 사용자는 엉뚱한 폴더에서 명령을 돌린다.
     public var projectRootPath: String? {
-        didSet { syncRenderDocument() }
+        didSet {
+            syncRenderDocument()
+            guard projectRootPath != oldValue else { return }
+            detectedRunConfigurations = []
+            guard let root = projectRootPath else { return }
+            Task { await detectRunConfigurations(projectRoot: root) }
+        }
     }
 
     public let recentProjects: RecentProjectStore
@@ -498,11 +506,44 @@ public final class AppModel {
 
     // MARK: 실행 (REQ-018)
 
+    /// 소스를 훑어 실행 설정을 알아내는 함수. 조립 지점에서 꽂는다 — 모델이 디스크를 직접
+    /// 알면 화면 상태를 재는 데 진짜 프로젝트가 필요해진다.
+    public var runConfigurationDetector: (@Sendable (String) -> [RunConfiguration])?
+
+    /// 소스에서 알아낸 것들. **저장하지 않는다** — 사용자가 고쳐 저장할 때 비로소 설정이
+    /// 된다. 그래야 "사용자가 고친 것을 다음 스캔이 덮어썼다" 가 원천적으로 없다.
+    public private(set) var detectedRunConfigurations: [RunConfiguration] = []
+
+    /// 고르개에 보일 목록. 저장한 것이 앞에 오고, 이름이 같으면 저장한 것이 이긴다 —
+    /// 둘 다 보이면 어느 것이 도는지 알 수 없다.
+    public var availableRunConfigurations: [RunConfiguration] {
+        let savedNames = Set(shell.runConfigurations.map(\.name))
+        return shell.runConfigurations + detectedRunConfigurations.filter {
+            !savedNames.contains($0.name)
+        }
+    }
+
+    /// 이 설정이 감지된 것인지. 화면이 표시를 붙일 때 쓴다.
+    public func isDetected(_ configuration: RunConfiguration) -> Bool {
+        !shell.runConfigurations.contains { $0.name == configuration.name }
+            && detectedRunConfigurations.contains { $0.name == configuration.name }
+    }
+
+    /// 프로젝트를 훑어 실행 설정을 알아낸다. 프로젝트를 열 때와 사용자가 새로 고칠 때 부른다.
+    public func detectRunConfigurations(projectRoot: String) async {
+        guard let runConfigurationDetector else { return }
+        // 훑기는 디스크를 도는 일이라 창을 멈추게 하면 안 된다.
+        let found = await Task.detached(priority: .utility) {
+            runConfigurationDetector(projectRoot)
+        }.value
+        detectedRunConfigurations = found
+    }
+
     /// 지금 고른 설정. 고른 적이 없으면 첫 번째다 — 설정이 하나뿐인 흔한 경우에 고르는
     /// 동작을 요구하지 않는다.
     public var selectedRunConfiguration: RunConfiguration? {
-        shell.runConfigurations.first { $0.id == selectedRunConfigurationID }
-            ?? shell.runConfigurations.first
+        availableRunConfigurations.first { $0.id == selectedRunConfigurationID }
+            ?? availableRunConfigurations.first
     }
 
     public func selectRunConfiguration(_ configuration: RunConfiguration) {
@@ -533,12 +574,15 @@ public final class AppModel {
             show(StatusMessage(kind: .error, text: "✕ \(reason)"))
             return
         }
-        guard let debugPort else { return }
+        guard debugPort != nil else { return }
+        // **터미널이 실제로 연 포트로 붙는다.** 요청한 값을 그대로 쓰면 Gradle 에서 어긋난다 —
+        // Gradle 은 `--debug-jvm` 포트를 5005 로 고정하고 우리 요청을 무시한다(실측).
+        guard let attachPort = terminal.lastDebugPort else { return }
 
         // 디버그 실행이면 붙는다. **JVM 이 포트를 열 때까지 기다린다** — 바로 붙으면
         // "연결 거부" 가 나고, 그건 우리가 너무 빨랐다는 뜻이지 설정이 틀렸다는 뜻이 아닌데
         // 화면에서는 구별되지 않는다.
-        await attachAfterLaunch(port: debugPort)
+        await attachAfterLaunch(port: attachPort)
     }
 
     /// 실행 직후 디버거를 붙인다. JVM 이 뜰 시간을 준다.
@@ -1146,7 +1190,8 @@ public final class AppModel {
             debugConnection: debug.connection,
             exceptionRule: debug.exceptionRule,
             capabilities: debug.capabilities,
-            isRunning: terminal.isRunning
+            isRunning: terminal.isRunning,
+            canDebugSelected: selectedRunConfiguration?.canDebug ?? true
         )
     }
 

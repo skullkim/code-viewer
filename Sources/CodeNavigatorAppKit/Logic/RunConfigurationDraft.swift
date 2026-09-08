@@ -28,12 +28,15 @@ public struct RunConfigurationDraft: Identifiable, Hashable {
     public var command: String
     public var workingDirectory: String
     public var environmentRows: [EnvironmentRow]
+    /// 디버그 실행일 때 에이전트를 어디에 붙일지.
+    public var debugLaunch: DebugLaunchStrategy
 
     public init(_ configuration: RunConfiguration) {
         self.id = UUID()
         self.name = configuration.name
         self.command = configuration.command
         self.workingDirectory = configuration.workingDirectory
+        self.debugLaunch = configuration.debugLaunch
         // 이름순으로 편다. 사전 순회 순서는 실행마다 달라서, 그대로 쓰면 열 때마다 표의
         // 줄 순서가 바뀐다.
         self.environmentRows = configuration.environment
@@ -61,7 +64,7 @@ public struct RunConfigurationDraft: Identifiable, Hashable {
         }
         return RunConfiguration(
             name: name, command: command, workingDirectory: workingDirectory,
-            environment: environment
+            environment: environment, debugLaunch: debugLaunch
         )
     }
 

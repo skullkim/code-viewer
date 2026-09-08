@@ -99,6 +99,7 @@ private enum TerminalTestError: Error { case cannotStart }
 private final class FakeTerminal: TerminalSession, @unchecked Sendable {
     var startError: (any Error)?
     private(set) var startedWorkingDirectory: String?
+    private(set) var startedCommand: String?
     private(set) var startedEnvironment: [String: String]?
     private(set) var stopCount = 0
     private(set) var startedColumns: Int?
@@ -113,6 +114,7 @@ private final class FakeTerminal: TerminalSession, @unchecked Sendable {
         if let startError { throw startError }
         startedWorkingDirectory = workingDirectory
         startedEnvironment = environment
+        startedCommand = command
         startedColumns = columns
         startedRows = rows
     }
@@ -250,4 +252,199 @@ private final class ResumeCountingSession: DebugSession, @unchecked Sendable {
     func capabilities() async throws -> DebugCapabilities { .none }
     func redefineClass(named className: String, bytecode: [UInt8]) async throws {}
     func close() async {}
+}
+
+/// 감지된 설정은 **저장하지 않는다.**
+///
+/// 목록에 바로 보이되, 사용자가 고쳐 저장할 때 비로소 설정이 된다. 그래야 "사용자가 고친
+/// 것을 다음 스캔이 덮어썼다" 가 원천적으로 없다 — 그건 되돌릴 수 없는 손실이다.
+@Suite("감지된 실행 설정")
+@MainActor
+struct DetectedRunConfigurationTests {
+
+    private func makeModel(detected: [RunConfiguration]) -> AppModel {
+        let model = AppModel(
+            editorSession: FakeEditorSession(),
+            workspace: FakeWorkspace(sharedSession: FakeProjectSession()),
+            storage: InMemoryKeyValueStore(),
+            now: { Date(timeIntervalSince1970: 1_000_000) }
+        )
+        model.runConfigurationDetector = { _ in detected }
+        return model
+    }
+
+    private func gradle(_ name: String) -> RunConfiguration {
+        RunConfiguration(
+            name: name, command: "./gradlew bootRun", workingDirectory: "backend",
+            environment: [:], debugLaunch: .gradleDebugJvm
+        )
+    }
+
+    @Test("프로젝트를 열면 감지한 것이 목록에 보인다")
+    func showsWhatItDetected() async {
+        let model = makeModel(detected: [gradle("backend bootRun")])
+        await model.detectRunConfigurations(projectRoot: "/tmp/x")
+        #expect(model.availableRunConfigurations.map(\.name) == ["backend bootRun"])
+    }
+
+    @Test("감지한 것은 설정에 저장되지 않는다")
+    func doesNotPersistDetections() async {
+        let model = makeModel(detected: [gradle("backend bootRun")])
+        await model.detectRunConfigurations(projectRoot: "/tmp/x")
+        #expect(model.shell.runConfigurations.isEmpty, "감지 결과가 저장돼 버렸다")
+    }
+
+    /// 저장한 것이 앞에 온다. 사용자가 손으로 만든 것을 감지 결과가 밀어내면, 늘 쓰던 설정을
+    /// 매번 다시 골라야 한다.
+    @Test("저장한 설정이 감지된 것보다 앞에 온다")
+    func savedConfigurationsComeFirst() async {
+        let model = makeModel(detected: [gradle("감지된 것")])
+        model.replaceRunConfigurations([
+            RunConfiguration(name: "내 서버", command: "java -cp . S", workingDirectory: "", environment: [:])
+        ])
+        await model.detectRunConfigurations(projectRoot: "/tmp/x")
+        #expect(model.availableRunConfigurations.map(\.name) == ["내 서버", "감지된 것"])
+    }
+
+    /// 같은 이름이면 사용자가 고친 쪽이 이긴다. 둘 다 보이면 어느 것이 도는지 알 수 없다.
+    @Test("이름이 같으면 저장한 것이 감지된 것을 가린다")
+    func savedConfigurationHidesTheDetectedOne() async {
+        let model = makeModel(detected: [gradle("서버")])
+        model.replaceRunConfigurations([
+            RunConfiguration(name: "서버", command: "내가 고친 명령", workingDirectory: "", environment: [:])
+        ])
+        await model.detectRunConfigurations(projectRoot: "/tmp/x")
+        #expect(model.availableRunConfigurations.map(\.command) == ["내가 고친 명령"])
+    }
+
+    @Test("감지된 것인지 아닌지 화면이 구별할 수 있다")
+    func marksWhichOnesWereDetected() async {
+        let model = makeModel(detected: [gradle("감지된 것")])
+        model.replaceRunConfigurations([
+            RunConfiguration(name: "내 서버", command: "java -cp . S", workingDirectory: "", environment: [:])
+        ])
+        await model.detectRunConfigurations(projectRoot: "/tmp/x")
+        #expect(model.isDetected(model.availableRunConfigurations[0]) == false)
+        #expect(model.isDetected(model.availableRunConfigurations[1]))
+    }
+
+    /// 디버그로 못 띄우는 설정에 디버그 실행을 걸면, 사용자는 30초를 기다린 뒤 알 수 없는
+    /// 실패를 본다. 누르기 전에 말해 준다.
+    @Test("디버그 못 하는 설정은 디버그 실행이 막힌다")
+    func blocksDebugForUnsupportedCommands() async {
+        let model = makeModel(detected: [
+            RunConfiguration(
+                name: "frontend dev", command: "npm run dev", workingDirectory: "frontend",
+                environment: [:], debugLaunch: .unsupported
+            )
+        ])
+        model.setProjectRootForTesting(NSTemporaryDirectory())
+        await model.detectRunConfigurations(projectRoot: NSTemporaryDirectory())
+        model.selectRunConfiguration(model.availableRunConfigurations[0])
+
+        #expect(model.menuAvailability.canDebugSelected == false, "npm 명령에 디버그 실행이 켜져 있다")
+        #expect(model.menuAvailability.isEnabled(.runSelected), "실행 자체는 되어야 한다")
+    }
+}
+
+/// 실행 경로가 전략을 실제로 쓰는지.
+///
+/// 전략을 만들어 두고 실행 경로가 옛 방식을 그대로 쓰면, 테스트는 전부 초록인데 Gradle
+/// 프로젝트는 여전히 런처에 붙는다 — 이 앱에서 반복된 모양이다.
+@Suite("실행이 디버그 전략을 쓴다")
+@MainActor
+struct TerminalRunUsesStrategyTests {
+
+    @Test("Gradle 설정은 --debug-jvm 이 붙은 명령으로 뜬다")
+    func gradleGetsTheFlagOnTheCommand() async {
+        let model = TerminalModel()
+        let session = FakeTerminal()
+        await model.run(
+            RunConfiguration(
+                name: "서버", command: "./gradlew bootRun", workingDirectory: "",
+                environment: [:], debugLaunch: .gradleDebugJvm
+            ),
+            projectRoot: "/tmp", session: session, debugPort: 5005
+        )
+        #expect(session.startedCommand?.contains("--debug-jvm") == true)
+        #expect(
+            session.startedEnvironment?["JAVA_TOOL_OPTIONS"] == nil,
+            "런처가 이걸 물려받아 포트를 가로챈다"
+        )
+    }
+
+    @Test("java 설정은 환경변수로 뜨고 명령은 그대로다")
+    func plainJavaKeepsTheCommand() async {
+        let model = TerminalModel()
+        let session = FakeTerminal()
+        await model.run(
+            RunConfiguration(
+                name: "서버", command: "java -cp . Server", workingDirectory: "",
+                environment: [:], debugLaunch: .javaToolOptions
+            ),
+            projectRoot: "/tmp", session: session, debugPort: 5005
+        )
+        #expect(session.startedCommand == "java -cp . Server")
+        #expect(session.startedEnvironment?["JAVA_TOOL_OPTIONS"]?.contains("5005") == true)
+    }
+
+    @Test("그냥 실행이면 어느 전략이든 에이전트를 붙이지 않는다")
+    func plainRunAddsNothing() async {
+        for strategy in DebugLaunchStrategy.allCases {
+            let model = TerminalModel()
+            let session = FakeTerminal()
+            await model.run(
+                RunConfiguration(
+                    name: "서버", command: "./gradlew bootRun", workingDirectory: "",
+                    environment: [:], debugLaunch: strategy
+                ),
+                projectRoot: "/tmp", session: session
+            )
+            #expect(session.startedCommand == "./gradlew bootRun", "\(strategy) 가 명령을 고쳤다")
+            #expect(session.startedEnvironment?["JAVA_TOOL_OPTIONS"] == nil, "\(strategy)")
+        }
+    }
+}
+
+/// Gradle 은 `--debug-jvm` 의 포트를 5005 로 고정한다(실측). 우리가 요청한 포트로 붙으러
+/// 가면 앱은 5005 에서 기다리고 화면에는 "붙지 못했습니다" 만 뜬다.
+@Suite("실제로 열린 포트로 붙는다")
+@MainActor
+struct DebugPortResolutionTests {
+
+    @Test("Gradle 로 띄우면 5005 를 기억한다 — 요청한 포트가 아니라")
+    func remembersTheActualGradlePort() async {
+        let model = TerminalModel()
+        await model.run(
+            RunConfiguration(
+                name: "서버", command: "./gradlew bootRun", workingDirectory: "",
+                environment: [:], debugLaunch: .gradleDebugJvm
+            ),
+            projectRoot: "/tmp", session: FakeTerminal(), debugPort: 6001
+        )
+        #expect(model.lastDebugPort == 5005)
+    }
+
+    @Test("java 로 띄우면 요청한 포트를 그대로 기억한다")
+    func remembersTheRequestedPortOtherwise() async {
+        let model = TerminalModel()
+        await model.run(
+            RunConfiguration(
+                name: "서버", command: "java -cp . S", workingDirectory: "",
+                environment: [:], debugLaunch: .javaToolOptions
+            ),
+            projectRoot: "/tmp", session: FakeTerminal(), debugPort: 6001
+        )
+        #expect(model.lastDebugPort == 6001)
+    }
+
+    @Test("그냥 실행이면 붙을 포트가 없다")
+    func plainRunHasNoPort() async {
+        let model = TerminalModel()
+        await model.run(
+            RunConfiguration(name: "서버", command: "x", workingDirectory: "", environment: [:]),
+            projectRoot: "/tmp", session: FakeTerminal()
+        )
+        #expect(model.lastDebugPort == nil)
+    }
 }

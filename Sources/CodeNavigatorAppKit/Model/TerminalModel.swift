@@ -37,7 +37,7 @@ public final class TerminalModel {
         return false
     }
 
-    /// Runs one configuration. `debugPort` 가 있으면 JVM 에이전트를 환경변수로 붙인다.
+    /// Runs one configuration. `debugPort` 가 있으면 설정이 정한 방식으로 에이전트를 붙인다.
     public func run(
         _ configuration: RunConfiguration,
         projectRoot: String,
@@ -50,18 +50,28 @@ public final class TerminalModel {
 
         self.session = session
         lastConfiguration = configuration
-        lastDebugPort = debugPort
+        // **요청한 포트가 아니라 실제로 열릴 포트를 기억한다.** Gradle 은 5005 로 고정이라,
+        // 요청값을 들고 있으면 엉뚱한 데로 붙으러 간다.
+        lastDebugPort = nil
 
-        let environment = configuration.mergedEnvironment(
-            inheriting: ProcessInfo.processInfo.environment, debugPort: debugPort
-        )
+        // 에이전트를 명령에 넣을지 환경변수에 넣을지는 설정이 안다. 여기서 다시 추측하면
+        // Gradle 런처가 포트를 가로채는 결함이 그대로 돌아온다.
+        let inherited = ProcessInfo.processInfo.environment
+        let launch: (command: String, environment: [String: String], port: UInt16?)
+        if let debugPort {
+            let resolved = configuration.debugLaunch(port: debugPort, inheriting: inherited)
+            launch = (resolved.command, resolved.environment, resolved.port)
+        } else {
+            launch = (configuration.command, configuration.mergedEnvironment(inheriting: inherited), nil)
+        }
+        lastDebugPort = launch.port
         let directory = configuration.resolvedWorkingDirectory(projectRoot: projectRoot)
 
         do {
             try await session.start(
-                command: configuration.command,
+                command: launch.command,
                 workingDirectory: directory,
-                environment: environment,
+                environment: launch.environment,
                 columns: gridSize.columns,
                 rows: gridSize.rows
             )

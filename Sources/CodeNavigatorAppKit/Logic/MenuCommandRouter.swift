@@ -143,7 +143,9 @@ public enum MenuCommandRouter {
             await model.openShell()
 
         case .editRunConfigurations:
-            let edited = environment.editRunConfigurations(model.shell.runConfigurations)
+            // 감지된 것도 함께 연다. 고치려면 목록에 있어야 하고, 저장하는 순간 그것은
+            // 사용자의 설정이 된다 — 그때부터 다음 스캔이 건드리지 않는다.
+            let edited = environment.editRunConfigurations(model.availableRunConfigurations)
             guard let edited else { return }
             model.replaceRunConfigurations(edited)
 

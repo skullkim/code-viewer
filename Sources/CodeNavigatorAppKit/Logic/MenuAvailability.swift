@@ -21,6 +21,11 @@ public struct MenuAvailability: Sendable, Hashable {
     public let capabilities: DebugCapabilities
     /// 지금 무언가 돌고 있는지. 정지를 켜 둘지 정한다.
     public let isRunning: Bool
+    /// 지금 고른 실행 설정을 디버그로 띄울 수 있는지.
+    ///
+    /// `npm run dev` 같은 명령에는 JDWP 로 못 붙는다. 버튼을 켜 두면 사용자는 눌러서
+    /// 30초를 기다린 뒤 "붙지 못했습니다" 만 본다 — 이유는 화면 어디에도 없다.
+    public let canDebugSelected: Bool
 
     public init(
         inputMode: InputMode,
@@ -30,7 +35,8 @@ public struct MenuAvailability: Sendable, Hashable {
         debugConnection: DebugConnection = .detached,
         exceptionRule: ExceptionBreakpointRule = .off,
         capabilities: DebugCapabilities = .none,
-        isRunning: Bool = false
+        isRunning: Bool = false,
+        canDebugSelected: Bool = true
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
@@ -40,6 +46,7 @@ public struct MenuAvailability: Sendable, Hashable {
         self.exceptionRule = exceptionRule
         self.capabilities = capabilities
         self.isRunning = isRunning
+        self.canDebugSelected = canDebugSelected
     }
 
     private var isSessionRunning: Bool {
@@ -63,8 +70,11 @@ public struct MenuAvailability: Sendable, Hashable {
             return debugConnection.isAttached
 
         // 실행은 프로젝트가 있어야 한다 — 어디서 돌릴지가 없으면 돌릴 수 없다.
-        case .runSelected, .debugSelected, .openTerminal, .editRunConfigurations:
+        case .runSelected, .openTerminal, .editRunConfigurations:
             return hasOpenProject
+
+        case .debugSelected:
+            return hasOpenProject && canDebugSelected
 
         case .stopRun:
             return isRunning

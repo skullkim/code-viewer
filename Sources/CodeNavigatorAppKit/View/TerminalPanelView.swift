@@ -11,6 +11,9 @@ public struct TerminalPanelView: View {
     private let grid: GridFrame?
     private let configurations: [RunConfiguration]
     private let selectedConfigurationID: String?
+    /// 이 설정이 소스에서 알아낸 것인지. 저장된 것과 구별해 보여 준다 — 사용자가 만든 적
+    /// 없는 항목이 목록에 있으면 어디서 왔는지 알 수 있어야 한다.
+    private let isDetected: (RunConfiguration) -> Bool
     private let ownsKeyboard: Bool
     private let onSelectConfiguration: (RunConfiguration) -> Void
     private let onRun: (RunConfiguration) -> Void
@@ -27,6 +30,7 @@ public struct TerminalPanelView: View {
         grid: GridFrame?,
         configurations: [RunConfiguration],
         selectedConfigurationID: String?,
+        isDetected: @escaping (RunConfiguration) -> Bool,
         ownsKeyboard: Bool,
         onSelectConfiguration: @escaping (RunConfiguration) -> Void,
         onRun: @escaping (RunConfiguration) -> Void,
@@ -42,6 +46,7 @@ public struct TerminalPanelView: View {
         self.grid = grid
         self.configurations = configurations
         self.selectedConfigurationID = selectedConfigurationID
+        self.isDetected = isDetected
         self.ownsKeyboard = ownsKeyboard
         self.onSelectConfiguration = onSelectConfiguration
         self.onRun = onRun
@@ -86,7 +91,10 @@ public struct TerminalPanelView: View {
                     }
                 )) {
                     ForEach(configurations) { configuration in
-                        Text(configuration.name).tag(configuration.id)
+                        // 감지된 것에 표를 붙인다. 저장한 것과 섞여 있으면 어느 것이 내가
+                        // 만든 것인지 알 수 없다.
+                        Text(isDetected(configuration) ? "\(configuration.name) · 감지됨" : configuration.name)
+                            .tag(configuration.id)
                     }
                 }
                 .labelsHidden()
@@ -107,6 +115,12 @@ public struct TerminalPanelView: View {
                 // 실행과 디버그 실행을 나란히 둔다 — IntelliJ 의 ▶ 와 🐞 자리다.
                 Button("실행") { onRun(configuration) }
                 Button("디버그 실행") { onDebug(configuration) }
+                    // JDWP 는 JVM 전용이다. 켜 두면 사용자는 눌러서 30초를 기다린 뒤
+                    // "붙지 못했습니다" 만 보고, 이유는 화면 어디에도 없다.
+                    .disabled(!configuration.canDebug)
+                    .help(configuration.canDebug
+                        ? "JDWP 인자를 붙여 띄우고 자동으로 붙습니다"
+                        : "이 명령에는 붙을 수 없습니다 — 자바 디버거는 JVM 만 다룹니다")
             }
             Button("셸", action: onOpenShell)
             Button("설정…", action: onEditConfigurations)
@@ -168,7 +182,7 @@ public struct TerminalPanelView: View {
             return "시작하는 중…"
         case .idle:
             return configurations.isEmpty
-                ? "설정…을 눌러 실행할 명령을 추가하세요. 서버를 띄우고 그대로 디버거를 붙일 수 있습니다."
+                ? "이 프로젝트에서 띄울 것을 찾지 못했습니다. 설정…을 눌러 명령을 직접 추가하세요."
                 : "실행을 누르면 여기에서 돕니다. 셸을 눌러 직접 명령을 칠 수도 있습니다."
         }
     }

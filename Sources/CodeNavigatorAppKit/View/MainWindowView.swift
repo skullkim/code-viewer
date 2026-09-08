@@ -278,8 +278,9 @@ public struct MainWindowView: View {
         TerminalPanelView(
             state: model.terminal.state,
             grid: model.terminal.gridFrame,
-            configurations: model.shell.runConfigurations,
+            configurations: model.availableRunConfigurations,
             selectedConfigurationID: model.selectedRunConfigurationID,
+            isDetected: { model.isDetected($0) },
             ownsKeyboard: focus.owner == .terminal,
             onSelectConfiguration: { model.selectRunConfiguration($0) },
             onRun: { configuration in Task { await model.run(configuration) } },

@@ -100,6 +100,7 @@ public struct RunConfigurationEditorView: View {
                         "작업 폴더", text: $drafts[index].workingDirectory,
                         prompt: "비우면 프로젝트 최상위"
                     )
+                    debugStrategyField(index: index)
                     environmentTable(index: index)
                 }
                 .padding(DesignTokens.Spacing.large)
@@ -117,6 +118,39 @@ public struct RunConfigurationEditorView: View {
                 .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
             TextField(prompt, text: text)
                 .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    /// 어떻게 디버그로 띄울지. 감지기가 정해 두지만 사용자가 고칠 수 있어야 한다 —
+    /// 감지가 못 알아보는 실행 방식이 늘 있다.
+    private func debugStrategyField(index: Int) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.small) {
+            Text("디버그 실행 방식")
+                .font(.system(size: DesignTokens.Typography.secondarySize, weight: .medium))
+                .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
+            Picker("디버그 실행 방식", selection: $drafts[index].debugLaunch) {
+                ForEach(DebugLaunchStrategy.allCases, id: \.self) { strategy in
+                    Text(strategy.title).tag(strategy)
+                }
+            }
+            .labelsHidden()
+            Text(explanation(for: drafts[index].debugLaunch))
+                .font(.system(size: DesignTokens.Typography.secondarySize))
+                .foregroundStyle(DesignTokens.textSecondary.dynamicColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func explanation(for strategy: DebugLaunchStrategy) -> String {
+        switch strategy {
+        case .javaToolOptions:
+            return "환경변수로 붙입니다. `java` 를 직접 부르는 명령에만 안전합니다 — Gradle·Maven 은 런처 JVM 이 이 값을 가로챕니다."
+        case .gradleDebugJvm:
+            return "명령에 `--debug-jvm` 을 붙입니다. Gradle 이 자기가 띄운 JVM 에만 에이전트를 넣습니다."
+        case .mavenJvmArguments:
+            return "`-Dspring-boot.run.jvmArguments` 로 넘깁니다. 플러그인이 띄운 JVM 에만 들어갑니다."
+        case .unsupported:
+            return "이 명령에는 붙지 않습니다. 자바 디버거는 JVM 만 다룹니다 — Node·Python 은 디버그 실행이 막힙니다."
         }
     }
 
