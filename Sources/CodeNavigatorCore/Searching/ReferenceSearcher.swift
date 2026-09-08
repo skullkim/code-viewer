@@ -82,6 +82,16 @@ struct ReferenceSearcher {
             )
         }
 
+        // **색인이 아는 정의를 반드시 넣는다.**
+        //
+        // 여기까지의 목록은 본문 훑기로 만들어졌고, 정의 표시는 훑어서 걸린 줄이 마침 정의
+        // 자리일 때만 붙는다. 훑기가 그 줄을 못 잡거나(줄 모양이 달라서·상한에 걸려서)
+        // 수신자 타입 좁히기가 떨궈 내면 정의가 통째로 사라진다 — 그런데 색인은 그 자리를
+        // 알고 있다. 사용처를 보려는 사람이 가장 먼저 찾는 것이 선언이다.
+        references = await withDefinitions(
+            from: symbolIndex, named: symbolName, added: references, rootPath: rootPath
+        )
+
         return ReferenceSearchResult(
             references: references,
             total: matchedLines.observedCount,
@@ -89,6 +99,54 @@ struct ReferenceSearcher {
             limit: Self.resultLimit,
             narrowing: narrowing
         )
+    }
+
+    /// 색인이 아는 정의를 목록 **앞에** 붙인다. 이미 있는 자리는 건드리지 않는다.
+    private func withDefinitions(
+        from symbolIndex: SymbolIndex,
+        named symbolName: String,
+        added references: [Reference],
+        rootPath: URL
+    ) async -> [Reference] {
+        let known = await symbolIndex.definitions(named: symbolName)
+        guard !known.isEmpty else { return references }
+
+        // 훑기가 이미 잡은 자리는 다시 넣지 않는다. 같은 줄이 두 번 나오면 목록을 못 믿는다.
+        var seen = Set(references.map { "\($0.path):\($0.line)" })
+        var definitions: [Reference] = []
+
+        for definition in known.sorted(by: { ($0.path, $0.line) < ($1.path, $1.line) }) {
+            let key = "\(definition.path):\(definition.line)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            definitions.append(
+                Reference(
+                    path: definition.path,
+                    line: definition.line,
+                    // 미리보기는 파일에서 그 줄을 읽어 온다. 서명으로 대신하면 실제 코드와
+                    // 다른 글자가 보이고, 사용자는 파일이 바뀐 줄 안다.
+                    previewText: Self.line(definition.line, ofFileAt: definition.path, under: rootPath)
+                        ?? definition.signature,
+                    matchRanges: [],
+                    isDefinition: true
+                )
+            )
+        }
+
+        // 훑기가 이미 정의로 표시한 것들도 앞으로 끌어올린다. 아래에 섞여 있으면 스크롤해서
+        // 찾아야 한다.
+        let scanned = references.filter(\.isDefinition)
+        let usages = references.filter { !$0.isDefinition }
+        return definitions + scanned + usages
+    }
+
+    /// 파일에서 한 줄을 읽는다. 못 읽으면 nil — 부르는 쪽이 서명으로 대신한다.
+    private static func line(_ number: Int, ofFileAt path: String, under rootPath: URL) -> String? {
+        let url = rootPath.appendingPathComponent(path)
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let lines = contents.split(separator: "\n", omittingEmptySubsequences: false)
+        guard number >= 1, number <= lines.count else { return nil }
+        return String(lines[number - 1])
     }
 
     // MARK: - 수신자 타입으로 좁히기

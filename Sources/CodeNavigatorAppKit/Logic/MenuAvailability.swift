@@ -21,6 +21,12 @@ public struct MenuAvailability: Sendable, Hashable {
     public let capabilities: DebugCapabilities
     /// 지금 무언가 돌고 있는지. 정지를 켜 둘지 정한다.
     public let isRunning: Bool
+    /// 지금 키보드를 들고 있는 표면.
+    ///
+    /// 표준 편집(⌘C·⌘V·⌘A)을 켤지 정한다. REQ-010 AC-5 는 Vim 모드에서 이것들을 끄라고
+    /// 하는데, 그건 **편집기** 이야기다 — 검색창에 글자를 치는 동안에도 꺼 두면 전체 선택도
+    /// 복사도 안 된다. 실제로 그렇게 되어 있었다.
+    public let keyboardOwner: KeyboardFocusOwner
     /// 지금 고른 실행 설정을 디버그로 띄울 수 있는지.
     ///
     /// `npm run dev` 같은 명령에는 JDWP 로 못 붙는다. 버튼을 켜 두면 사용자는 눌러서
@@ -36,7 +42,8 @@ public struct MenuAvailability: Sendable, Hashable {
         exceptionRule: ExceptionBreakpointRule = .off,
         capabilities: DebugCapabilities = .none,
         isRunning: Bool = false,
-        canDebugSelected: Bool = true
+        canDebugSelected: Bool = true,
+        keyboardOwner: KeyboardFocusOwner = .editor
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
@@ -47,6 +54,7 @@ public struct MenuAvailability: Sendable, Hashable {
         self.capabilities = capabilities
         self.isRunning = isRunning
         self.canDebugSelected = canDebugSelected
+        self.keyboardOwner = keyboardOwner
     }
 
     private var isSessionRunning: Bool {
@@ -122,8 +130,13 @@ public struct MenuAvailability: Sendable, Hashable {
         case .save:
             return isSessionRunning
 
-        // The heart of REQ-010 AC-5.
+        // The heart of REQ-010 AC-5 — **편집기에 한해서**.
+        //
+        // 글자를 받는 것은 편집기만이 아니다. 검색창이 키보드를 들고 있는 동안 이것들을 꺼
+        // 두면 사용자는 친 글자를 전체 선택할 수도, 복사할 수도 없다. Vim 이 대신 해 주는
+        // 것은 편집기 안에서일 뿐이다.
         case .undo, .redo, .cut, .copy, .paste, .selectAll:
+            if keyboardOwner.isTextField { return true }
             return isSessionRunning && inputMode == .standard
 
         case .toggleInputMode, .selectVimMode, .selectStandardMode:

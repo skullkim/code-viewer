@@ -22,7 +22,8 @@ public struct MainWindowView: View {
     /// Owned here rather than by any one surface, because the question only has a single
     /// answer if a single thing answers it. While each view decided for itself they
     /// disagreed, and closing the symbol-search modal left the editor unreachable.
-    @State private var focus = KeyboardFocusCoordinator()
+    /// 모델이 들고 있는 것을 그대로 쓴다. 뷰가 따로 들면 메뉴가 보는 값과 갈라진다.
+    private var focus: KeyboardFocusCoordinator { model.focus }
 
     /// The tab a close was requested for, while the confirmation is up (W-13).
     @State private var pendingClose: PendingTabClose?

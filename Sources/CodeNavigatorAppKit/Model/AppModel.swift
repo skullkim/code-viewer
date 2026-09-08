@@ -57,6 +57,13 @@ public final class AppModel {
         }
     }
 
+    /// 지금 키보드를 들고 있는 표면.
+    ///
+    /// 뷰가 아니라 모델이 들고 있다. 메뉴가 켤지 말지와 라우터가 어디로 보낼지를 **같은
+    /// 값**으로 정해야 하기 때문이다 — 둘이 갈라지면 메뉴는 켜져 있는데 명령은 엉뚱한 데로
+    /// 간다. 그건 아무 일도 안 일어나는 것보다 나쁘다.
+    public let focus = KeyboardFocusCoordinator()
+
     public let recentProjects: RecentProjectStore
     /// Window chrome the application restores on launch (REQ-011 AC-3).
     public let shell: ShellPreferences
@@ -955,6 +962,7 @@ public final class AppModel {
             activeRootPath: shell.activeTabRootPath.map { URL(fileURLWithPath: $0) }
         )
 
+
         // 세션을 못 얻은 탭은 **조용히 빼지 않는다.**
         //
         // 엔진은 그 탭을 들고 있다 — 세션을 쥐고 배경에서 인덱싱한다. 앱 목록에서만 빠지면
@@ -1191,7 +1199,8 @@ public final class AppModel {
             exceptionRule: debug.exceptionRule,
             capabilities: debug.capabilities,
             isRunning: terminal.isRunning,
-            canDebugSelected: selectedRunConfiguration?.canDebug ?? true
+            canDebugSelected: selectedRunConfiguration?.canDebug ?? true,
+            keyboardOwner: focus.owner
         )
     }
 
@@ -1219,3 +1228,4 @@ public final class AppModel {
         return InputMode(rawValue: raw)
     }
 }
+

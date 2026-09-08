@@ -16,6 +16,19 @@ public enum KeyboardFocusOwner: Sendable, Hashable, CaseIterable {
     case fileTree
 }
 
+public extension KeyboardFocusOwner {
+    /// 이 표면이 **앱이 그리는 텍스트 필드**인지.
+    ///
+    /// 편집기와 터미널은 아니다 — 둘 다 글자를 받지만 그 글자는 Neovim 과 셸의 것이고,
+    /// 앱이 ⌘C·⌘V 를 가로채면 그쪽에 안 들어간다.
+    var isTextField: Bool {
+        switch self {
+        case .symbolSearchField, .textSearchField: return true
+        case .editor, .terminal, .fileTree: return false
+        }
+    }
+}
+
 /// Decides who holds the keyboard, for the whole window.
 ///
 /// The rule the leader set is one sentence — 사용자가 클릭한 곳이 입력을 받는다 — plus one

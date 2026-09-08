@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import CodeNavigatorContract
 @testable import CodeNavigatorAppKit
 
@@ -132,5 +133,110 @@ struct MenuAvailabilityTests {
         // 규칙 없는 명령이 새어 나간다. 내역도 같이 고친다 — 합만 맞고 내역이 낡으면
         // 다음 사람이 어디가 늘었는지 못 읽는다.
         #expect(MenuCommand.allCases.count == 48, "명령을 추가·삭제했으면 이 스위트의 규칙도 갱신하라 (파일 5 · 편집 10 · 이동 6 · 보기 7 · 실행 5 · 디버그 15)")
+    }
+}
+
+/// 키보드를 **텍스트 필드가 들고 있을 때** 표준 편집이 살아 있어야 한다.
+///
+/// REQ-010 AC-5 는 Vim 모드에서 ⌘C·⌘V·⌘A 를 끄라고 한다 — 편집기에서는 그 일을 Vim 이
+/// 하기 때문이다. 그런데 그 판단이 **편집기 모드만** 보고 이뤄져서, 검색창에 글자를 치고
+/// 있어도 전체 선택·복사·붙여넣기가 전부 죽어 있었다. 사용자가 겪은 그대로다:
+/// "검색에서 입력한 거 전체 선택 안되고, 복사 붙여넣기도 안돼."
+@Suite("텍스트 필드가 키보드를 들면 표준 편집이 산다")
+struct TextFieldEditingAvailabilityTests {
+
+    private func availability(
+        inputMode: InputMode, owner: KeyboardFocusOwner
+    ) -> MenuAvailability {
+        MenuAvailability(
+            inputMode: inputMode, sessionState: .connected, hasOpenProject: true,
+            keyboardOwner: owner
+        )
+    }
+
+    private static let editingCommands: [MenuCommand] = [.copy, .paste, .cut, .selectAll, .undo, .redo]
+
+    @Test("검색창이 키보드를 들면 Vim 모드여도 편집 명령이 켜진다")
+    func editingIsOnWhileTypingInASearchField() {
+        for owner in [KeyboardFocusOwner.symbolSearchField, .textSearchField] {
+            let menu = availability(inputMode: .vim, owner: owner)
+            for command in Self.editingCommands {
+                #expect(menu.isEnabled(command), "\(owner) 에서 \(command) 가 꺼져 있다")
+            }
+        }
+    }
+
+    /// 편집기가 키보드를 들고 있으면 예전 규칙 그대로다 — Vim 이 그 일을 한다.
+    @Test("편집기가 들고 있으면 Vim 모드에서 여전히 꺼진다")
+    func editorKeepsTheOldRule() {
+        let menu = availability(inputMode: .vim, owner: .editor)
+        for command in Self.editingCommands {
+            #expect(menu.isEnabled(command) == false, "\(command) 가 Vim 모드 편집기에서 켜졌다")
+        }
+    }
+
+    @Test("표준 모드에서는 어디에 있든 켜진다")
+    func standardModeIsAlwaysOn() {
+        for owner in KeyboardFocusOwner.allCases {
+            let menu = availability(inputMode: .standard, owner: owner)
+            for command in Self.editingCommands {
+                #expect(menu.isEnabled(command), "\(owner) 에서 \(command) 가 꺼져 있다")
+            }
+        }
+    }
+
+    /// 터미널도 글자를 받는 표면이다. 다만 붙여넣기는 셸이 처리해야 하므로 여기서는
+    /// 편집기와 같은 취급을 한다 — 앱이 가로채면 셸에 안 들어간다.
+    @Test("터미널은 편집기와 같은 취급이다")
+    func terminalBehavesLikeTheEditor() {
+        let menu = availability(inputMode: .vim, owner: .terminal)
+        #expect(menu.isEnabled(.copy) == false)
+    }
+}
+
+/// 켜 두기만 하고 엉뚱한 데로 보내면 더 나쁘다.
+///
+/// `copySelection()`·`paste()`·`selectAll()` 은 **항상 Neovim** 으로 갔다. 검색창에 커서를
+/// 두고 ⌘C 를 누르면 편집기의 선택이 복사되고, 사용자는 자기가 친 글자가 아니라 엉뚱한
+/// 코드를 붙여넣게 된다 — 아무 일도 안 일어나는 것보다 나쁘다.
+@Suite("텍스트 필드의 편집 명령은 편집기로 가지 않는다")
+@MainActor
+struct TextFieldEditingRoutingTests {
+
+    private func makeModel() -> (AppModel, FakeEditorSession, SearchModel) {
+        let editor = FakeEditorSession()
+        let project = FakeProjectSession()
+        let model = AppModel(
+            editorSession: editor,
+            workspace: FakeWorkspace(sharedSession: project),
+            storage: InMemoryKeyValueStore(),
+            now: { Date(timeIntervalSince1970: 1_000_000) }
+        )
+        return (model, editor, SearchModel(sessionProvider: { project }))
+    }
+
+    @Test("검색창이 키보드를 들고 있으면 편집기 세션을 건드리지 않는다")
+    func doesNotReachTheEditorWhileTypingInAField() async {
+        let (model, editor, search) = makeModel()
+        model.focus.userFocused(.symbolSearchField)
+
+        for command in [MenuCommand.copy, .paste, .cut, .selectAll] {
+            await MenuCommandRouter.perform(command, model: model, search: search, environment: .headless)
+        }
+        let reached = editor.editorCommands.filter {
+            ["copySelection", "cutSelection", "paste", "selectAll"].contains($0)
+        }
+        #expect(reached.isEmpty, "검색창에서 편집 명령이 편집기로 갔다: \(reached)")
+    }
+
+    @Test("편집기가 키보드를 들고 있으면 예전대로 편집기로 간다")
+    func stillReachesTheEditorOtherwise() async {
+        let (model, editor, search) = makeModel()
+        model.focus.userFocused(.editor)
+
+        await MenuCommandRouter.perform(.copy, model: model, search: search, environment: .headless)
+        await MenuCommandRouter.perform(.selectAll, model: model, search: search, environment: .headless)
+        #expect(editor.editorCommands.contains("copySelection"))
+        #expect(editor.editorCommands.contains("selectAll"))
     }
 }

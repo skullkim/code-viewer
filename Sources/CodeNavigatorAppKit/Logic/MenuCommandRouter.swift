@@ -229,12 +229,16 @@ public enum MenuCommandRouter {
         case .redo:
             await model.redo()
         case .cut:
+            if sendToFocusedField(#selector(NSText.cut(_:)), model: model) { return }
             await model.cutSelection()
         case .copy:
+            if sendToFocusedField(#selector(NSText.copy(_:)), model: model) { return }
             await model.copySelection()
         case .paste:
+            if sendToFocusedField(#selector(NSText.paste(_:)), model: model) { return }
             await model.paste()
         case .selectAll:
+            if sendToFocusedField(#selector(NSText.selectAll(_:)), model: model) { return }
             await model.selectAll()
 
         case .toggleFileTree:
@@ -306,6 +310,30 @@ public enum MenuCommandRouter {
     ///
     /// SwiftUI 화면을 모달 창에 올린다 — NSAlert 로는 표를 못 만들고, 시트로 띄우면 어느
     /// 창에 붙일지가 애매하다(패널에서도 메뉴에서도 연다).
+    /// 키보드를 텍스트 필드가 들고 있으면 그쪽으로 보낸다.
+    ///
+    /// 안 그러면 검색창에 커서를 두고 ⌘C 를 눌렀을 때 **편집기의** 선택이 복사된다. 사용자는
+    /// 자기가 친 글자 대신 엉뚱한 코드를 붙여넣게 되는데, 이건 아무 일도 안 일어나는 것보다
+    /// 나쁘다 — 틀린 것을 조용히 준다.
+    ///
+    /// - Returns: 필드가 처리했으면 `true`. 그러면 부르는 쪽은 편집기로 보내지 않는다.
+    static func sendToFocusedField(_ selector: Selector, model: AppModel) -> Bool {
+        guard model.focus.owner.isTextField else { return false }
+
+        // 응답자 사슬로 보낸다. 어느 필드가 첫 응답자인지는 AppKit 이 알고 있고, 우리가
+        // 그것을 따로 추적하면 두 개의 진실이 생긴다.
+        //
+        // `NSApp` 은 앱이 없는 환경(테스트·헤드리스)에서 nil 이다. 암묵적으로 벗기면
+        // 그대로 죽는다 — 실제로 죽였다.
+        let application: NSApplication? = NSApp
+        _ = application?.sendAction(selector, to: nil, from: nil)
+
+        // **사슬이 처리했든 아니든 `true` 다.** 키보드를 필드가 들고 있으면 그 명령은 필드의
+        // 것이고, 못 처리했다고 편집기로 흘려보내면 사용자가 친 글자 대신 엉뚱한 코드가
+        // 복사된다. 아무 일도 안 일어나는 편이 낫다.
+        return true
+    }
+
     public static func presentRunConfigurationEditor(
         _ configurations: [RunConfiguration]
     ) -> [RunConfiguration]? {

@@ -39,7 +39,14 @@ struct ProjectEngineSearchScopeTests {
 
         let result = try await engine.references(to: "Widget", from: nil)
 
-        #expect(result.references.map(\.path) == ["README.md", "notes.txt", "src/App.kt"])
+        // 이 스위트가 고정하는 것은 **범위**다 — 세 파일이 다 훑였는가. 순서는 아니다.
+        // `src/App.kt` 의 `class Widget {}` 는 진짜 정의라 목록 맨 위로 올라간다.
+        #expect(Set(result.references.map(\.path)) == ["README.md", "notes.txt", "src/App.kt"])
+        #expect(
+            result.references.first?.path == "src/App.kt",
+            "정의가 맨 위에 와야 한다 — 사용처를 보려는 사람이 먼저 찾는 것이 선언이다"
+        )
+        #expect(result.references.first?.isDefinition == true)
     }
 
     @Test("그 파일들이 심볼 인덱싱 대상은 아니다")
