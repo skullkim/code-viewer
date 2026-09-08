@@ -21,9 +21,21 @@ final class FileSystemWatcher: @unchecked Sendable {
     private let rootPath: String
     private let onEvents: @Sendable ([FileSystemChangeEvent]) -> Void
     private let queue = DispatchQueue(label: "code-navigator.file-watcher")
+    /// 상태는 **큐가 아니라 잠금으로** 지킨다.
+    ///
+    /// 큐로 지키려다 트랩을 받았다: `start()` 의 블록이 끝나면서 마지막 참조가 **큐 위에서**
+    /// 풀리면 `deinit` 이 그 큐에서 돌고, 거기서 같은 큐에 `sync` 하면 자기를 기다린다.
+    ///
+    ///     __DISPATCH_WAIT_FOR_QUEUE__ ← stop() ← deinit ← closure #1 in start()
+    ///
+    /// 잠금은 `deinit` 이 어느 스레드에서 돌든 안전하다.
+    private let stateLock = NSLock()
     private var stream: FSEventStreamRef?
     /// 스트림이 실제로 붙들고 있는 것. 감시자 자신이 아니라 이 상자다.
     private var box: FileSystemWatcherBox?
+    /// 멈추라는 말을 들었는지. 생성이 끝나기 **전에** 멈추면, 뒤늦게 붙는 스트림이 남아
+    /// 아무도 안 보는 감시자가 이벤트를 흘린다 — 닫은 탭이 계속 색인을 건드리는 모양이다.
+    private var isStopped = false
 
     /// - Parameter rootPath: the project root. It is canonicalised here so incoming event paths
     ///   can be made relative to it.
@@ -36,8 +48,31 @@ final class FileSystemWatcher: @unchecked Sendable {
         stop()
     }
 
+    /// 감시를 시작한다. **부르는 스레드에서 스트림을 만들지 않는다.**
+    ///
+    /// `kFSEventStreamCreateFlagWatchRoot` 를 주면 FSEvents 가 `watch_all_parents` 로 **모든
+    /// 상위 폴더를 `open()`** 한다. `~/Documents` 같은 곳을 여는 순간 macOS 의 동의 관문에
+    /// 걸리는데, 그 대화상자는 메인 런루프가 돌아야 뜬다. 메인 스레드에서 이 함수를 부르면
+    /// 우리가 그 런루프를 막고 있으므로 대화상자가 영원히 안 뜬다 — 앱이 시작하다 멈췄다.
+    /// 실측한 스택이 그 자리를 정확히 가리켰다:
+    ///
+    ///     main-thread → FileSystemWatcher.start() → FSEventStreamCreate
+    ///       → watch_all_parents → open → __open      (2270/2270 샘플)
+    ///
+    /// 네트워크 볼륨이나 느린 디스크에서도 같은 모양이 된다. 그래서 만드는 일 자체를
+    /// 감시자의 큐로 옮긴다.
     func start() {
-        guard stream == nil else { return }
+        queue.async { [weak self] in
+            self?.createStream()
+        }
+    }
+
+    private func createStream() {
+        stateLock.lock()
+        creationThreadForTesting = ObjectIdentifier(Thread.current)
+        let alreadyRunning = stream != nil || isStopped
+        stateLock.unlock()
+        guard !alreadyRunning else { return }
 
         // **스트림에 감시자를 직접 주지 않는다.** 예전에는 `passUnretained(self)` 였고,
         // 게이트가 그 대가를 SIGSEGV 로 청구했다:
@@ -53,7 +88,6 @@ final class FileSystemWatcher: @unchecked Sendable {
         // 상자가 스트림에 붙들리는 것은 순환이 아니다 — 감시자는 상자를 소유하지만 상자는
         // 감시자를 소유하지 않는다.
         let box = FileSystemWatcherBox(watcher: self)
-        self.box = box
 
         var context = FSEventStreamContext(
             version: 0,
@@ -88,23 +122,58 @@ final class FileSystemWatcher: @unchecked Sendable {
             return
         }
 
+        // 만드는 사이에 멈추라는 말이 왔으면 붙이지 않고 버린다. 붙이면 아무도 안 보는
+        // 감시자가 남아 이벤트를 흘린다 — 닫은 탭이 계속 색인을 건드리는 모양이다.
+        stateLock.lock()
+        if isStopped || stream != nil {
+            stateLock.unlock()
+            FSEventStreamRelease(created)
+            return
+        }
         stream = created
+        self.box = box
+        stateLock.unlock()
+
         FSEventStreamSetDispatchQueue(created, queue)
         FSEventStreamStart(created)
     }
 
+    /// 테스트용 — 스트림이 실제로 붙었는지. 생성이 비동기라 "시작했다" 와 "붙었다" 가
+    /// 다른 시점이 됐고, 그 차이가 이 수정의 전부다.
+    var hasStreamForTesting: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return stream != nil
+    }
+
+    /// 테스트용 — 스트림을 **어느 스레드에서** 만들었는지.
+    ///
+    /// "동기냐 비동기냐" 는 `queue.sync` 접근자로는 못 잰다. 그 접근자가 큐에 실린 생성
+    /// 작업을 기다려 버려서, 어느 쪽이든 "이미 만들어졌다" 로 보인다. 실제로 그렇게 재려다
+    /// 틀린 판정을 받았다. 지키려는 성질은 "부르는 스레드에서 만들지 않는다" 이므로 그것을
+    /// 그대로 잰다.
+    private(set) var creationThreadForTesting: ObjectIdentifier?
+
     func stop() {
+        // 잠금 아래에서 **꺼내 오고 비운다.** 큐에 `sync` 하면 `deinit` 이 그 큐에서 돌 때
+        // 자기를 기다리다 트랩한다 — 실제로 받았다.
+        stateLock.lock()
+        isStopped = true
         // **먼저 떼어 낸다.** 무효화를 먼저 하면 그 사이에 이미 큐에 실린 콜백이 아직 살아
         // 있는 감시자를 잡고 들어올 수 있고, 그 콜백이 끝나기 전에 `deinit` 이 끝나면
         // 같은 크래시다. 떼어 내는 것이 먼저여야 순서가 성립한다.
         box?.detach()
         box = nil
+        let stopping = stream
+        stream = nil
+        stateLock.unlock()
 
-        guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
-        self.stream = nil
+        // 무효화는 잠금 밖에서 한다. 이 호출은 큐를 건드리므로, 잠금을 쥔 채로 하면
+        // 콜백 쪽과 서로 기다릴 수 있다.
+        guard let stopping else { return }
+        FSEventStreamStop(stopping)
+        FSEventStreamInvalidate(stopping)
+        FSEventStreamRelease(stopping)
     }
 
     /// Called from the C callback with one batch of events.
