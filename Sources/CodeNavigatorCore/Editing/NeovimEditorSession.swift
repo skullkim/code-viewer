@@ -52,6 +52,7 @@ public actor NeovimEditorSession: EditorSession {
     /// autocommands; without this the two never meet and the mode indicator lags or sticks.
     /// 마지막으로 nvim 에 심은 디버그 색. 같은 값을 다시 심지 않기 위한 것이다.
     private var installedDebugPalette: EditorDebugPalette?
+    private var installedGitPalette: GitMarkerPalette?
 
     private var lastPublishedStatus: EditorStatus?
     private var lastKnownMode: EditorMode = .normal
@@ -732,6 +733,37 @@ public actor NeovimEditorSession: EditorSession {
     ///
     /// 설치와 갱신을 나눈다. 사인 정의와 색은 한 번만 있으면 되고, 놓는 일은 브레이크포인트가
     /// 바뀔 때마다 일어난다 — 매번 다시 정의하면 nvim 이 매번 다시 그린다.
+    public func showGitMarkers(
+        _ markers: EditorGitMarkers, palette: GitMarkerPalette
+    ) async throws {
+        guard let channel else { throw NavigatorError.editorNotRunning }
+
+        // 설치는 팔레트가 바뀔 때만. 매번 다시 심으면 저장할 때마다 하이라이트가 다시
+        // 정의되고, 그 비용이 저장 지연으로 보인다.
+        if installedGitPalette != palette {
+            _ = try? await channel.request("nvim_exec_lua", [
+                .string(NeovimGitMarkerScript.installScript(palette: palette)), .array([]),
+            ])
+            installedGitPalette = palette
+        }
+
+        _ = try? await channel.request("nvim_exec_lua", [
+            .string(NeovimGitMarkerScript.refreshScript()),
+            .array([.map([
+                MessagePackKeyValuePair(key: .string("path"), value: .string(markers.absolutePath)),
+                MessagePackKeyValuePair(
+                    key: .string("added"), value: .array(markers.added.map { .integer(Int64($0)) })
+                ),
+                MessagePackKeyValuePair(
+                    key: .string("modified"), value: .array(markers.modified.map { .integer(Int64($0)) })
+                ),
+                MessagePackKeyValuePair(
+                    key: .string("deleted"), value: .array(markers.deleted.map { .integer(Int64($0)) })
+                ),
+            ])]),
+        ])
+    }
+
     public func showDebugMarkers(
         _ markers: EditorDebugMarkers, palette: EditorDebugPalette
     ) async throws {

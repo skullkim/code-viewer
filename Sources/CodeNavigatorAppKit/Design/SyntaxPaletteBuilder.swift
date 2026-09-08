@@ -24,6 +24,15 @@ enum SyntaxPaletteBuilder {
         )
     }
 
+    /// 거터의 git 변경 막대 색.
+    static func gitMarkerPalette(for scheme: AppearanceScheme) -> GitMarkerPalette {
+        GitMarkerPalette(
+            added: EditorColor(DesignTokens.gitAdded.value(for: scheme)),
+            modified: EditorColor(DesignTokens.gitModified.value(for: scheme)),
+            deleted: EditorColor(DesignTokens.gitDeleted.value(for: scheme))
+        )
+    }
+
     static func palette(for scheme: AppearanceScheme) -> EditorSyntaxPalette {
         EditorSyntaxPalette(
             keyword: EditorColor(DesignTokens.syntaxKeyword.value(for: scheme)),

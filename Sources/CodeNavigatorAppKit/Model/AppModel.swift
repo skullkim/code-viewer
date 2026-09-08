@@ -377,6 +377,62 @@ public final class AppModel {
         if wasDirty != status.isDirty {
             dirtyRefreshTask = Task { await refreshDirtyCounts() }
         }
+
+        // 변경 막대는 **파일이 바뀌거나 저장될 때** 다시 계산한다. 커서가 움직일 때마다
+        // git 을 부르면 방향키 한 번에 프로세스가 하나씩 뜬다.
+        //
+        // 저장은 `isDirty` 가 참에서 거짓으로 가는 순간이다 — 그때 디스크가 바뀌었고,
+        // 다시 묻지 않으면 방금 고친 줄에 막대가 없다.
+        let didSave = wasDirty == true && !status.isDirty
+        if lastGitMarkerPath != status.filePath || didSave {
+            lastGitMarkerPath = status.filePath
+            gitMarkerTask = Task { await refreshGitMarkers() }
+        }
+    }
+
+    /// 열린 파일이 저장소와 어떻게 다른지 묻는 함수. 조립 지점에서 꽂는다 — 모델이 git 을
+    /// 직접 부르면 화면 상태를 재는 데 진짜 저장소가 필요해진다.
+    public var gitLineChangeProvider: (@Sendable (_ relativePath: String, _ root: String) -> [GitLineChange])?
+
+    /// 마지막으로 표시를 계산한 파일. 같은 파일이면 커서가 움직여도 다시 묻지 않는다.
+    private var lastGitMarkerPath: String?
+    private var gitMarkerTask: Task<Void, Never>?
+
+    /// 열린 파일의 변경 막대를 다시 계산해 편집기에 놓는다.
+    public func refreshGitMarkers() async {
+        guard
+            let gitLineChangeProvider,
+            let root = projectRootPath,
+            let absolutePath = editorStatus?.filePath,
+            !absolutePath.isEmpty
+        else {
+            // 열린 파일이 없으면 물을 것이 없다. 빈 경로로 git 을 부르면 저장소 전체의
+            // diff 가 와서, 아무 파일에나 남의 줄 번호가 붙는다.
+            return
+        }
+
+        let relativePath = Self.relativePath(of: absolutePath, under: root)
+        // git 은 프로세스를 띄운다. 창을 멈추게 두지 않는다.
+        let changes = await Task.detached(priority: .utility) {
+            gitLineChangeProvider(relativePath, root)
+        }.value
+
+        // **변경이 없어도 보낸다.** 빈 결과라고 안 보내면 앞서 놓인 막대가 남아서,
+        // 되돌리기로 원래대로 만들었는데 막대가 그대로인 모양이 된다.
+        try? await editorSession.showGitMarkers(
+            EditorGitMarkers(absolutePath: absolutePath, changes: changes),
+            palette: SyntaxPaletteBuilder.gitMarkerPalette(for: appearanceScheme)
+        )
+    }
+
+    /// 테스트용 — 상태 변화가 걸어 둔 갱신이 끝나기를 기다린다.
+    func settleGitMarkersForTesting() async {
+        await gitMarkerTask?.value
+    }
+
+    private static func relativePath(of absolutePath: String, under root: String) -> String {
+        guard absolutePath.hasPrefix(root) else { return absolutePath }
+        return String(absolutePath.dropFirst(root.count).drop(while: { $0 == "/" }))
     }
 
     /// **모든 탭의** 미저장 버퍼 수를 편집기에 다시 묻는다.

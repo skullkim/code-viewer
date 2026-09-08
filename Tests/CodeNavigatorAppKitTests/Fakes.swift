@@ -173,9 +173,14 @@ class FakeEditorSession: EditorSession, @unchecked Sendable {
     }
 
     private(set) var debugMarkers: [EditorDebugMarkers] = []
+    private(set) var gitMarkers: [EditorGitMarkers] = []
 
     func showDebugMarkers(_ markers: EditorDebugMarkers, palette: EditorDebugPalette) async throws {
         debugMarkers.append(markers)
+    }
+
+    func showGitMarkers(_ markers: EditorGitMarkers, palette: GitMarkerPalette) async throws {
+        gitMarkers.append(markers)
     }
 
     func applySyntaxPalette(_ palette: EditorSyntaxPalette) async throws {

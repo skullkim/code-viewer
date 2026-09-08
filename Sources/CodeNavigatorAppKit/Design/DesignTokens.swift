@@ -77,6 +77,14 @@ public enum DesignTokens {
     public static let accentText = token("accent-text", "#0B62D6", "#4D9FFF")
 
     public static let danger = token("danger", "#C42B31", "#FF6B70")
+
+    // MARK: Git 변경 막대 (거터)
+    //
+    // 사용자가 "노란 줄" 이라 부른 그것이 `gitModified` 다. 셋 다 거터의 얇은 막대라
+    // 배경 대비만 확보하면 되고, 본문 글자 위에 칠하지 않으므로 채도를 높게 둘 수 있다.
+    public static let gitAdded = token("git-added", "#3B8C4E", "#4CC38A")
+    public static let gitModified = token("git-modified", "#C79000", "#E8B33D")
+    public static let gitDeleted = token("git-deleted", "#C42B31", "#FF6B70")
     public static let warning = token("warning", "#8A5A00", "#E8B33D")
     public static let warningSolid = token("warning-solid", "#E0A21B", "#E8B33D")
     public static let success = token("success", "#1B7A4B", "#4CC38A")

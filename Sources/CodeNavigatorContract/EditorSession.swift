@@ -124,6 +124,9 @@ public protocol EditorSession: Sendable {
     /// 파일을 표시 하나 때문에 바꾸는 것은 표시가 할 일이 아니다.
     func showDebugMarkers(_ markers: EditorDebugMarkers, palette: EditorDebugPalette) async throws
 
+    /// 저장소와 다른 줄들을 거터에 표시한다 (IntelliJ 의 변경 막대).
+    func showGitMarkers(_ markers: EditorGitMarkers, palette: GitMarkerPalette) async throws
+
     /// The identifier under the cursor, used as the query for go-to-definition and references.
     ///
     /// **Never an empty string** — an empty result is `nil`. Callers guard with `if let` and would

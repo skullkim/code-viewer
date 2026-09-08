@@ -76,6 +76,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         return "terminal=\(model?.terminalSessionFactory != nil ? "wired" : "MISSING")"
             + " debugger=\(model?.debugSessionFactory != nil ? "wired" : "MISSING")"
             + " detector=\(model?.runConfigurationDetector != nil ? "wired" : "MISSING")"
+            + " git=\(model?.gitLineChangeProvider != nil ? "wired" : "MISSING")"
     }
 
     /// Held so the editor session can be handed over synchronously after the one `await`
@@ -146,6 +147,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         }
         model.terminalSessionFactory = { NeovimTerminalSession() }
         model.runConfigurationDetector = { ProjectRunScanner.detect(projectRoot: $0) }
+        model.gitLineChangeProvider = { relativePath, root in
+            GitLineChangeProvider().changes(forFileAt: relativePath, repositoryRoot: root)
+        }
 
         sharedEditorSession = editorSession
         sharedModel = model
