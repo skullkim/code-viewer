@@ -55,7 +55,7 @@ struct FileSystemWatcherTeardownTests {
 
         for round in 0..<12 {
             var watcher: FileSystemWatcher? = FileSystemWatcher(rootPath: root.path) { _ in }
-            watcher?.start()
+            await watcher?.start()
             // 이벤트를 만들고 **기다리지 않고** 버린다. 콜백이 날아오는 중에 해제되는 것이
             // 재현하려는 그 순간이다.
             try "round \(round)".write(

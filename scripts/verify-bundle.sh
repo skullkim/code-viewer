@@ -41,7 +41,7 @@ trap restore_binary EXIT INT TERM
 check_wiring() {
     local output="$1"
     local wire
-    for wire in terminal debugger detector git; do
+    for wire in terminal debugger detector git loginpath; do
         if ! printf '%s' "$output" | grep -q "$wire=wired"; then
             echo "FAIL: $wire 가 조립되지 않았다 — 화면은 그려지지만 눌러도 아무 일이 없다" >&2
             return 1
@@ -60,8 +60,8 @@ self_test() {
     fi
 
     # 0) 배선 판정이 양방향으로 도는지 — 실제 판정 함수를 두 픽스처로 부른다.
-    WIRED_FIXTURE='rootView=laidOut menus=9 terminal=wired debugger=wired detector=wired git=wired'
-    MISSING_FIXTURE='rootView=laidOut menus=9 terminal=MISSING debugger=wired detector=wired git=wired'
+    WIRED_FIXTURE='rootView=laidOut menus=9 terminal=wired debugger=wired detector=wired git=wired loginpath=wired'
+    MISSING_FIXTURE='rootView=laidOut menus=9 terminal=MISSING debugger=wired detector=wired git=wired loginpath=wired'
     if check_wiring "$MISSING_FIXTURE" 2>/dev/null; then
         printf '  FAIL: terminal=MISSING 인데 통과시켰다\n'
         status=1

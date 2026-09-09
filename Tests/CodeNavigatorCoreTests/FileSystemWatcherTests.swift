@@ -38,11 +38,11 @@ final class FileSystemWatcherTests {
     }
 
     @Test("파일 생성·수정·삭제가 상대 경로로 보고된다")
-    func reportsCreateModifyAndDelete() throws {
+    func reportsCreateModifyAndDelete() async throws {
         let fixture = TemporaryProjectFixture()
         let collector = EventCollector()
         let watcher = FileSystemWatcher(rootPath: fixture.rootURL.path) { collector.add($0) }
-        watcher.start()
+        await watcher.start()
         defer { watcher.stop() }
 
         fixture.write("src/App.kt", contents: "class App")
@@ -57,12 +57,12 @@ final class FileSystemWatcherTests {
     }
 
     @Test("에디터식 원자적 저장도 변경으로 보고된다 — rename 이라고 놓치지 않는다")
-    func reportsAtomicSavesAsChanges() throws {
+    func reportsAtomicSavesAsChanges() async throws {
         let fixture = TemporaryProjectFixture()
         fixture.write("src/App.kt", contents: "original")
         let collector = EventCollector()
         let watcher = FileSystemWatcher(rootPath: fixture.rootURL.path) { collector.add($0) }
-        watcher.start()
+        await watcher.start()
         defer { watcher.stop() }
 
         // 임시 파일에 쓰고 원본 위로 rename — Neovim·대부분의 에디터가 하는 저장 방식.
@@ -77,11 +77,11 @@ final class FileSystemWatcherTests {
     }
 
     @Test("스트림 시작 후 만들어진 디렉토리 안의 파일도 감지된다")
-    func detectsFilesInDirectoriesCreatedAfterStart() throws {
+    func detectsFilesInDirectoriesCreatedAfterStart() async throws {
         let fixture = TemporaryProjectFixture()
         let collector = EventCollector()
         let watcher = FileSystemWatcher(rootPath: fixture.rootURL.path) { collector.add($0) }
-        watcher.start()
+        await watcher.start()
         defer { watcher.stop() }
 
         fixture.write("brand/new/Deep.kt", contents: "class Deep")
@@ -91,11 +91,11 @@ final class FileSystemWatcherTests {
     }
 
     @Test("대량 변경에서도 죽지 않고 이벤트를 흘려보낸다")
-    func survivesBulkChanges() throws {
+    func survivesBulkChanges() async throws {
         let fixture = TemporaryProjectFixture()
         let collector = EventCollector()
         let watcher = FileSystemWatcher(rootPath: fixture.rootURL.path) { collector.add($0) }
-        watcher.start()
+        await watcher.start()
         defer { watcher.stop() }
 
         for index in 0..<200 {
@@ -106,12 +106,12 @@ final class FileSystemWatcherTests {
     }
 
     @Test("감시 루트 밖의 경로는 보고하지 않는다")
-    func ignoresPathsOutsideTheRoot() throws {
+    func ignoresPathsOutsideTheRoot() async throws {
         let fixture = TemporaryProjectFixture()
         let outside = TemporaryProjectFixture()
         let collector = EventCollector()
         let watcher = FileSystemWatcher(rootPath: fixture.rootURL.path) { collector.add($0) }
-        watcher.start()
+        await watcher.start()
         defer { watcher.stop() }
 
         outside.write("Elsewhere.kt", contents: "class Elsewhere")

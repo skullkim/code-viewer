@@ -40,8 +40,10 @@ struct GutterClickTests {
         ))
     }
 
-    @Test("디버거가 안 붙어 있으면 거터 클릭도 그냥 편집기로 간다")
-    func passesTheClickThroughWhenNotDebugging() async {
+    /// 자바 파일이 아니면(여기서는 아무 파일도 안 열림) 걸 클래스가 없다. 그때는 조용히
+    /// 편집기로 넘긴다 — 마크다운 거터를 누를 때마다 "Java 파일에서만" 을 띄우면 더 성가시다.
+    @Test("자바 파일이 열려 있지 않으면 거터 클릭도 그냥 편집기로 간다")
+    func passesTheClickThroughWithoutAJavaFile() async {
         let (model, editor) = makeModel()
         editor.gutterLineForClick = 12   // 편집기는 거터라고 답하지만
 
@@ -49,6 +51,24 @@ struct GutterClickTests {
 
         #expect(editor.mouseEvents.count == 1, "클릭이 편집기로 안 갔다")
         #expect(model.debug.breakpoints.isEmpty)
+    }
+
+    /// 규칙이 뒤집혔다. 예전에는 **붙어 있을 때만** 거터를 가로챘다. 그러면 디버깅을
+    /// *하려는* 사람이 브레이크포인트를 찍을 방법이 없다 — 먼저 붙어야 하고, 붙이려면
+    /// 실행해야 하고, 실행하면 이미 지나간 뒤다. 사용자가 그대로 겪었다:
+    /// "디버깅할 break point 어떻게 찍나? intellj 처럼 빨간 원이 라인에 표시 안되는데"
+    @Test("붙어 있지 않아도 자바 파일의 거터 클릭은 브레이크포인트를 건다")
+    func togglesBeforeAttaching() async throws {
+        let (model, editor) = makeModel()
+        try openJavaFile(model, editor)
+        editor.gutterLineForClick = 12
+
+        await model.sendMouse(EditorMouseEvent(button: .left, action: .press, row: 3, column: 1, modifiers: ""))
+
+        #expect(model.debug.breakpoints.map(\.line) == [12], "붙기 전에는 아무 일도 안 일어났다")
+        #expect(editor.mouseEvents.isEmpty, "클릭을 삼켜야 커서가 안 뛴다")
+        // 거터에 실제로 그려야 한다 — 목록에만 있고 화면에 없으면 사용자는 못 찍은 줄 안다.
+        #expect(editor.debugMarkers.last?.breakpointLines == [12])
     }
 
     /// 붙어 있고 거터를 눌렀으면 브레이크포인트를 걸고 **클릭은 삼킨다.**

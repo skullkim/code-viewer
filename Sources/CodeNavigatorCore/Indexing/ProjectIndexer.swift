@@ -46,7 +46,7 @@ public actor ProjectIndexer {
         lastUpdatedAt = nil
         projectRoot = rootPath
 
-        startWatching(rootPath: rootPath)
+        await startWatching(rootPath: rootPath)
         await runFullIndexing(using: scan)
     }
 
@@ -302,11 +302,14 @@ public actor ProjectIndexer {
 
     // MARK: - Watching
 
-    private func startWatching(rootPath: URL) {
+    private func startWatching(rootPath: URL) async {
         let watcher = FileSystemWatcher(rootPath: rootPath.path) { [weak self] events in
             Task { await self?.handle(events: events) }
         }
-        watcher.start()
+        // `await` 다. FSEvents 는 감시 루트의 **상위 폴더를 전부 열어 보는데**, 그것이
+        // 동의 관문에 걸리면 오래 걸린다. 메인 스레드를 막지 않고 비워 두어야 그 대화상자가
+        // 뜰 수 있다 — 막았다가 앱이 시작하다 멈췄다.
+        await watcher.start()
         self.watcher = watcher
     }
 

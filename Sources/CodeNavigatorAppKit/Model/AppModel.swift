@@ -387,12 +387,32 @@ public final class AppModel {
         if lastGitMarkerPath != status.filePath || didSave {
             lastGitMarkerPath = status.filePath
             gitMarkerTask = Task { await refreshGitMarkers() }
+        } else if status.isDirty {
+            // 타이핑하는 동안에도 막대가 따라와야 한다. 이 핸들러는 커서가 움직일 때마다
+            // 불리므로 **잠깐 뜸을 들인다** — 매 글자마다 git 을 부르면 프로세스가 그만큼 뜬다.
+            gitMarkerTask?.cancel()
+            gitMarkerTask = Task {
+                try? await Task.sleep(for: .milliseconds(Self.gitMarkerDebounce))
+                guard !Task.isCancelled else { return }
+                await refreshGitMarkers()
+            }
         }
     }
 
     /// 열린 파일이 저장소와 어떻게 다른지 묻는 함수. 조립 지점에서 꽂는다 — 모델이 git 을
     /// 직접 부르면 화면 상태를 재는 데 진짜 저장소가 필요해진다.
     public var gitLineChangeProvider: (@Sendable (_ relativePath: String, _ root: String) -> [GitLineChange])?
+    /// 저장 전 버퍼 내용을 저장소와 견주는 함수. 사용자가 타이핑하는 동안에도 막대가 보여야
+    /// 한다 — 저장하기 전 내용은 디스크에 없어서 `git diff` 가 못 본다.
+    public var gitBufferChangeProvider: (
+        @Sendable (_ relativePath: String, _ root: String, _ buffer: String) -> [GitLineChange]
+    )?
+    /// 편집기가 들고 있는 저장 전 내용을 읽는 함수.
+    public var editorBufferReader: (@Sendable (String) async -> String?)?
+
+    /// 타이핑이 멎기를 기다리는 시간(밀리초). 짧으면 프로세스가 자주 뜨고, 길면 막대가
+    /// 굼떠 보인다.
+    static let gitMarkerDebounce = 350
 
     /// 마지막으로 표시를 계산한 파일. 같은 파일이면 커서가 움직여도 다시 묻지 않는다.
     private var lastGitMarkerPath: String?
@@ -412,9 +432,21 @@ public final class AppModel {
         }
 
         let relativePath = Self.relativePath(of: absolutePath, under: root)
+
+        // 저장 전 편집이 있으면 **버퍼**를 저장소와 견준다. 디스크만 보면 저장하기 전까지
+        // 아무 표시도 안 나오는데, IntelliJ 는 타이핑하는 즉시 그린다.
+        var buffer: String?
+        if editorStatus?.isDirty == true, let editorBufferReader {
+            buffer = await editorBufferReader(absolutePath)
+        }
+
         // git 은 프로세스를 띄운다. 창을 멈추게 두지 않는다.
+        let bufferProvider = gitBufferChangeProvider
         let changes = await Task.detached(priority: .utility) {
-            gitLineChangeProvider(relativePath, root)
+            if let buffer, let bufferProvider {
+                return bufferProvider(relativePath, root, buffer)
+            }
+            return gitLineChangeProvider(relativePath, root)
         }.value
 
         // **변경이 없어도 보낸다.** 빈 결과라고 안 보내면 앞서 놓인 막대가 남아서,
@@ -546,19 +578,36 @@ public final class AppModel {
         try? await editorSession.sendKeys(notation)
     }
 
+    /// 지금 열린 파일이 자바인지. 브레이크포인트를 걸 수 있는지가 이것으로 갈린다.
+    var isJavaFileOpen: Bool {
+        editorStatus?.filePath?.hasSuffix(".java") == true
+    }
+
     public func sendMouse(_ event: EditorMouseEvent) async {
         guard !isEditorInputBlocked else {
             return
         }
-        // 디버거가 붙어 있을 때만 거터를 가로챈다. 아니면 줄 번호를 누를 때마다 아무 일도
-        // 안 일어나는 것을 디버깅 안 하는 사람이 겪는다.
+        // **붙어 있지 않아도 거터를 가로챈다.**
+        //
+        // 예전에는 붙어 있을 때만 그랬다 — 디버깅 안 하는 사람이 줄 번호를 누를 때마다
+        // 아무 일도 안 일어나는 것을 겪지 않게. 그런데 그 판단의 대가가 더 컸다: 디버깅을
+        // **하려는** 사람이 브레이크포인트를 찍을 방법이 없어진다. 먼저 붙어야 하는데,
+        // 붙이려면 실행해야 하고, 실행하면 이미 지나간 뒤다.
+        //
+        // 자바 파일이 아니면 클릭은 그대로 편집기로 간다.
         //
         // **누를 때만** 토글한다. 뗄 때도 하면 한 번 눌러 두 번 토글돼 아무 일도 안 일어난
         // 것처럼 보인다.
-        if debug.connection.isAttached, event.action == .press, event.button == .left,
+        if event.action == .press, event.button == .left,
            // `try?` 가 옵셔널을 두 겹으로 감싸므로 한 번에 푼다. 안 풀면 "거터가 아님"과
            // "물어보다 실패함"이 같은 값이 되고, 실패를 거터 클릭으로 읽는다.
            let line = (try? await editorSession.gutterLine(atRow: event.row, column: event.column)) ?? nil {
+            // 자바가 아니면 브레이크포인트를 걸 수 없다. 그때는 조용히 편집기로 넘긴다 —
+            // 마크다운 거터를 누를 때마다 "Java 파일에서만" 을 띄우면 그게 더 성가시다.
+            guard isJavaFileOpen else {
+                try? await editorSession.sendMouse(event)
+                return
+            }
             await toggleBreakpoint(atLine: line)
             // 편집기로 넘기지 않는다. 넘기면 커서가 그 줄로 뛰고, 사용자는 브레이크포인트를
             // 걸었을 뿐인데 보던 자리를 잃는다.
@@ -663,7 +712,13 @@ public final class AppModel {
             }
             try? await Task.sleep(for: .milliseconds(400))
         }
-        show(StatusMessage(kind: .error, text: "✕ 띄운 프로세스에 붙지 못했습니다 — JVM 인가요?"))
+        // **디버거를 탓하지 않는다.** 붙을 대상이 없는 흔한 이유는 실행이 실패한 것이다 —
+        // 명령을 못 찾거나 빌드가 깨지면 JVM 은 뜨지도 않는다. "연결 실패" 만 말하면
+        // 사용자는 디버거를 고치려 든다.
+        show(StatusMessage(
+            kind: .error,
+            text: "✕ \(port) 에 붙을 대상이 없습니다 — 터미널 탭에서 실행이 실패하지 않았는지 보세요"
+        ))
     }
 
     /// 디버그 실행이 쓰는 포트. `-agentlib:jdwp` 예제가 거의 다 5005 를 쓴다.
@@ -1168,8 +1223,14 @@ public final class AppModel {
     }
 
     /// Closes a tab, in the engine as well as on screen (REQ-012 AC-3).
+    /// 닫은 탭의 검색 상태를 버리라고 알려 줄 곳. 조립 지점에서 꽂는다 — 모델이 검색
+    /// 모델을 직접 알면 둘이 서로를 붙들게 된다.
+    public var onTabClosed: (@MainActor (ProjectTabIdentifier) -> Void)?
+
     public func closeTab(_ identifier: ProjectTabIdentifier) async {
         try? await workspace.closeTab(identifier)
+        // 그 탭의 검색·참조 결과도 버린다. 안 버리면 오래 쓸수록 쌓이기만 한다.
+        onTabClosed?(identifier)
         indexWatchers[identifier]?.cancel()
         indexWatchers[identifier] = nil
         tabs.close(id: identifier)

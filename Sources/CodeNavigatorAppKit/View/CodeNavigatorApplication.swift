@@ -77,6 +77,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             + " debugger=\(model?.debugSessionFactory != nil ? "wired" : "MISSING")"
             + " detector=\(model?.runConfigurationDetector != nil ? "wired" : "MISSING")"
             + " git=\(model?.gitLineChangeProvider != nil ? "wired" : "MISSING")"
+            + " loginpath=\(LoginShellEnvironment.loginPath() != nil ? "wired" : "MISSING")"
     }
 
     /// Held so the editor session can be handed over synchronously after the one `await`
@@ -121,6 +122,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
                 model?.tabs.activeTabID
             }
         )
+        model.onTabClosed = { [weak search] identifier in search?.forgetTab(identifier) }
+
         // `gd` and `gr` enter through the same door as ⌘B and ⇧⌘B. REQ-015 AC-1 and AC-2 ask for
         // *the same* result, and the only way to guarantee that is to run the same code — a
         // parallel path would be similar until the day it was not. Going through the router
@@ -146,9 +149,29 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             try await JavaDebugSession.attach(host: host, port: port)
         }
         model.terminalSessionFactory = { NeovimTerminalSession() }
+        // Finder 로 띄운 앱은 로그인 셸의 PATH 를 물려받지 않는다. 얹어 주지 않으면
+        // `npm`·`node`·`gradle` 이 전부 "command not found" 다.
+        model.terminal.inheritedEnvironment = { LoginShellEnvironment.augmentedEnvironment() }
         model.runConfigurationDetector = { ProjectRunScanner.detect(projectRoot: $0) }
         model.gitLineChangeProvider = { relativePath, root in
             GitLineChangeProvider().changes(forFileAt: relativePath, repositoryRoot: root)
+        }
+        model.gitBufferChangeProvider = { relativePath, root, buffer in
+            GitLineChangeProvider().changes(
+                forFileAt: relativePath, repositoryRoot: root, bufferContents: buffer
+            )
+        }
+        model.editorBufferReader = { [weak editorSession] path in
+            // `try?` 가 옵셔널을 한 겹으로 눌러 준다 — 세션이 없거나 그 파일을 안 들고
+            // 있으면 여기서 nil 이고, 부르는 쪽은 디스크로 간다.
+            guard let session = editorSession,
+                  let lines = try? await session.bufferLines(forFileAt: path)
+            else {
+                return nil
+            }
+            // 마지막 개행을 붙인다. nvim 의 줄 목록에는 없지만 파일에는 있다 — 없으면
+            // 마지막 줄이 늘 다른 것으로 보인다.
+            return lines.joined(separator: "\n") + "\n"
         }
 
         sharedEditorSession = editorSession

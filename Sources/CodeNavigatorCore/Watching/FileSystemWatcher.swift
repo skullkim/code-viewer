@@ -61,7 +61,27 @@ final class FileSystemWatcher: @unchecked Sendable {
     ///
     /// 네트워크 볼륨이나 느린 디스크에서도 같은 모양이 된다. 그래서 만드는 일 자체를
     /// 감시자의 큐로 옮긴다.
-    func start() {
+    /// 감시를 시작한다. **돌아오면 이미 감시 중이다.**
+    ///
+    /// 만드는 일은 감시자의 큐에서 하고 여기서는 그것을 기다린다. 기다리는 방식이 중요하다 —
+    /// 메인 스레드를 **막지 않고 비운다**(`await`). 막으면 동의 관문의 대화상자가 뜰 수
+    /// 없어서 서로를 기다리는 교착이 된다.
+    ///
+    /// 기다리지 않고 그냥 던져 두면 `start()` 직후에 생긴 파일 변경을 놓친다. 실제로
+    /// 그렇게 만들었다가 테스트가 잡았다 — "돌아왔으니 감시 중" 이라는 약속은 부르는 쪽이
+    /// 이미 기대고 있는 것이다.
+    func start() async {
+        await withCheckedContinuation { continuation in
+            queue.async { [weak self] in
+                self?.createStream()
+                continuation.resume()
+            }
+        }
+    }
+
+    /// 기다릴 수 없는 자리를 위한 것. 되도록 `start()` 를 쓴다 — 이것을 쓰면 직후의 변경을
+    /// 놓칠 수 있다.
+    func startWithoutWaiting() {
         queue.async { [weak self] in
             self?.createStream()
         }
@@ -69,7 +89,7 @@ final class FileSystemWatcher: @unchecked Sendable {
 
     private func createStream() {
         stateLock.lock()
-        creationThreadForTesting = ObjectIdentifier(Thread.current)
+        createdOnMainThreadForTesting = Thread.isMainThread
         let alreadyRunning = stream != nil || isStopped
         stateLock.unlock()
         guard !alreadyRunning else { return }
@@ -152,7 +172,10 @@ final class FileSystemWatcher: @unchecked Sendable {
     /// 작업을 기다려 버려서, 어느 쪽이든 "이미 만들어졌다" 로 보인다. 실제로 그렇게 재려다
     /// 틀린 판정을 받았다. 지키려는 성질은 "부르는 스레드에서 만들지 않는다" 이므로 그것을
     /// 그대로 잰다.
-    private(set) var creationThreadForTesting: ObjectIdentifier?
+    ///
+    /// 재는 것은 "메인 스레드였는가" 다. 지켜야 할 성질이 그것이다 — 메인 스레드가 비어
+    /// 있어야 동의 관문의 대화상자가 뜬다.
+    private(set) var createdOnMainThreadForTesting: Bool?
 
     func stop() {
         // 잠금 아래에서 **꺼내 오고 비운다.** 큐에 `sync` 하면 `deinit` 이 그 큐에서 돌 때

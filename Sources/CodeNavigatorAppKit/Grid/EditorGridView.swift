@@ -31,6 +31,35 @@ final class EditorGridNSView: NSView {
     private var lastReportedGeometry: GridGeometry?
 
     override var acceptsFirstResponder: Bool { true }
+
+    // MARK: 접근성
+    //
+    // 그리드는 우리가 직접 그리는 뷰라 보조 기술에게는 **빈 사각형**이었다. 편집기 본문도
+    // 터미널 출력도 아무것도 안 읽힌다는 뜻이고, 화면을 실행해 보는 검사도 그래서 아무것도
+    // 못 봤다 — "터미널에 오류가 있나" 를 묻는 검사가 항상 통과했다. 볼 수 없는 것과 없는
+    // 것이 구별되지 않았다.
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .textArea }
+
+    /// 지금 화면에 그려진 글자.
+    ///
+    /// 셀은 그리기 순서로 오므로 줄·칸으로 다시 세운다. 빈 칸은 셀이 아예 없어서, 칸
+    /// 번호를 보고 공백을 채워야 글자가 원래 자리에 선다.
+    override func accessibilityValue() -> Any? {
+        guard let frame = frameToDraw else { return nil }
+        var rows: [Int: [Int: Character]] = [:]
+        for cell in frame.cells {
+            rows[cell.row, default: [:]][cell.column] = cell.character
+        }
+        return (0..<max(frame.rows, 0)).map { row -> String in
+            guard let columns = rows[row], let last = columns.keys.max() else { return "" }
+            return String((0...last).map { columns[$0] ?? " " })
+        }.joined(separator: "\n")
+    }
+
+    override func accessibilityLabel() -> String? { "편집기 그리드" }
     override var isFlipped: Bool { false }
 
     /// The shell owns the layout. Claiming a size here is what let the editor push the

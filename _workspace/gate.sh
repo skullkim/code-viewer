@@ -619,6 +619,23 @@ else
     fail "verify-bundle --self-test — 검사기가 잡아야 할 것을 못 잡는다"
 fi
 
+# ---------------------------------------------------------------------------
+# E2E 스모크 — **실제로 띄워서 눌러 본다.**
+#
+# 왜 게이트에 있나: 단위 테스트 1800개를 전부 통과한 채로 사용자가 결함 셋을 발견했다 —
+# GUI 앱의 PATH(homebrew 도구가 안 보임), 거터 브레이크포인트(붙기 전에는 안 찍힘),
+# 저장 전 변경 표시. 셋 다 "코드가 맞는가" 가 아니라 "띄워서 눌렀을 때 되는가" 의 문제라,
+# 실행해 보는 검사만 잡을 수 있다.
+#
+# 자체 검사를 함께 돌린다. 아무것도 못 보는 검사기는 초록불과 구별되지 않는다.
+section "E2E: 실제 앱 스모크"
+if E2E_OUTPUT="$("$REPO_ROOT/scripts/e2e-smoke.sh" --self-test 2>&1)"; then
+    pass "e2e-smoke --self-test (열기·감지·파일·실행 + 검사기 자체 검사)"
+else
+    printf '%s\n' "$E2E_OUTPUT" | sed 's/^/    /'
+    fail "e2e-smoke — 실제 앱에서 핵심 흐름이 안 된다"
+fi
+
 section "백엔드: SC-8 유휴 메모리 (격리 측정)"
 if require_isolation_for_measurement; then
 MEMORY_OUTPUT="$(swift test --filter 'SearchPerformanceTests/idleMemoryAfterIndexingWithinBudget' 2>&1)"

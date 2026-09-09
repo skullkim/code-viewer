@@ -172,10 +172,9 @@ public actor NeovimEditorSession: EditorSession {
         let channel = NeovimChannel()
         self.channel = channel
         do {
-            // No `--clean`: the user's configuration must load exactly as it would in a terminal.
             try await channel.start(
                 executableURL: executableURL,
-                arguments: ["--cmd", "cd \(shellQuoted(projectRoot.path))"],
+                arguments: Self.launchArguments(projectRoot: projectRoot.path, quote: shellQuoted),
                 environment: environmentOverrideForTesting,
                 workingDirectory: projectRoot
             )
@@ -1506,7 +1505,25 @@ public actor NeovimEditorSession: EditorSession {
     /// differ from the canonical path by a symlink (`/var` vs `/private/var` on macOS) while
     /// naming the same file. Comparing the strings as given would answer "not open" for a file
     /// that is open.
-    func bufferLines(forFileAt canonicalPath: String) async throws -> [String]? {
+    /// 편집기 nvim 을 띄우는 인자.
+    ///
+    /// **사용자 설정은 그대로 읽는다.** `--clean` 을 잠깐 넣어 봤다가 되돌렸다.
+    ///
+    /// 강조가 기계마다 다른 것은 사실이고 그 원인도 사용자 colorscheme 이 맞다. 그런데
+    /// `--clean` 은 강조와 함께 **키맵도 버린다** — 사용자가 `gd` 를 직접 매핑해 뒀으면
+    /// 그것을 존중한다는 규칙이 통째로 깨졌고, 테스트 다섯 개가 그것을 잡았다.
+    ///
+    /// 불만은 강조에 한정된다. 그래서 설정은 읽되 **우리 강조가 항상 마지막에 이기게**
+    /// 한다 — `NeovimHighlightScript` 가 colorscheme 이 바뀔 때마다 다시 심는다.
+    static func launchArguments(projectRoot: String, quote: (String) -> String) -> [String] {
+        ["--cmd", "cd \(quote(projectRoot))"]
+    }
+
+    /// 편집기가 들고 있는 저장 전 내용.
+    ///
+    /// 공개하는 이유는 변경 막대다 — 저장하기 전 내용은 디스크에 없어서 `git diff` 가
+    /// 못 보고, 그러면 타이핑하는 동안 아무 표시도 안 나온다.
+    public func bufferLines(forFileAt canonicalPath: String) async throws -> [String]? {
         guard let channel, isUserInterfaceAttached else {
             return nil
         }

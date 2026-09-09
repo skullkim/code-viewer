@@ -11,39 +11,64 @@ import CodeNavigatorContract
 @Observable
 public final class SearchModel {
 
-    private var storedReferencePhase: ReferencePhase = .idle
-    private var storedReferenceSymbolName: String?
-    private var storedSelectedReferenceID: String?
-
-    private var storedTextSearchPhase: TextSearchPhase = .idle
-    private var storedLastTextSearchResult: TextSearchResult?
-    private var storedTextSearchElapsedSeconds: Double?
-    private var storedSelectedTextSearchItemID: String?
-
-    /// 결과를 가져온 탭. 활성 탭과 다르면 그 결과는 이 화면의 것이 아니다.
-    private var resultsTabID: ProjectTabIdentifier?
-
-    /// 지금 보관 중인 결과가 **다른 탭**의 것인가.
+    /// 한 탭이 들고 있는 검색 상태.
     ///
-    /// 탭 전환 때 지우는 대신 읽을 때 판단한다 — 지우는 쪽은 누군가 호출을 잊으면 조용히
-    /// 깨지고, 실제로 잊혀 있었다(`AppModel.activateTab` 은 이 모델에 아무 말도 하지 않는다).
-    /// 파생값은 잊을 수가 없다.
-    private var holdsAnotherTabsResults: Bool {
-        guard let resultsTabID else { return false }
-        guard let active = activeTabProvider() else { return false }
-        return resultsTabID != active
+    /// **탭마다 따로 둔다.** 예전에는 자리가 하나뿐이고 다른 탭의 결과를 읽을 때 숨기기만
+    /// 했다 — A 에서 찾고 B 에서 찾은 뒤 A 로 돌아오면 A 의 결과는 이미 덮여 사라졌다.
+    /// 프로젝트를 오가며 읽는 사람에게는 매번 다시 찾으라는 말과 같다.
+    private struct TabSearchState {
+        var referencePhase: ReferencePhase = .idle
+        var referenceSymbolName: String?
+        var selectedReferenceID: String?
+        var textSearchPhase: TextSearchPhase = .idle
+        var lastTextSearchResult: TextSearchResult?
+        var textSearchElapsedSeconds: Double?
+        var selectedTextSearchItemID: String?
+        var textSearchQuery: String = ""
+        var textSearchMode: TextSearchMode = .literal
     }
 
-    public var referencePhase: ReferencePhase { holdsAnotherTabsResults ? .idle : storedReferencePhase }
-    public var referenceSymbolName: String? { holdsAnotherTabsResults ? nil : storedReferenceSymbolName }
-    public var selectedReferenceID: String? { holdsAnotherTabsResults ? nil : storedSelectedReferenceID }
+    private var statesByTab: [ProjectTabIdentifier: TabSearchState] = [:]
+    /// 열린 탭이 없을 때 쓰는 자리. 없으면 이 화면이 아무것도 못 담는다.
+    private var untabbedState = TabSearchState()
 
-    public var textSearchPhase: TextSearchPhase { holdsAnotherTabsResults ? .idle : storedTextSearchPhase }
-    public var lastTextSearchResult: TextSearchResult? { holdsAnotherTabsResults ? nil : storedLastTextSearchResult }
-    public var textSearchElapsedSeconds: Double? { holdsAnotherTabsResults ? nil : storedTextSearchElapsedSeconds }
-    public var selectedTextSearchItemID: String? { holdsAnotherTabsResults ? nil : storedSelectedTextSearchItemID }
-    public var textSearchQuery: String = ""
-    public var textSearchMode: TextSearchMode = .literal
+    /// 지금 활성 탭의 상태. 읽고 쓰는 모든 곳이 이것을 지나간다 — 어디선가 갱신을 잊어
+    /// 탭이 옆 탭의 결과를 보여 주는 일이 생기지 않는다.
+    private var current: TabSearchState {
+        get {
+            guard let tab = activeTabProvider() else { return untabbedState }
+            return statesByTab[tab] ?? TabSearchState()
+        }
+        set {
+            guard let tab = activeTabProvider() else {
+                untabbedState = newValue
+                return
+            }
+            statesByTab[tab] = newValue
+        }
+    }
+
+    /// 탭을 닫으면 그 상태도 버린다. 안 버리면 오래 쓸수록 쌓이기만 한다.
+    public func forgetTab(_ tab: ProjectTabIdentifier) {
+        statesByTab.removeValue(forKey: tab)
+    }
+
+    public var referencePhase: ReferencePhase { current.referencePhase }
+    public var referenceSymbolName: String? { current.referenceSymbolName }
+    public var selectedReferenceID: String? { current.selectedReferenceID }
+
+    public var textSearchPhase: TextSearchPhase { current.textSearchPhase }
+    public var lastTextSearchResult: TextSearchResult? { current.lastTextSearchResult }
+    public var textSearchElapsedSeconds: Double? { current.textSearchElapsedSeconds }
+    public var selectedTextSearchItemID: String? { current.selectedTextSearchItemID }
+    public var textSearchQuery: String {
+        get { current.textSearchQuery }
+        set { current.textSearchQuery = newValue }
+    }
+    public var textSearchMode: TextSearchMode {
+        get { current.textSearchMode }
+        set { current.textSearchMode = newValue }
+    }
 
     /// Reuses the panel view's own tab type rather than declaring a parallel one — two
     /// enums for one concept drift.
@@ -74,23 +99,22 @@ public final class SearchModel {
     // MARK: References (REQ-006)
 
     public func showReferences(to symbolName: String, from origin: ReferenceQueryOrigin? = nil) async {
-        resultsTabID = activeTabProvider()
-        storedReferenceSymbolName = symbolName
+        current.referenceSymbolName = symbolName
         selectedTab = .references
-        storedSelectedReferenceID = nil
-        storedReferencePhase = .searching
+        current.selectedReferenceID = nil
+        current.referencePhase = .searching
 
         do {
-            storedReferencePhase = .results(try await projectSession.references(to: symbolName, from: origin))
+            current.referencePhase = .results(try await projectSession.references(to: symbolName, from: origin))
         } catch let error as NavigatorError {
-            storedReferencePhase = .failed(error)
+            current.referencePhase = .failed(error)
         } catch {
-            storedReferencePhase = .failed(.editorRequestFailed(method: "references", reason: "\(error)"))
+            current.referencePhase = .failed(.editorRequestFailed(method: "references", reason: "\(error)"))
         }
     }
 
     public func selectReference(_ reference: Reference) {
-        storedSelectedReferenceID = reference.id
+        current.selectedReferenceID = reference.id
     }
 
     public func referencePresentation(indexState: IndexState) -> ReferencePresentation {
@@ -103,8 +127,16 @@ public final class SearchModel {
 
     // MARK: Symbol search (REQ-007)
 
+    /// 심볼 검색은 ⌘P 모달의 것이라 탭별로 간직하지 않는다 — 닫으면 사라지는 화면이다.
+    /// 다만 **다른 탭의 결과를 보여 주지는 않는다**: 그 줄 번호로 엉뚱한 파일이 열린다.
     private var storedSymbolResults: [SymbolSearchResult] = []
-    public var symbolResults: [SymbolSearchResult] { holdsAnotherTabsResults ? [] : storedSymbolResults }
+    private var symbolResultsTabID: ProjectTabIdentifier?
+    public var symbolResults: [SymbolSearchResult] {
+        guard let symbolResultsTabID, symbolResultsTabID != activeTabProvider() else {
+            return storedSymbolResults
+        }
+        return []
+    }
     public private(set) var symbolSelectedIndex = 0
     /// When the query in flight started, for the 200ms spinner rule (design §3 W-3).
     public private(set) var symbolSearchStartedAt: Date?
@@ -119,7 +151,7 @@ public final class SearchModel {
             return
         }
 
-        resultsTabID = activeTabProvider()
+        symbolResultsTabID = activeTabProvider()
         symbolSearchStartedAt = clock()
         let results = await projectSession.searchSymbols(matching: query)
 
@@ -168,28 +200,27 @@ public final class SearchModel {
     public func runTextSearch() async {
         let query = textSearchQuery
         guard !query.isEmpty else {
-            storedTextSearchPhase = .idle
+            current.textSearchPhase = .idle
             return
         }
 
-        resultsTabID = activeTabProvider()
-        storedSelectedTextSearchItemID = nil
-        storedTextSearchPhase = .searching
+        current.selectedTextSearchItemID = nil
+        current.textSearchPhase = .searching
         let startedAt = clock()
 
         do {
             let result = try await projectSession.searchText(query, mode: textSearchMode)
             // Timed here rather than in the engine: a duration measured before rendering
             // would report less than the user waited.
-            storedTextSearchElapsedSeconds = clock().timeIntervalSince(startedAt)
-            storedLastTextSearchResult = result
-            storedTextSearchPhase = .results(result)
+            current.textSearchElapsedSeconds = clock().timeIntervalSince(startedAt)
+            current.lastTextSearchResult = result
+            current.textSearchPhase = .results(result)
         } catch let error as NavigatorError {
             // The previous results stay on screen, dimmed. An invalid regular expression
             // is an error, never an empty result set (SC-6).
-            storedTextSearchPhase = .failed(error)
+            current.textSearchPhase = .failed(error)
         } catch {
-            storedTextSearchPhase = .failed(.editorRequestFailed(method: "searchText", reason: "\(error)"))
+            current.textSearchPhase = .failed(.editorRequestFailed(method: "searchText", reason: "\(error)"))
         }
     }
 
@@ -202,7 +233,7 @@ public final class SearchModel {
     }
 
     public func selectTextSearchItem(_ item: TextSearchItem) {
-        storedSelectedTextSearchItemID = item.id
+        current.selectedTextSearchItemID = item.id
     }
 
     public func textSearchPresentation() -> TextSearchPresentation {

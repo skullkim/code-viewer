@@ -10,7 +10,9 @@ public struct DebugBreakpoint: Sendable, Hashable, Identifiable {
     public let path: String
     public let line: Int
     public let className: String
-    public let requestID: Int32
+    /// JVM 이 준 요청 id. 붙기 전에 찍은 것은 `DebugModel.pendingRequestID` 이고,
+    /// 붙을 때 진짜 값으로 바뀐다 — 그래서 `var` 다.
+    public var requestID: Int32
     /// "i == 500" 같은 조건. 없으면 항상 멈춘다.
     public var condition: BreakpointCondition?
 
@@ -168,14 +170,49 @@ public final class DebugModel {
 
     // MARK: 붙기 · 떼기
 
+    /// 아직 JVM 에 심지 않은 브레이크포인트의 요청 id. 진짜 id 는 1부터라 겹치지 않는다.
+    static let pendingRequestID: Int32 = 0
+
     public func attach(session: any DebugSession, host: String, port: UInt16) async {
         self.session = session
         connection = .attached(host: host, port: port)
         lastError = nil
+        // 붙기 전에 찍어 둔 것을 지금 심는다. 안 심으면 목록에는 있는데 멈추지 않는다 —
+        // 사용자는 "브레이크포인트가 안 먹는다" 를 겪는다.
+        await installPendingBreakpoints(on: session)
         // 이 JVM 이 무엇을 허용하는지 먼저 묻는다. 못 하는 것을 메뉴에 켜 두면 사용자는
         // 눌러 보고 알 수 없는 오류를 본다.
         capabilities = (try? await session.capabilities()) ?? .none
         startListening(host: host, port: port)
+    }
+
+    private func installPendingBreakpoints(on session: any DebugSession) async {
+        var installed: [DebugBreakpoint] = []
+        var failures: [String] = []
+
+        for breakpoint in breakpoints {
+            guard breakpoint.requestID == Self.pendingRequestID else {
+                installed.append(breakpoint)
+                continue
+            }
+            do {
+                let requestID = try await session.setBreakpoint(
+                    className: breakpoint.className, line: breakpoint.line
+                )
+                var placed = breakpoint
+                placed.requestID = requestID
+                installed.append(placed)
+            } catch {
+                // 걸리지 않은 것을 목록에 남기지 않는다. 남기면 사용자는 걸린 줄 알고,
+                // 안 멈추는 것을 "아직 그 줄을 안 지났다" 로 읽는다.
+                failures.append("\(breakpoint.className):\(breakpoint.line)")
+            }
+        }
+
+        breakpoints = installed
+        if !failures.isEmpty {
+            lastError = "이 브레이크포인트는 걸지 못했습니다: \(failures.joined(separator: ", "))"
+        }
     }
 
     public func reportAttachFailure(_ reason: String) {
@@ -204,16 +241,41 @@ public final class DebugModel {
 
     // MARK: 브레이크포인트
 
-    public func toggleBreakpoint(path: String, line: Int, className: String) async {
-        guard let session else { return }
+    /// 화면이 거터에 그릴 줄 번호. **붙기 전에도 답한다.**
+    public func breakpointLines(inFileAt path: String) -> [Int] {
+        breakpoints.filter { $0.path == path }.map(\.line).sorted()
+    }
 
+    /// 브레이크포인트를 켜고 끈다.
+    ///
+    /// **붙어 있지 않아도 찍힌다.** 예전에는 `guard let session else { return }` 로 시작해서
+    /// 붙기 전에는 눌러도 아무 일도 안 일어났다 — 오류도, 표시도 없다. 그러면 "시작 코드에
+    /// 걸어 두고 디버그 실행" 이라는 가장 흔한 흐름이 아예 불가능하다. IntelliJ 는 언제든
+    /// 찍히고, 디버거가 붙을 때 심는다.
+    ///
+    /// 붙기 전에 찍은 것은 요청 id 가 없다(`pendingRequestID`). 붙을 때 진짜 id 로 바뀐다.
+    public func toggleBreakpoint(path: String, line: Int, className: String) async {
         if let existing = breakpoints.first(where: { $0.path == path && $0.line == line }) {
-            do {
-                try await session.clearBreakpoint(requestID: existing.requestID)
-                breakpoints.removeAll { $0.id == existing.id }
-            } catch {
-                lastError = "브레이크포인트를 지우지 못했습니다: \(error)"
+            // 아직 안 심은 것은 JVM 에 지울 것도 없다.
+            if let session, existing.requestID != Self.pendingRequestID {
+                do {
+                    try await session.clearBreakpoint(requestID: existing.requestID)
+                } catch {
+                    lastError = "브레이크포인트를 지우지 못했습니다: \(error)"
+                    return
+                }
             }
+            breakpoints.removeAll { $0.id == existing.id }
+            return
+        }
+
+        guard let session else {
+            // 아직 붙지 않았다. 자리만 기억해 두고 화면에 그린다.
+            breakpoints.append(DebugBreakpoint(
+                path: path, line: line, className: className,
+                requestID: Self.pendingRequestID, condition: nil
+            ))
+            lastError = nil
             return
         }
 

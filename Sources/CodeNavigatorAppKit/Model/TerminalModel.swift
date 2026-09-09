@@ -26,6 +26,16 @@ public final class TerminalModel {
     /// 디버그로 돌렸으면 그 포트. 붙을 때 이 값을 쓴다.
     public private(set) var lastDebugPort: UInt16?
 
+    /// 자식 프로세스가 물려받을 환경. 조립 지점에서 꽂는다.
+    ///
+    /// 기본값이 `ProcessInfo` 인 것은 함정이었다 — Finder 로 띄운 앱의 `PATH` 는
+    /// `/usr/bin:/bin:/usr/sbin:/sbin` 뿐이라 homebrew 도구가 전부 "command not found" 가
+    /// 된다. 터미널에서 앱을 띄우면 셸의 PATH 를 물려받아 잘 돼서, 개발 중에는 드러나지
+    /// 않는다. 조립 지점이 로그인 셸의 PATH 를 얹어 준다.
+    public var inheritedEnvironment: @Sendable () -> [String: String] = {
+        ProcessInfo.processInfo.environment
+    }
+
     private var session: (any TerminalSession)?
     private var gridTask: Task<Void, Never>?
     private var gridSize: (columns: Int, rows: Int) = (80, 12)
@@ -56,7 +66,7 @@ public final class TerminalModel {
 
         // 에이전트를 명령에 넣을지 환경변수에 넣을지는 설정이 안다. 여기서 다시 추측하면
         // Gradle 런처가 포트를 가로채는 결함이 그대로 돌아온다.
-        let inherited = ProcessInfo.processInfo.environment
+        let inherited = inheritedEnvironment()
         let launch: (command: String, environment: [String: String], port: UInt16?)
         if let debugPort {
             let resolved = configuration.debugLaunch(port: debugPort, inheriting: inherited)
