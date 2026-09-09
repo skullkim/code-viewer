@@ -87,16 +87,33 @@ public actor NeovimEditorSession: EditorSession {
 
     /// Creates a session. Pass `executableOverridePath` to use a specific Neovim build; by
     /// default the usual install locations are searched.
-    public init(executableOverridePath: String? = nil) {
+    /// 사용자의 `~/.config/nvim` 을 읽을지.
+    ///
+    /// **기본은 읽지 않는다.** 읽으면 각자의 colorscheme·플러그인이 우리가 심은 강조를
+    /// 덮어써서 같은 코드가 기계마다 다르게 보인다. 한 기계에서 고쳐도 다른 기계에서
+    /// 또 깨지는데, 그건 우리가 고칠 수 있는 문제가 아니다 — 남의 설정이 무엇을 할지
+    /// 우리는 모른다.
+    ///
+    /// 자기 키맵을 그대로 쓰고 싶은 사람은 설정에서 켤 수 있다. 그때는 강조가 그 설정을
+    /// 따라간다는 뜻이고, 그 대가를 알고 고르는 것이다.
+    public var usesUserConfiguration: Bool
+
+    public init(executableOverridePath: String? = nil, usesUserConfiguration: Bool = false) {
         self.executableLocator = NeovimExecutableLocator()
         self.executableOverridePath = executableOverridePath
+        self.usesUserConfiguration = usesUserConfiguration
     }
 
     /// Lets tests describe a machine where Neovim is missing, which the public initializer
     /// deliberately cannot express.
-    init(executableLocator: NeovimExecutableLocator, executableOverridePath: String? = nil) {
+    init(
+        executableLocator: NeovimExecutableLocator,
+        executableOverridePath: String? = nil,
+        usesUserConfiguration: Bool = false
+    ) {
         self.executableLocator = executableLocator
         self.executableOverridePath = executableOverridePath
+        self.usesUserConfiguration = usesUserConfiguration
     }
 
     // MARK: - Lifecycle
@@ -174,7 +191,11 @@ public actor NeovimEditorSession: EditorSession {
         do {
             try await channel.start(
                 executableURL: executableURL,
-                arguments: Self.launchArguments(projectRoot: projectRoot.path, quote: shellQuoted),
+                arguments: Self.launchArguments(
+                    projectRoot: projectRoot.path,
+                    usesUserConfiguration: usesUserConfiguration,
+                    quote: shellQuoted
+                ),
                 environment: environmentOverrideForTesting,
                 workingDirectory: projectRoot
             )
@@ -1507,16 +1528,28 @@ public actor NeovimEditorSession: EditorSession {
     /// that is open.
     /// 편집기 nvim 을 띄우는 인자.
     ///
-    /// **사용자 설정은 그대로 읽는다.** `--clean` 을 잠깐 넣어 봤다가 되돌렸다.
+    /// 편집기 nvim 을 띄우는 인자.
     ///
-    /// 강조가 기계마다 다른 것은 사실이고 그 원인도 사용자 colorscheme 이 맞다. 그런데
-    /// `--clean` 은 강조와 함께 **키맵도 버린다** — 사용자가 `gd` 를 직접 매핑해 뒀으면
-    /// 그것을 존중한다는 규칙이 통째로 깨졌고, 테스트 다섯 개가 그것을 잡았다.
+    /// **기본은 `--clean`** — 사용자의 `~/.config/nvim` 을 읽지 않는다.
     ///
-    /// 불만은 강조에 한정된다. 그래서 설정은 읽되 **우리 강조가 항상 마지막에 이기게**
-    /// 한다 — `NeovimHighlightScript` 가 colorscheme 이 바뀔 때마다 다시 심는다.
-    static func launchArguments(projectRoot: String, quote: (String) -> String) -> [String] {
-        ["--cmd", "cd \(quote(projectRoot))"]
+    /// 처음에는 반대였다("터미널에서와 똑같이 로드되어야 한다"). 그 대가를 사용자가 치렀다:
+    /// 각자의 colorscheme 과 플러그인이 우리 강조를 덮어써서 같은 코드가 기계마다 다르게
+    /// 보인다. 한 기계에서 맞춰도 다른 기계에서 또 깨진다 — 남의 설정이 무엇을 할지 우리는
+    /// 모르기 때문이다.
+    ///
+    /// `colorscheme` 이 바뀔 때 다시 심는 것으로 막아 보려 했지만 절반이다. 플러그인은
+    /// 자기 tree-sitter 설정과 쿼리를 들고 오고, 늦게 로드되며, 우리가 모르는 이벤트에서
+    /// 색을 바꾼다.
+    ///
+    /// 자기 키맵을 쓰고 싶은 사람은 설정에서 켠다. 그때는 강조가 그 설정을 따른다.
+    ///
+    /// INV-4 와 어긋나지 않는다 — 그 불변식은 사용자 설정을 **고치지 않는다**는 것이고,
+    /// 읽지 않는 것은 고치는 것이 아니다.
+    static func launchArguments(
+        projectRoot: String, usesUserConfiguration: Bool, quote: (String) -> String
+    ) -> [String] {
+        let cd = ["--cmd", "cd \(quote(projectRoot))"]
+        return usesUserConfiguration ? cd : ["--clean"] + cd
     }
 
     /// 편집기가 들고 있는 저장 전 내용.

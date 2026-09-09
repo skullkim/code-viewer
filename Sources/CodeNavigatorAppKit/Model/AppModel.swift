@@ -1317,7 +1317,8 @@ public final class AppModel {
             capabilities: debug.capabilities,
             isRunning: terminal.isRunning,
             canDebugSelected: selectedRunConfiguration?.canDebug ?? true,
-            keyboardOwner: focus.owner
+            keyboardOwner: focus.owner,
+            usesUserVimConfiguration: shell.usesUserVimConfiguration
         )
     }
 

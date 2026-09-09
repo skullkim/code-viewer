@@ -95,9 +95,13 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // `await` because the workspace is an actor. That is why this function is async and
         // the window is filled in a step later — assembling the graph is now a boundary
         // crossing, and pretending otherwise would mean building it twice.
+        // 편집기가 사용자 nvim 설정을 읽을지는 **엔진을 만들기 전에** 정해야 한다 —
+        // 프로세스 기동 인자라 나중에 못 바꾼다. 그래서 설정을 여기서 먼저 읽는다.
+        let storedPreferences = ShellPreferences(storage: UserDefaults.standard)
         let workspace = ProjectWorkspaceEngine(
             columns: AppModel.initialGridColumns,
-            rows: AppModel.initialGridRows
+            rows: AppModel.initialGridRows,
+            usesUserVimConfiguration: storedPreferences.usesUserVimConfiguration
         )
         let editorSession = await workspace.editorSession
         let model = AppModel(

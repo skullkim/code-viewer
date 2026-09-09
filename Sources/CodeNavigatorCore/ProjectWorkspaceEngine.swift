@@ -22,8 +22,16 @@ public actor ProjectWorkspaceEngine: ProjectWorkspace {
     private var activeIdentifier: ProjectTabIdentifier?
     private var saveObservationTask: Task<Void, Never>?
 
-    public init(columns: Int, rows: Int, editorExecutableOverridePath: String? = nil) {
-        self.editor = NeovimEditorSession(executableOverridePath: editorExecutableOverridePath)
+    public init(
+        columns: Int,
+        rows: Int,
+        editorExecutableOverridePath: String? = nil,
+        usesUserVimConfiguration: Bool = false
+    ) {
+        self.editor = NeovimEditorSession(
+            executableOverridePath: editorExecutableOverridePath,
+            usesUserConfiguration: usesUserVimConfiguration
+        )
         self.initialColumns = max(columns, 1)
         self.initialRows = max(rows, 1)
     }

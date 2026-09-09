@@ -48,7 +48,7 @@ struct NavigationKeyTests {
     func theNavigationKeysAskTheApplicationForTheMatchingAction() async throws {
         let fixture = TemporaryProjectFixture()
         fixture.write("src/UserService.ts", contents: "export class UserService {}\n")
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 20)
         defer { Task { await session.shutDown() } }
         try await session.openFile(atRelativePath: "src/UserService.ts", line: 1, recordJump: false)
@@ -69,7 +69,7 @@ struct NavigationKeyTests {
     func findingReferencesDoesNotWaitOutTheMappingTimeout() async throws {
         let fixture = TemporaryProjectFixture()
         fixture.write("a.ts", contents: "const UserService = 1;\n")
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 20)
         defer { Task { await session.shutDown() } }
 
@@ -97,7 +97,7 @@ struct NavigationKeyTests {
         let configurationHome = try makeUserConfiguration("-- 아무 매핑도 없다\n")
         defer { try? FileManager.default.removeItem(at: configurationHome) }
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -123,7 +123,7 @@ struct NavigationKeyTests {
         )
         defer { try? FileManager.default.removeItem(at: configurationHome) }
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -156,7 +156,7 @@ struct NavigationKeyTests {
         )
         defer { try? FileManager.default.removeItem(at: configurationHome) }
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -184,7 +184,7 @@ struct NavigationKeyTests {
         )
         defer { try? FileManager.default.removeItem(at: configurationHome) }
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -222,7 +222,7 @@ struct NavigationKeyTests {
         let configurationHome = try makeUserConfiguration("-- 사용자 매핑 없음\n")
         defer { try? FileManager.default.removeItem(at: configurationHome) }
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -244,7 +244,7 @@ struct NavigationKeyTests {
     func theWordUnderTheCursorIsNeverAnEmptyString() async throws {
         let fixture = TemporaryProjectFixture()
         fixture.write("blank.ts", contents: "\n\n\n")
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.start(projectRoot: fixture.rootURL, columns: 80, rows: 12)
         defer { Task { await session.shutDown() } }
         try await session.openFile(atRelativePath: "blank.ts", line: 1, recordJump: false)
@@ -279,7 +279,7 @@ struct NavigationKeyTests {
         let modifiedBefore = try FileManager.default
             .attributesOfItem(atPath: configurationFile.path)[.modificationDate] as? Date
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )
@@ -305,7 +305,7 @@ struct NavigationKeyTests {
         let nvimDirectory = configurationHome.appendingPathComponent("nvim", isDirectory: true)
         let before = try FileManager.default.contentsOfDirectory(atPath: nvimDirectory.path).sorted()
 
-        let session = NeovimEditorSession()
+        let session = NeovimEditorSession(usesUserConfiguration: true)
         try await session.startWithUserConfigurationForTesting(
             configurationHome: configurationHome, projectRoot: fixture.rootURL, columns: 80, rows: 20
         )

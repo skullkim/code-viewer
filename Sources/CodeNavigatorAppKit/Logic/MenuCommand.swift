@@ -56,4 +56,6 @@ public enum MenuCommand: Sendable, Hashable, CaseIterable {
     case stopRun
     case openTerminal
     case editRunConfigurations
+    /// 편집기가 사용자의 nvim 설정을 읽을지 (재시작 필요).
+    case toggleUserVimConfiguration
 }

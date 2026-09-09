@@ -12,19 +12,38 @@ import Foundation
 @Suite("편집기 기동 격리")
 struct EditorLaunchIsolationTests {
 
-    private func arguments(root: String = "/tmp/project") -> [String] {
-        NeovimEditorSession.launchArguments(projectRoot: root, quote: { "'\($0)'" })
+    private func arguments(
+        root: String = "/tmp/project", usesUserConfiguration: Bool = false
+    ) -> [String] {
+        NeovimEditorSession.launchArguments(
+            projectRoot: root, usesUserConfiguration: usesUserConfiguration, quote: { "'\($0)'" }
+        )
     }
 
-    /// `--clean` 은 강조와 함께 **키맵도** 버린다. 사용자가 `gd` 를 직접 매핑해 뒀으면
-    /// 존중한다는 규칙이 깨져 테스트 다섯 개가 빨개졌다. 강조는 다른 방법으로 잡는다 —
-    /// colorscheme 이 바뀔 때마다 우리 것을 다시 심는다(`NeovimHighlightScript`).
-    @Test("설정은 읽되 --clean 으로 통째로 버리지는 않는다")
-    func keepsTheUserConfiguration() {
-        #expect(
-            arguments().contains("--clean") == false,
-            "--clean 은 사용자 키맵까지 버린다 — 불만은 강조에 한정된다"
-        )
+    /// **기본은 사용자 설정을 안 읽는다.**
+    ///
+    /// colorscheme 이 바뀔 때 우리 색을 다시 심는 방법을 먼저 썼는데 절반이었다 — 한
+    /// 기계에서 맞춰도 다른 기계에서 또 깨졌다. 플러그인은 자기 tree-sitter 설정과 쿼리를
+    /// 들고 오고, 늦게 로드되며, 우리가 모르는 이벤트에서 색을 바꾼다. 남의 설정이 무엇을
+    /// 할지 우리는 모른다.
+    @Test("기본은 사용자 설정을 읽지 않는다")
+    func isolatedByDefault() {
+        #expect(arguments().contains("--clean"), "설정이 우리 강조를 덮으면 기계마다 달라진다")
+    }
+
+    /// 자기 키맵을 쓰고 싶은 사람은 켤 수 있다. 그때는 강조가 그 설정을 따른다.
+    @Test("켜면 사용자 설정을 읽는다")
+    func honoursTheOptIn() {
+        #expect(arguments(usesUserConfiguration: true).contains("--clean") == false)
+    }
+
+    /// `--clean` 이 `--cmd` 보다 앞에 와야 한다. 뒤에 오면 그 사이에 설정이 읽힐 자리가 생긴다.
+    @Test("--clean 이 먼저 온다")
+    func cleanComesFirst() {
+        let arguments = arguments()
+        let clean = try! #require(arguments.firstIndex(of: "--clean"))
+        let cmd = try! #require(arguments.firstIndex(of: "--cmd"))
+        #expect(clean < cmd)
     }
 
     /// 프로젝트 폴더로 들어가는 것은 그대로여야 한다. 이게 빠지면 상대 경로가 전부 어긋난다.

@@ -58,6 +58,18 @@ public final class ShellPreferences {
         }
     }
 
+    /// 편집기가 사용자의 `~/.config/nvim` 을 읽을지.
+    ///
+    /// **기본은 아니오.** 읽으면 각자의 colorscheme·플러그인이 우리 강조를 덮어서 같은
+    /// 코드가 기계마다 다르게 보인다. 자기 키맵을 쓰고 싶으면 켜되, 강조가 그 설정을
+    /// 따라간다는 뜻이다.
+    public var usesUserVimConfiguration: Bool {
+        didSet {
+            storage.setData(Data((usesUserVimConfiguration ? "1" : "0").utf8),
+                            forKey: Self.usesUserVimConfigurationKey)
+        }
+    }
+
     /// 밝게 볼지 어둡게 볼지, 아니면 시스템을 따를지.
     public var appearance: AppearancePreference {
         didSet { storage.setData(Data(appearance.rawValue.utf8), forKey: Self.appearanceKey) }
@@ -77,6 +89,7 @@ public final class ShellPreferences {
     static let debugPanelHeightKey = "shell.debugPanelHeight"
     static let runConfigurationsKey = "shell.runConfigurations"
     static let bottomPanelTabKey = "shell.bottomPanelTab"
+    static let usesUserVimConfigurationKey = "shell.usesUserVimConfiguration"
 
     public init(storage: KeyValueStore) {
         self.storage = storage
@@ -96,6 +109,9 @@ public final class ShellPreferences {
         // 디버그 패널은 기본으로 닫혀 있다. 디버깅은 늘 하는 일이 아니고, 열려 있으면
         // 편집기 세로를 계속 먹는다.
         self.isDebugPanelVisible = Self.readFlag(storage, forKey: Self.debugPanelVisibleKey) ?? false
+        self.usesUserVimConfiguration = Self.readFlag(
+            storage, forKey: Self.usesUserVimConfigurationKey
+        ) ?? false
         self.runConfigurations = Self.readRunConfigurations(storage)
         self.bottomPanelTab = Self.readData(storage, forKey: Self.bottomPanelTabKey)
             .flatMap(BottomPanelTab.init(rawValue:)) ?? .debug

@@ -142,6 +142,17 @@ public enum MenuCommandRouter {
         case .openTerminal:
             await model.openShell()
 
+        case .toggleUserVimConfiguration:
+            model.shell.usesUserVimConfiguration.toggle()
+            // 기동 인자라 지금 뜬 편집기에는 반영되지 않는다. 조용히 넘기면 사용자는
+            // 껐는데 안 바뀐다고 읽는다.
+            model.show(StatusMessage(
+                kind: .success,
+                text: model.shell.usesUserVimConfiguration
+                    ? "내 Vim 설정 사용 — 앱을 다시 시작하면 적용됩니다"
+                    : "내 Vim 설정 사용 안 함 — 앱을 다시 시작하면 적용됩니다"
+            ))
+
         case .editRunConfigurations:
             // 감지된 것도 함께 연다. 고치려면 목록에 있어야 하고, 저장하는 순간 그것은
             // 사용자의 설정이 된다 — 그때부터 다음 스캔이 건드리지 않는다.

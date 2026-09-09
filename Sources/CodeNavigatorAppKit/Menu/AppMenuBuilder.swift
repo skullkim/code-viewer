@@ -95,6 +95,10 @@ public enum AppMenuBuilder {
             .separator,
             // 편집 메뉴의 Vim/표준과 같은 라디오 모양이다 — 셋 중 하나에만 체크가 붙는다.
             MenuItemDescriptor(title: "시스템 설정 따름", command: .selectAppearanceSystem),
+            .separator,
+            // 기본은 꺼짐 — 각자의 colorscheme·플러그인이 강조를 덮으면 같은 코드가
+            // 기계마다 다르게 보인다. 자기 키맵을 쓰려는 사람만 켠다.
+            MenuItemDescriptor(title: "내 Vim 설정 사용 (재시작 필요)", command: .toggleUserVimConfiguration),
             MenuItemDescriptor(title: "밝게", command: .selectAppearanceLight),
             MenuItemDescriptor(title: "어둡게", command: .selectAppearanceDark),
             .separator,

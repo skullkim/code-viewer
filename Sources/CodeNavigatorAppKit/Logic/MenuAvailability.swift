@@ -27,6 +27,8 @@ public struct MenuAvailability: Sendable, Hashable {
     /// 하는데, 그건 **편집기** 이야기다 — 검색창에 글자를 치는 동안에도 꺼 두면 전체 선택도
     /// 복사도 안 된다. 실제로 그렇게 되어 있었다.
     public let keyboardOwner: KeyboardFocusOwner
+    /// 편집기가 사용자 nvim 설정을 읽는 중인지. 메뉴의 체크 표시가 이것을 본다.
+    public let usesUserVimConfiguration: Bool
     /// 지금 고른 실행 설정을 디버그로 띄울 수 있는지.
     ///
     /// `npm run dev` 같은 명령에는 JDWP 로 못 붙는다. 버튼을 켜 두면 사용자는 눌러서
@@ -43,7 +45,8 @@ public struct MenuAvailability: Sendable, Hashable {
         capabilities: DebugCapabilities = .none,
         isRunning: Bool = false,
         canDebugSelected: Bool = true,
-        keyboardOwner: KeyboardFocusOwner = .editor
+        keyboardOwner: KeyboardFocusOwner = .editor,
+        usesUserVimConfiguration: Bool = false
     ) {
         self.inputMode = inputMode
         self.sessionState = sessionState
@@ -55,6 +58,7 @@ public struct MenuAvailability: Sendable, Hashable {
         self.isRunning = isRunning
         self.canDebugSelected = canDebugSelected
         self.keyboardOwner = keyboardOwner
+        self.usesUserVimConfiguration = usesUserVimConfiguration
     }
 
     private var isSessionRunning: Bool {
@@ -139,6 +143,11 @@ public struct MenuAvailability: Sendable, Hashable {
             if keyboardOwner.isTextField { return true }
             return isSessionRunning && inputMode == .standard
 
+        // 설정 항목은 프로젝트가 없어도 켜 둔다 — 켠 뒤 재시작해야 하므로, 프로젝트를
+        // 열기 전에 정하는 것이 오히려 자연스럽다.
+        case .toggleUserVimConfiguration:
+            return true
+
         case .toggleInputMode, .selectVimMode, .selectStandardMode:
             return isSessionRunning
 
@@ -150,6 +159,7 @@ public struct MenuAvailability: Sendable, Hashable {
     /// Whether the command carries a tick, for the mode items (design §3 W-9).
     public func isChecked(_ command: MenuCommand) -> Bool {
         switch command {
+        case .toggleUserVimConfiguration: return usesUserVimConfiguration
         case .selectVimMode: return inputMode == .vim
         case .selectStandardMode: return inputMode == .standard
         case .selectAppearanceSystem: return appearance == .system
