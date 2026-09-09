@@ -156,6 +156,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         // Finder 로 띄운 앱은 로그인 셸의 PATH 를 물려받지 않는다. 얹어 주지 않으면
         // `npm`·`node`·`gradle` 이 전부 "command not found" 다.
         model.terminal.inheritedEnvironment = { LoginShellEnvironment.augmentedEnvironment() }
+        // PATH 를 재는 것은 로그인 셸을 띄우는 일이다. **메인 스레드에서 하지 않는다** —
+        // 창이 그대로 멈춘다. 배경에서 한 번 재어 모델에 넣어 두고, 화면은 그 값을 읽는다.
+        Task.detached(priority: .utility) {
+            let path = LoginShellEnvironment.describeSearchPath()
+            await MainActor.run { model.setTerminalSearchPath(path) }
+        }
         model.runConfigurationDetector = { ProjectRunScanner.detect(projectRoot: $0) }
         model.gitLineChangeProvider = { relativePath, root in
             GitLineChangeProvider().changes(forFileAt: relativePath, repositoryRoot: root)

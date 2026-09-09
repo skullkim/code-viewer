@@ -23,8 +23,14 @@ cleanup() {
     local running
     running="$(pgrep -f "$BINARY" || true)"
     if [ -n "$running" ]; then
-        # 내가 띄운 것만 지목해서 내린다.
+        # 내가 띄운 것만 지목해서 내린다. **TERM 으로 곱게 내린다** — `kill -9` 로 죽이면
+        # macOS 가 다음 실행에서 "예기치 않게 종료됨" 을 띄우고, 그 상자가 창을 가린다.
         kill $running 2>/dev/null
+        local waited=0
+        while [ "$waited" -lt 10 ] && pgrep -f "$BINARY" >/dev/null 2>&1; do
+            /bin/sleep 1
+            waited=$((waited + 1))
+        done
     fi
     rm -rf "$FIXTURE"
 }
@@ -68,6 +74,11 @@ PY
 }
 
 launch() {
+    # macOS 의 "이전에 예기치 않게 종료됨 — 창을 다시 열까요?" 대화상자를 막는다.
+    # 그것이 뜨면 창 대신 그 상자가 앞에 오고, 이 검사는 앱이 안 뜬 것으로 읽는다.
+    # 실제로 그렇게 한 번 실패했다.
+    defaults write "$DEFAULTS_DOMAIN" ApplePersistenceIgnoreState -bool YES
+
     defaults write "$DEFAULTS_DOMAIN" "shell.openTabs" -data \
         "$(hexof "$(/usr/bin/python3 -c "import json,sys;print(json.dumps([sys.argv[1]]))" "$FIXTURE")")"
     defaults write "$DEFAULTS_DOMAIN" "shell.activeTab" -data "$(hexof "$FIXTURE")"
@@ -114,7 +125,13 @@ expect_visible() {
     return 1
 }
 
-click() { swift "$REPO_ROOT/scripts/click-ax.swift" CodeNavigator "$1" --mouse >/dev/null 2>&1; }
+click() {
+    # 앱이 앞에 있지 않으면 좌표 클릭이 Dock 이나 다른 창으로 간다 — 실제로 Dock 의
+    # 컨텍스트 메뉴를 열어 버린 적이 있다.
+    /usr/bin/osascript -e 'tell application "System Events" to tell process "CodeNavigator" to set frontmost to true' >/dev/null 2>&1
+    /bin/sleep 1
+    swift "$REPO_ROOT/scripts/click-ax.swift" CodeNavigator "$1" --mouse >/dev/null 2>&1
+}
 
 menu_click() {
     /usr/bin/osascript -e "tell application \"System Events\" to tell process \"CodeNavigator\" to set frontmost to true" >/dev/null 2>&1

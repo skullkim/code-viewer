@@ -31,11 +31,63 @@ public enum LoginShellEnvironment {
         }
     }
 
-    /// 이 사용자의 로그인 셸이 쓰는 PATH. 못 받으면 nil.
+    /// 흔한 도구 위치. **셸에서 못 받았을 때의 안전망**이다.
+    ///
+    /// 셸에 묻는 방법은 기계마다 실패한다 — zsh 는 `-l -c` 에서 `.zshrc` 를 읽지 않는데
+    /// 대부분 거기에 homebrew 를 넣고, fish 는 `$PATH` 가 목록이라 콜론으로 안 나오며,
+    /// 프로파일이 인사말을 찍으면 그 글자가 섞인다. 사용자가 다른 컴퓨터에서 겪은
+    /// `command not found` 가 이 자리다.
+    ///
+    /// 디스크에 실제로 있는 것만 넣는다 — 없는 폴더는 PATH 만 길게 한다.
+    static let wellKnownDirectories = [
+        "/opt/homebrew/bin", "/opt/homebrew/sbin",   // Apple Silicon homebrew
+        "/usr/local/bin", "/usr/local/sbin",         // Intel homebrew · 직접 설치
+        NSHomeDirectory() + "/.local/bin",
+        NSHomeDirectory() + "/.sdkman/candidates/java/current/bin",
+        "/usr/bin", "/bin", "/usr/sbin", "/sbin",
+    ]
+
+    /// 이 사용자의 로그인 셸이 쓰는 PATH 에 안전망을 합친 것. 못 받아도 nil 이 아니다.
     public static func loginPath() -> String? {
         cached.value {
-            resolvedPath(shellPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
+            composedPath(shellPath: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh")
         }
+    }
+
+    /// 셸이 준 것 + 실제로 있는 흔한 위치. **셸이 준 것이 앞에 온다** — 사용자가 골라 둔
+    /// 버전이 있으면 그것이 이겨야 한다.
+    static func composedPath(shellPath: String) -> String? {
+        var entries: [String] = []
+        var seen: Set<String> = []
+
+        func append(_ directory: String) {
+            guard !seen.contains(directory) else { return }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else {
+                return
+            }
+            seen.insert(directory)
+            entries.append(directory)
+        }
+
+        resolvedPath(shellPath: shellPath)?.split(separator: ":").forEach { append(String($0)) }
+        wellKnownDirectories.forEach(append)
+
+        return entries.isEmpty ? nil : entries.joined(separator: ":")
+    }
+
+    /// 셸이 뱉은 것에서 PATH 를 골라낸다.
+    ///
+    /// 프로파일이 인사말을 찍을 수 있으므로 **마지막 줄**을 본다. 콜론이 없으면 PATH 가
+    /// 아니다 — fish 의 `$PATH` 는 목록이라 공백으로 나온다.
+    static func parsePath(fromShellOutput output: String) -> String? {
+        let lines = output
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let last = lines.last, last.contains(":"), last.contains("/") else { return nil }
+        return last
     }
 
     static func resolvedPath(shellPath: String) -> String? {
@@ -43,10 +95,16 @@ public enum LoginShellEnvironment {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shellPath)
-        // `-l` 로 로그인 셸이 되어야 `.zprofile`·`.profile` 이 읽힌다. `-i`(대화형)는 쓰지
-        // 않는다 — 대화형 프로파일은 프롬프트를 그리거나 입력을 기다릴 수 있고, 그러면
-        // 여기서 멈춘다.
-        process.arguments = ["-l", "-c", "printf %s \"$PATH\""]
+        // `-l` 로 `.zprofile`·`.profile` 을, `-i` 로 `.zshrc` 를 읽는다.
+        //
+        // 예전에는 `-i` 를 뺐다 — 대화형 프로파일이 프롬프트를 그리거나 입력을 기다리면
+        // 여기서 멈추기 때문이다. 그런데 **zsh 는 `-l` 만으로는 `.zshrc` 를 안 읽고**,
+        // 대부분의 사람이 거기에 homebrew 를 넣는다. 사용자가 다른 컴퓨터에서 겪은
+        // `command not found` 가 그것이다.
+        //
+        // 멈추는 것은 표준 입력을 막고(`/dev/null`) 시간을 재서 막는다. 그래도 못 받으면
+        // 흔한 위치 안전망이 받는다.
+        process.arguments = ["-l", "-i", "-c", "printf %s \"$PATH\""]
         let output = Pipe()
         process.standardOutput = output
         // 프로파일이 찍는 인사말이 PATH 에 섞이지 않게 한다.
@@ -69,10 +127,7 @@ public enum LoginShellEnvironment {
         data.append(handle.readDataToEndOfFile())
         process.waitUntilExit()
 
-        let path = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        // 한 항목뿐이면 프로파일이 제대로 안 읽힌 것이다. 그런 값으로 덮어쓰면 오히려 나빠진다.
-        guard path.contains(":") else { return nil }
-        return path
+        return parsePath(fromShellOutput: String(decoding: data, as: UTF8.self))
     }
 
     /// 물려받은 환경의 `PATH` 만 바꾼다. 통째로 갈아 끼우면 사용자가 실행 설정에 적은 값이
@@ -87,5 +142,11 @@ public enum LoginShellEnvironment {
     /// 물려받은 환경에 로그인 PATH 를 얹은 것. 터미널이 이것을 쓴다.
     public static func augmentedEnvironment() -> [String: String] {
         augment(ProcessInfo.processInfo.environment, with: loginPath())
+    }
+
+    /// 지금 쓰는 PATH. 실행이 실패했을 때 화면이 보여 준다 — "command not found" 만으로는
+    /// 사용자도 우리도 무엇이 빠졌는지 알 수 없다.
+    public static func describeSearchPath() -> String {
+        loginPath() ?? ProcessInfo.processInfo.environment["PATH"] ?? "(없음)"
     }
 }

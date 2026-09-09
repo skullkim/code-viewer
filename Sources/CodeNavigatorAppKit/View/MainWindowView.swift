@@ -295,7 +295,8 @@ public struct MainWindowView: View {
             onGridSizeChange: { columns, rows in
                 Task { await model.terminal.resize(columns: columns, rows: rows) }
             },
-            onClaimKeyboard: { focus.userFocused(.terminal) }
+            onClaimKeyboard: { focus.userFocused(.terminal) },
+            searchPath: model.terminalSearchPath
         )
         // 돌기 시작하면 키보드를 가져오고, 멈추거나 탭이 바뀌면 돌려준다. 안 돌려주면
         // 편집기가 닿지 않게 되는데, 그건 이 앱의 주 흐름이 끝나 버리는 결함이다.

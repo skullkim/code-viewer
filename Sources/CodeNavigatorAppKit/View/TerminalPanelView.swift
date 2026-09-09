@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CodeNavigatorContract
 
@@ -24,6 +25,9 @@ public struct TerminalPanelView: View {
     private let onKey: (String) -> Void
     private let onGridSizeChange: (Int, Int) -> Void
     private let onClaimKeyboard: () -> Void
+    /// 지금 명령을 찾는 데 쓰는 PATH. 실행이 실패했을 때 보여 준다 —
+    /// "command not found" 만으로는 무엇이 빠졌는지 사용자도 우리도 알 수 없다.
+    private let searchPath: String
 
     public init(
         state: TerminalModel.State,
@@ -40,7 +44,8 @@ public struct TerminalPanelView: View {
         onEditConfigurations: @escaping () -> Void,
         onKey: @escaping (String) -> Void,
         onGridSizeChange: @escaping (Int, Int) -> Void,
-        onClaimKeyboard: @escaping () -> Void
+        onClaimKeyboard: @escaping () -> Void,
+        searchPath: String = ""
     ) {
         self.state = state
         self.grid = grid
@@ -57,6 +62,7 @@ public struct TerminalPanelView: View {
         self.onKey = onKey
         self.onGridSizeChange = onGridSizeChange
         self.onClaimKeyboard = onClaimKeyboard
+        self.searchPath = searchPath
     }
 
     public var body: some View {
@@ -124,6 +130,18 @@ public struct TerminalPanelView: View {
             }
             Button("셸", action: onOpenShell)
             Button("설정…", action: onEditConfigurations)
+            // 명령을 못 찾는 일이 잦고, 그때 사용자가 볼 수 있는 것은 셸의 한 줄뿐이다.
+            // 어떤 PATH 로 찾았는지를 여기서 보여 준다.
+            if !searchPath.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(searchPath, forType: .string)
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .help("명령을 찾는 경로 (눌러서 복사)\n\n" + searchPath.replacingOccurrences(of: ":", with: "\n"))
+                .accessibilityLabel("명령 검색 경로")
+            }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)

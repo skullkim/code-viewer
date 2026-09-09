@@ -73,6 +73,18 @@ public final class AppModel {
     public let terminal = TerminalModel()
     /// 실제 터미널 세션을 만드는 것. 조립 지점이 넣어 준다 — 이 모델은 Core 를 모른다.
     public var terminalSessionFactory: (@Sendable () -> any TerminalSession)?
+    /// 명령을 찾는 데 쓰는 PATH. 화면이 보여 준다 — "command not found" 만으로는 무엇이
+    /// 빠졌는지 알 수 없고, 그 답을 사용자에게 물어보게 된다.
+    ///
+    /// **저장된 값이다. 뷰가 물을 때 계산하지 않는다.** 계산하려면 로그인 셸을 띄워야
+    /// 하는데, 뷰 본문은 메인 스레드라 창이 그대로 멈춘다 — E2E 가 앱이 안 뜨는 것으로
+    /// 잡았다. FSEvents 때와 같은 실수를 한 번 더 했다.
+    public private(set) var terminalSearchPath: String = ""
+
+    /// 조립 지점이 배경에서 한 번 재어 넣는다.
+    public func setTerminalSearchPath(_ path: String) {
+        terminalSearchPath = path
+    }
     /// 지금 고른 실행 설정.
     public private(set) var selectedRunConfigurationID: String?
     /// 실제 JDWP 세션은 조립 지점이 넣어 준다. 이 모델은 Core 를 모른다 — 알면 화면 상태를

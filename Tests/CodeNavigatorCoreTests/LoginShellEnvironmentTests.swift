@@ -63,3 +63,71 @@ struct LoginShellEnvironmentTests {
         )
     }
 }
+
+/// 셸에서 PATH 를 못 받아도 **도구는 찾아야 한다.**
+///
+/// 사용자가 다른 컴퓨터에서 `command not found` 를 겪었다. 우리는 로그인 셸에 PATH 를
+/// 묻는데, 그 방법은 기계마다 실패할 수 있다:
+/// - zsh 는 `-l -c` 에서 `.zshrc` 를 **읽지 않는다.** 대부분 거기에 homebrew 를 넣는다.
+/// - fish 는 `$PATH` 가 목록이라 콜론으로 안 나온다.
+/// - 프로파일이 인사말을 찍으면 그 글자가 PATH 에 섞인다.
+///
+/// 그래서 셸 대답에만 기대지 않고, **디스크에 실제로 있는** 흔한 위치를 합친다.
+@Suite("PATH 안전망", .serialized)
+struct LoginPathFallbackTests {
+
+    @Test("셸에서 못 받아도 흔한 위치가 들어간다")
+    func fallsBackToWellKnownDirectories() {
+        let path = LoginShellEnvironment.composedPath(shellPath: "/그런/셸/없음")
+        let resolved = try! #require(path)
+        let entries = Set(resolved.split(separator: ":").map(String.init))
+        #expect(entries.contains("/usr/bin"))
+        #expect(entries.contains("/bin"))
+        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin") {
+            #expect(entries.contains("/opt/homebrew/bin"), "이 기계에 있는데 안 넣었다: \(resolved)")
+        }
+    }
+
+    /// 없는 폴더를 넣으면 PATH 만 길어지고 아무 도움이 안 된다.
+    @Test("없는 폴더는 넣지 않는다")
+    func skipsDirectoriesThatDoNotExist() {
+        let resolved = try! #require(LoginShellEnvironment.composedPath(shellPath: "/그런/셸/없음"))
+        for entry in resolved.split(separator: ":") {
+            #expect(
+                FileManager.default.fileExists(atPath: String(entry)),
+                "없는 폴더가 들어갔다: \(entry)"
+            )
+        }
+    }
+
+    @Test("같은 폴더를 두 번 넣지 않는다")
+    func hasNoDuplicates() {
+        let resolved = try! #require(LoginShellEnvironment.composedPath(shellPath: "/bin/zsh"))
+        let entries = resolved.split(separator: ":").map(String.init)
+        #expect(entries.count == Set(entries).count, "중복: \(entries)")
+    }
+
+    /// 셸이 준 것이 앞에 와야 한다. 사용자가 버전을 골라 둔 것이 있으면 그것이 이겨야 한다 —
+    /// 우리가 붙인 기본 위치가 앞서면 다른 java 가 잡힌다.
+    @Test("셸이 준 항목이 앞에 온다")
+    func shellEntriesComeFirst() throws {
+        let shellPath = try #require(LoginShellEnvironment.resolvedPath(shellPath: "/bin/zsh"))
+        let composed = try #require(LoginShellEnvironment.composedPath(shellPath: "/bin/zsh"))
+        let firstFromShell = try #require(shellPath.split(separator: ":").first)
+        #expect(composed.hasPrefix(String(firstFromShell)), "합친 PATH: \(composed)")
+    }
+
+    /// 프로파일이 인사말을 찍으면 그 글자가 PATH 로 들어온다.
+    @Test("PATH 로 안 보이는 대답은 버린다")
+    func rejectsOutputThatIsNotAPath() {
+        #expect(LoginShellEnvironment.parsePath(fromShellOutput: "안녕하세요\n") == nil)
+        #expect(LoginShellEnvironment.parsePath(fromShellOutput: "") == nil)
+        // fish 는 목록이라 공백으로 나온다 — 콜론이 없으면 PATH 가 아니다.
+        #expect(LoginShellEnvironment.parsePath(fromShellOutput: "/usr/bin /bin") == nil)
+        // 인사말이 앞에 붙어도 마지막 줄이 PATH 면 건진다.
+        #expect(
+            LoginShellEnvironment.parsePath(fromShellOutput: "환영합니다\n/opt/homebrew/bin:/usr/bin")
+                == "/opt/homebrew/bin:/usr/bin"
+        )
+    }
+}
