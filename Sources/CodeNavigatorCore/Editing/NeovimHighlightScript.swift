@@ -1,6 +1,27 @@
 /// The Lua the session runs for syntax colour and same-symbol highlighting (REQ-016).
 enum NeovimHighlightScript {
 
+    /// 우리가 색을 정해 주는 tree-sitter 캡처. **`@` 는 뺀 이름**이다.
+    ///
+    /// 위 Lua 의 `treeSitterGroups` 와 같은 목록이어야 한다. 두 벌이라 갈라질 수 있으므로,
+    /// 테스트가 쿼리 파일과 이것을 대조해 빠진 것을 잡는다 — 안 칠한 캡처는 사용자의
+    /// colorscheme 이 칠하고, 그러면 기계마다 다르게 보인다.
+    static let paintedTreeSitterCaptures: Set<String> = [
+        "type", "type.definition", "constructor", "module",
+        "function", "function.method", "function.call", "method", "function.builtin",
+        "attribute",
+        "constant", "number", "boolean", "constant.builtin",
+        "keyword", "keyword.function", "keyword.return", "keyword.type", "keyword.modifier",
+        "keyword.import", "keyword.conditional", "keyword.repeat", "keyword.exception",
+        "keyword.operator", "type.builtin", "variable.builtin",
+        "string", "character", "string.special", "string.escape",
+        "comment", "comment.documentation",
+        "variable", "property", "parameter", "variable.parameter", "variable.member",
+        "field", "operator", "punctuation", "punctuation.bracket", "punctuation.delimiter",
+        "punctuation.special", "label",
+    ]
+
+
     /// The highlight group the same-symbol match uses. Ours, so nothing else redefines it.
     static let sameSymbolGroup = "CodeNavigatorSameSymbol"
 
@@ -63,15 +84,32 @@ enum NeovimHighlightScript {
           -- tree-sitter 캡처. 정규식 문법은 클래스 이름·메서드 이름·애노테이션을 아예
           -- 분류하지 않아서(실측: Java 는 Comment·Constant·Type 셋뿐) 그 자리가 평문으로
           -- 남았다. 파서가 붙은 언어에서는 이 그룹들이 그 자리를 채운다.
+          --
+          -- **쿼리가 내는 캡처를 하나도 빠뜨리지 않는다.** 안 칠한 캡처는 사용자의
+          -- colorscheme 이 칠하고, 그러면 같은 코드가 기계마다 다르게 보인다. 실측으로
+          -- 우리 java 쿼리가 내는 것은 9종이었고 셋이 빠져 있었다
+          -- (`@type.builtin`·`@variable.builtin`·`@operator`).
           local treeSitterGroups = {
-            [colours.type]         = { '@type', '@type.definition', '@constructor' },
-            [colours.functionName] = { '@function', '@function.method', '@function.call', '@method' },
+            [colours.type]         = { '@type', '@type.definition', '@constructor', '@module' },
+            [colours.functionName] = { '@function', '@function.method', '@function.call', '@method', '@function.builtin' },
             [colours.annotation]   = { '@attribute' },
-            [colours.number]       = { '@constant', '@number', '@boolean' },
-            [colours.keyword]      = { '@keyword', '@keyword.function', '@keyword.return' },
-            [colours.string]       = { '@string' },
-            [colours.comment]      = { '@comment' },
-            [colours.normalForeground] = { '@variable', '@property', '@parameter' },
+            [colours.number]       = { '@constant', '@number', '@boolean', '@constant.builtin' },
+            -- 기본형(`int`)과 `this`·`super` 는 IntelliJ 에서 키워드 색이다.
+            [colours.keyword]      = {
+              '@keyword', '@keyword.function', '@keyword.return', '@keyword.type',
+              '@keyword.modifier', '@keyword.import', '@keyword.conditional', '@keyword.repeat',
+              '@keyword.exception', '@keyword.operator',
+              '@type.builtin', '@variable.builtin',
+            },
+            [colours.string]       = { '@string', '@character', '@string.special', '@string.escape' },
+            [colours.comment]      = { '@comment', '@comment.documentation' },
+            -- 연산자와 구두점은 본문 색이다. IntelliJ 도 그렇고, 안 칠하면 colorscheme 이
+            -- 칠해서 기계마다 달라진다.
+            [colours.normalForeground] = {
+              '@variable', '@property', '@parameter', '@variable.parameter', '@variable.member',
+              '@field', '@operator', '@punctuation', '@punctuation.bracket',
+              '@punctuation.delimiter', '@punctuation.special', '@label',
+            },
           }
           for colour, groups in pairs(treeSitterGroups) do
             for _, group in ipairs(groups) do
@@ -107,6 +145,29 @@ enum NeovimHighlightScript {
 
         _G.code_navigator_apply_palette = applyPalette
         applyPalette()
+
+        -- **colorscheme 이 바뀌면 다시 칠한다.**
+        --
+        -- 우리는 사용자 설정을 그대로 읽는다(키맵을 지키려고). 그 설정이 나중에
+        -- `colorscheme` 을 부르면 우리가 심은 색이 통째로 날아가고, 같은 코드가 기계마다
+        -- 다르게 보인다 — 사용자가 신고한 그 증상이다.
+        --
+        -- 한 번만 만든다. `--embed` 로 띄운 뒤 팔레트가 바뀔 때마다 이 스크립트가 다시
+        -- 도는데, 그때마다 autocmd 를 더하면 색 하나 바꿀 때 수십 번 다시 칠하게 된다.
+        if not _G.code_navigator_palette_autocmd then
+          _G.code_navigator_palette_autocmd = vim.api.nvim_create_autocmd('ColorScheme', {
+            callback = function()
+              -- 다시 칠하는 것이 또 ColorScheme 을 일으키지는 않는다(`nvim_set_hl` 은
+              -- colorscheme 을 바꾸지 않는다). 그래도 재진입을 막아 둔다.
+              if _G.code_navigator_repainting then
+                return
+              end
+              _G.code_navigator_repainting = true
+              pcall(_G.code_navigator_apply_palette)
+              _G.code_navigator_repainting = false
+            end,
+          })
+        end
 
         -- A colourscheme change wipes every group it defines. Re-apply after it, so the
         -- application's theme is what the user ends up looking at (AC-6).
