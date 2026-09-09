@@ -69,15 +69,12 @@ public enum RunConfigurationDetector {
             .filter(files.contains)
         guard let buildFile = buildFiles.first else { return nil }
 
-        let hasWrapper = files.contains(path(directory, "gradlew"))
-        let launcher = hasWrapper ? "./gradlew" : "gradle"
-        let script = read(buildFile) ?? ""
-
         // Spring Boot 가 있으면 `bootRun`. 없고 `application` 플러그인만 있으면 `run`.
         // 둘 다 없으면 띄울 것이 없는 프로젝트다 — `build` 를 넣으면 실행 버튼이 빌드를
         // 돌리고, 사용자는 서버가 안 뜬다고 읽는다.
+        let script = read(buildFile) ?? ""
         let task: String
-        if script.contains("org.springframework.boot") {
+        if containsPlugin("org.springframework.boot", in: script) {
             task = "bootRun"
         } else if containsApplicationPlugin(script) {
             task = "run"
@@ -85,14 +82,89 @@ public enum RunConfigurationDetector {
             return nil
         }
 
+        // **래퍼는 루트에만 있다.** 멀티모듈에서 `build.gradle.kts` 는 모듈마다 있지만
+        // `gradlew` 는 저장소 루트에 하나뿐이다. 모듈 폴더에서 래퍼를 찾다 못 찾아 맨
+        // `gradle` 로 떨어지면, 그건 대부분의 기계에 설치돼 있지 않다 —
+        // "command not found: gradle" 이 그것이다.
+        let root = gradleRoot(for: directory, files: files)
+        let launcher = files.contains(path(root, "gradlew")) ? "./gradlew" : "gradle"
+
+        // Gradle 은 **루트에서** 모듈을 경로로 지목해 돌린다. 모듈 폴더에서 `./gradlew` 를
+        // 부르면 그 파일이 거기 없다.
+        let modulePath = gradleModulePath(of: directory, under: root)
+        let target = modulePath.isEmpty ? task : "\(modulePath):\(task)"
+
         return RunConfiguration(
             name: label(directory, task),
-            command: "\(launcher) \(task)",
-            workingDirectory: directory,
+            command: "\(launcher) \(target)",
+            workingDirectory: root,
             environment: [:],
             // 런처 JVM 이 JAVA_TOOL_OPTIONS 를 가로챈다 — 실측된 결함이다.
             debugLaunch: .gradleDebugJvm
         )
+    }
+
+    /// 이 모듈이 속한 Maven 루트. `mvnw` 나 부모 `pom.xml` 이 있는 가장 가까운 조상.
+    private static func mavenRoot(for directory: String, files: [String]) -> String {
+        var candidate = directory
+        while true {
+            if candidate != directory,
+               files.contains(path(candidate, "pom.xml")) || files.contains(path(candidate, "mvnw")) {
+                return candidate
+            }
+            if candidate == directory, files.contains(path(candidate, "mvnw")) {
+                return candidate
+            }
+            guard !candidate.isEmpty else { return directory }
+            candidate = candidate.split(separator: "/").dropLast().joined(separator: "/")
+        }
+    }
+
+    /// `services/api` 를 루트 기준 상대 경로로. 루트 자신이면 빈 문자열.
+    private static func relativePath(of directory: String, under root: String) -> String {
+        guard directory != root else { return "" }
+        guard !root.isEmpty, directory.hasPrefix(root + "/") else { return directory }
+        return String(directory.dropFirst(root.count + 1))
+    }
+
+    /// 이 모듈이 속한 Gradle 루트. `gradlew` 나 `settings.gradle` 이 있는 가장 가까운
+    /// 조상이고, 없으면 프로젝트 루트다.
+    private static func gradleRoot(for directory: String, files: [String]) -> String {
+        var candidate = directory
+        while true {
+            let marks = ["gradlew", "settings.gradle", "settings.gradle.kts"]
+            if marks.contains(where: { files.contains(path(candidate, $0)) }) {
+                return candidate
+            }
+            guard !candidate.isEmpty else { return "" }
+            let parts = candidate.split(separator: "/").dropLast()
+            candidate = parts.joined(separator: "/")
+        }
+    }
+
+    /// `services/api` → `:services:api`. 루트 자신이면 빈 문자열.
+    private static func gradleModulePath(of directory: String, under root: String) -> String {
+        guard directory != root else { return "" }
+        var relative = directory
+        if !root.isEmpty, relative.hasPrefix(root + "/") {
+            relative = String(relative.dropFirst(root.count + 1))
+        }
+        guard !relative.isEmpty else { return "" }
+        return ":" + relative.split(separator: "/").joined(separator: ":")
+    }
+
+    /// 플러그인이 **이 모듈에서 실제로 쓰이는지**.
+    ///
+    /// 멀티모듈 루트는 플러그인을 선언만 하고 `apply false` 를 붙인다 — "버전은 여기서
+    /// 정하되 여기서는 안 쓴다" 는 뜻이다. 그것을 쓰는 것으로 읽으면 루트에 `bootRun` 이
+    /// 있는 줄 알고, 그 명령은 "그런 태스크 없음" 으로 실패한다.
+    private static func containsPlugin(_ identifier: String, in script: String) -> Bool {
+        for line in script.split(separator: "\n") {
+            guard line.contains(identifier) else { continue }
+            guard !line.contains("apply false") else { continue }
+            return true
+        }
+        return false
     }
 
     /// `application` 플러그인이 선언됐는지.
@@ -108,7 +180,11 @@ public enum RunConfigurationDetector {
         // Groovy·Kotlin DSL 의 선언 형태. 따옴표까지 포함해서 찾으므로 `my-application-plugin`
         // 같은 이름에는 걸리지 않는다.
         let declarations = ["id 'application'", "id \"application\"", "id('application')", "id(\"application\")"]
-        if declarations.contains(where: script.contains) { return true }
+        for line in script.split(separator: "\n") {
+            // `apply false` 는 "여기서는 안 쓴다" 는 뜻이다 — 멀티모듈 루트가 그렇게 쓴다.
+            guard !line.contains("apply false") else { continue }
+            if declarations.contains(where: line.contains) { return true }
+        }
 
         // Kotlin DSL 은 괄호 없이 `application` 한 줄로도 쓴다. 이건 줄 전체가 그것뿐일 때만
         // 인정한다 — 그러지 않으면 산문 속 낱말에 걸린다.
@@ -124,12 +200,20 @@ public enum RunConfigurationDetector {
         guard files.contains(pom) else { return nil }
         guard read(pom)?.contains("spring-boot-maven-plugin") == true else { return nil }
 
-        // 래퍼가 없는데 `./mvnw` 를 부르면 "그런 파일 없음" 으로 끝난다.
-        let launcher = files.contains(path(directory, "mvnw")) ? "./mvnw" : "mvn"
+        // **래퍼는 루트에만 있다** — Gradle 과 같은 함정이다. 모듈 폴더에서 찾다 못 찾아
+        // 맨 `mvn` 으로 떨어지면 대부분의 기계에 없다.
+        let root = mavenRoot(for: directory, files: files)
+        let launcher = files.contains(path(root, "mvnw")) ? "./mvnw" : "mvn"
+        // Maven 은 루트에서 `-pl` 로 모듈을 지목한다.
+        let modulePath = relativePath(of: directory, under: root)
+        let target = modulePath.isEmpty
+            ? "spring-boot:run"
+            : "-pl \(modulePath) spring-boot:run"
+
         return RunConfiguration(
             name: label(directory, "spring-boot:run"),
-            command: "\(launcher) spring-boot:run",
-            workingDirectory: directory,
+            command: "\(launcher) \(target)",
+            workingDirectory: root,
             environment: [:],
             debugLaunch: .mavenJvmArguments
         )
